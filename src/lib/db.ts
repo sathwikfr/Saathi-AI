@@ -32,6 +32,7 @@ import {
 import { PLANS, FREE_TRIAL_DAYS, freeTrialEnd } from './plans';
 import { prisma } from './prisma';
 import { isAdminEmail } from './adminEmail';
+import { toEscalationSummary } from './escalation';
 import { normalizePhone } from './phone';
 import {
   generateMedicineCheckinQuestion,
@@ -98,15 +99,26 @@ function toDBUser(p: PrismaUserFull): DBUser {
     createdAt: p.createdAt.toISOString(),
     passwordHash: p.passwordHash || undefined,
     subscription: p.subscription ? toSubscription(p.subscription) : undefined,
-    notificationPreferences: prefs
-      ? {
-          whatsapp: prefs.whatsapp,
-          sms: prefs.sms,
-          email: prefs.email,
-          push: prefs.push,
-          minimumAlertLevel: prefs.minimumAlertLevel
-        }
-      : { ...DEFAULT_NOTIFICATION_PREFERENCES }
+    notificationPreferences: prefs ? toPrefs(prefs) : { ...DEFAULT_NOTIFICATION_PREFERENCES }
+  };
+}
+
+function toPrefs(prefs: Prisma.NotificationPreferencesGetPayload<object>): NotificationPreferences {
+  return {
+    whatsapp: prefs.whatsapp,
+    sms: prefs.sms,
+    email: prefs.email,
+    push: prefs.push,
+    minimumAlertLevel: prefs.minimumAlertLevel,
+    timezone: prefs.timezone,
+    dailySummary: prefs.dailySummary,
+    dailySummaryHour: prefs.dailySummaryHour,
+    weeklyDigest: prefs.weeklyDigest,
+    digestDay: prefs.digestDay,
+    digestHour: prefs.digestHour,
+    monthlySummary: prefs.monthlySummary,
+    wakeForEmergency: prefs.wakeForEmergency,
+    emergencyPhone: prefs.emergencyPhone
   };
 }
 
@@ -247,7 +259,7 @@ export async function updateUserProfile(
     email?: string;
     phone?: string;
     avatar?: string;
-    notificationPreferences?: NotificationPreferences;
+    notificationPreferences?: Partial<NotificationPreferences>;
   }
 ): Promise<{ user: User; emailChanged: boolean } | null> {
   const current = await prisma.user.findUnique({ where: { id: userId } });
@@ -294,8 +306,7 @@ export async function updateUserProfile(
 
   if (updates.notificationPreferences) {
     // WhatsApp on/off is opt-in with a timestamp (/api/account/whatsapp), never set from here.
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { whatsapp, ...prefs } = updates.notificationPreferences;
+    const prefs = cleanPrefs(updates.notificationPreferences);
     data.notificationPreferences = {
       upsert: { create: { ...prefs, whatsapp: false }, update: { ...prefs } }
     };
@@ -303,6 +314,40 @@ export async function updateUserProfile(
 
   const updated = await prisma.user.update({ where: { id: userId }, data, include: userInclude });
   return { user: stripHash(toDBUser(updated)), emailChanged };
+}
+
+/** Only the settings a family member may change themselves (WhatsApp on/off is opt-in with a timestamp, never set here). */
+function cleanPrefs(p: Partial<NotificationPreferences>) {
+  const out: Record<string, unknown> = {};
+  const hour = (v: unknown) => (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 23 ? v : undefined);
+  if (typeof p.sms === 'boolean') out.sms = p.sms;
+  if (typeof p.email === 'boolean') out.email = p.email;
+  if (typeof p.push === 'boolean') out.push = p.push;
+  if (typeof p.minimumAlertLevel === 'number' && [1, 2, 3, 4].includes(p.minimumAlertLevel)) out.minimumAlertLevel = p.minimumAlertLevel;
+  if (p.timezone === null || (typeof p.timezone === 'string' && isValidTimeZone(p.timezone))) out.timezone = p.timezone || null;
+  if (typeof p.dailySummary === 'boolean') out.dailySummary = p.dailySummary;
+  if (hour(p.dailySummaryHour) !== undefined) out.dailySummaryHour = p.dailySummaryHour;
+  if (typeof p.weeklyDigest === 'boolean') out.weeklyDigest = p.weeklyDigest;
+  if (typeof p.digestDay === 'number' && Number.isInteger(p.digestDay) && p.digestDay >= 0 && p.digestDay <= 6) out.digestDay = p.digestDay;
+  if (hour(p.digestHour) !== undefined) out.digestHour = p.digestHour;
+  if (typeof p.monthlySummary === 'boolean') out.monthlySummary = p.monthlySummary;
+  if (typeof p.wakeForEmergency === 'boolean') out.wakeForEmergency = p.wakeForEmergency;
+  if (p.emergencyPhone === null || p.emergencyPhone === '') out.emergencyPhone = null;
+  else if (typeof p.emergencyPhone === 'string') {
+    const n = normalizePhone(p.emergencyPhone);
+    if (!n.ok) throw new Error(`Emergency call number: ${n.reason}`);
+    out.emergencyPhone = n.e164;
+  }
+  return out as Omit<Prisma.NotificationPreferencesCreateWithoutUserInput, 'whatsapp'>;
+}
+
+export function isValidTimeZone(tz: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: tz });
+    return tz.length <= 64;
+  } catch {
+    return false;
+  }
 }
 
 export async function updateUserPasswordHash(userId: string, newHash: string): Promise<boolean> {
@@ -387,10 +432,16 @@ export async function updateUserSubscription(
   return toSubscription(sub);
 }
 
-export async function cancelSubscription(userId: string): Promise<boolean> {
+export async function cancelSubscription(userId: string, reason?: string | null): Promise<boolean> {
   const res = await prisma.userSubscription.updateMany({
     where: { userId },
-    data: { cancelAtPeriodEnd: true, status: 'cancelled' }
+    data: {
+      cancelAtPeriodEnd: true,
+      status: 'cancelled',
+      cancelledAt: new Date(),
+      // Why people leave (admin metric); free text, trimmed.
+      cancelReason: reason ? String(reason).trim().slice(0, 500) || null : null
+    }
   });
   return res.count > 0;
 }
@@ -425,13 +476,7 @@ export async function getUserInvoices(userId: string): Promise<Invoice[]> {
 export async function getNotificationPreferences(userId: string): Promise<NotificationPreferences> {
   const pref = await prisma.notificationPreferences.findUnique({ where: { userId } });
   if (!pref) return { ...DEFAULT_NOTIFICATION_PREFERENCES };
-  return {
-    whatsapp: pref.whatsapp,
-    sms: pref.sms,
-    email: pref.email,
-    push: pref.push,
-    minimumAlertLevel: pref.minimumAlertLevel
-  };
+  return toPrefs(pref);
 }
 
 // ---------------------------------------------------------------------------
@@ -467,6 +512,7 @@ function toSlot(cs: PrismaSlot): ScheduledCallSlot {
 type PrismaParentWithSchedule = Prisma.ParentProfileGetPayload<{ include: { callSchedule: true } }>;
 
 function toParent(p: PrismaParentWithSchedule): ParentProfile {
+  const consent = (p.parentConsent || 'pending') as ParentProfile['parentConsent'];
   return {
     id: p.id,
     userId: p.userId,
@@ -485,7 +531,24 @@ function toParent(p: PrismaParentWithSchedule): ParentProfile {
     consentGiven: p.consentGiven,
     consentDate: p.consentDate.toISOString(),
     createdAt: p.createdAt.toISOString(),
-    isDeleted: p.isDeleted
+    isDeleted: p.isDeleted,
+    parentConsent: consent,
+    parentConsentAt: p.parentConsentAt?.toISOString(),
+    address: p.address || undefined,
+    livesAlone: p.livesAlone,
+    bloodGroup: p.bloodGroup || undefined,
+    conditions: p.conditions || undefined,
+    allergies: p.allergies || undefined,
+    nearestHospital: p.nearestHospital || undefined,
+    doctorName: p.doctorName || undefined,
+    doctorPhone: p.doctorPhone || undefined,
+    introducedAt: p.introducedAt?.toISOString(),
+    numberSavedAt: p.numberSavedAt?.toISOString(),
+    birthDate: p.birthDate || undefined,
+    companionEnabled: p.companionEnabled,
+    companionDay: p.companionDay ?? undefined,
+    companionTime: p.companionTime || undefined,
+    companionTopics: p.companionTopics || undefined
   };
 }
 
@@ -496,6 +559,21 @@ export async function getParentsForUser(userId: string): Promise<ParentProfile[]
     orderBy: { createdAt: 'asc' }
   });
   return list.map(toParent);
+}
+
+/** Parents other people added and shared with this user through an accepted family invite. */
+export async function getSharedParentsForUser(userId: string): Promise<ParentProfile[]> {
+  const invites = await prisma.caregiverInvite.findMany({
+    where: { userId, status: 'accepted' },
+    include: { parent: { include: { callSchedule: true, user: { select: { name: true } } } } }
+  });
+  return invites
+    .filter(i => !i.parent.isDeleted && i.parent.userId !== userId)
+    .map(i => ({
+      ...toParent(i.parent),
+      accessRole: (i.role === 'co_manager' ? 'co_manager' : 'viewer') as ParentProfile['accessRole'],
+      ownerName: i.parent.user.name
+    }));
 }
 
 export async function getParentById(id: string): Promise<ParentProfile | null> {
@@ -530,6 +608,7 @@ export async function createParent(data: {
   callTime?: string;
   callSchedule?: ScheduledCallSlot[];
   consentGiven: boolean;
+  details?: ParentDetailsUpdate;
 }): Promise<ParentProfile> {
   const now = new Date();
   const fallbackTime = data.callTime && TIME_RE.test(data.callTime) ? data.callTime : '09:30 AM';
@@ -552,6 +631,9 @@ export async function createParent(data: {
       callTime: firstActive.time,
       consentGiven: data.consentGiven,
       consentDate: now,
+      // Saathi asks the parent themselves on the first call.
+      parentConsent: 'pending',
+      ...(data.details ? (cleanParentDetails(data.details) as Prisma.ParentProfileCreateWithoutUserInput) : {}),
       callSchedule: { create: slots },
       alerts: {
         create: {
@@ -569,6 +651,97 @@ export async function createParent(data: {
   });
 
   return toParent(created);
+}
+
+/** Emergency card, trust set-up and companion fields (all optional, all family-written). */
+export interface ParentDetailsUpdate {
+  address?: string | null;
+  livesAlone?: boolean;
+  bloodGroup?: string | null;
+  conditions?: string | null;
+  allergies?: string | null;
+  nearestHospital?: string | null;
+  doctorName?: string | null;
+  doctorPhone?: string | null;
+  birthDate?: string | null;
+  companionEnabled?: boolean;
+  companionDay?: number | null;
+  companionTime?: string | null;
+  companionTopics?: string | null;
+}
+
+const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+
+/** Validates and trims the optional parent details; throws "Invalid …" errors the routes pass on. */
+export function cleanParentDetails(d: ParentDetailsUpdate): Prisma.ParentProfileUpdateInput {
+  const out: Prisma.ParentProfileUpdateInput = {};
+  const text = (v: unknown, max: number) =>
+    v === null || v === '' ? null : typeof v === 'string' ? v.trim().slice(0, max) || null : undefined;
+  const address = text(d.address, 400);
+  if (address !== undefined) out.address = address;
+  const conditions = text(d.conditions, 400);
+  if (conditions !== undefined) out.conditions = conditions;
+  const allergies = text(d.allergies, 200);
+  if (allergies !== undefined) out.allergies = allergies;
+  const hospital = text(d.nearestHospital, 200);
+  if (hospital !== undefined) out.nearestHospital = hospital;
+  const doctor = text(d.doctorName, 120);
+  if (doctor !== undefined) out.doctorName = doctor;
+  const topics = text(d.companionTopics, 400);
+  if (topics !== undefined) out.companionTopics = topics;
+  if (typeof d.livesAlone === 'boolean') out.livesAlone = d.livesAlone;
+  if (typeof d.companionEnabled === 'boolean') out.companionEnabled = d.companionEnabled;
+  if (d.bloodGroup !== undefined) {
+    const bg = (d.bloodGroup || '').toUpperCase().replace(/\s+/g, '');
+    if (bg && !BLOOD_GROUPS.includes(bg)) throw new Error('Invalid blood group.');
+    out.bloodGroup = bg || null;
+  }
+  if (d.doctorPhone !== undefined) {
+    if (!d.doctorPhone) out.doctorPhone = null;
+    else {
+      const n = normalizePhone(d.doctorPhone);
+      if (!n.ok) throw new Error(`Invalid doctor's number: ${n.reason}`);
+      out.doctorPhone = n.e164;
+    }
+  }
+  if (d.birthDate !== undefined) {
+    if (!d.birthDate) out.birthDate = null;
+    else if (/^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(d.birthDate)) out.birthDate = d.birthDate;
+    else throw new Error('Invalid birthday (use MM-DD).');
+  }
+  if (d.companionDay !== undefined) {
+    if (d.companionDay === null) out.companionDay = null;
+    else if (Number.isInteger(d.companionDay) && d.companionDay >= 0 && d.companionDay <= 6) out.companionDay = d.companionDay;
+    else throw new Error('Invalid companion day.');
+  }
+  if (d.companionTime !== undefined) {
+    if (!d.companionTime) out.companionTime = null;
+    else if (TIME_RE.test(d.companionTime.trim())) out.companionTime = d.companionTime.trim().toUpperCase();
+    else throw new Error('Invalid companion time.');
+  }
+  return out;
+}
+
+export async function updateParentDetails(id: string, details: ParentDetailsUpdate): Promise<ParentProfile | null> {
+  const existing = await prisma.parentProfile.findUnique({ where: { id } });
+  if (!existing || existing.isDeleted) return null;
+  const updated = await prisma.parentProfile.update({ where: { id }, data: cleanParentDetails(details), include: { callSchedule: true } });
+  return toParent(updated);
+}
+
+/** Family ticks off a trust set-up step (introduced Saathi / saved the number). */
+export async function markParentSetupStep(id: string, step: 'introduced' | 'number_saved', done: boolean): Promise<void> {
+  await prisma.parentProfile.update({
+    where: { id },
+    data: step === 'introduced' ? { introducedAt: done ? new Date() : null } : { numberSavedAt: done ? new Date() : null }
+  });
+}
+
+/** Turns the shareable emergency card link on (new token) or off. */
+export async function setEmergencyCardShared(id: string, shared: boolean): Promise<string | null> {
+  const token = shared ? crypto.randomBytes(18).toString('base64url') : null;
+  await prisma.parentProfile.update({ where: { id }, data: { cardToken: token } });
+  return token;
 }
 
 export interface ParentUpdates {
@@ -600,6 +773,8 @@ export async function updateParent(id: string, updates: ParentUpdates): Promise<
     if (!updates.isPaused) {
       data.pauseReason = null;
       data.pauseUntil = null;
+      // The parent said no or "stop calling me": resuming means Saathi asks them again first.
+      if (existing.parentConsent === 'declined' || existing.parentConsent === 'withdrawn') data.parentConsent = 'pending';
     }
   }
   if (updates.pauseReason !== undefined && updates.isPaused !== false) {
@@ -652,7 +827,8 @@ function toMedicine(m: Prisma.MedicineGetPayload<object>): Medicine {
     timingSlots: m.timingSlots as MedicineTimingSlot[],
     foodRelation: m.foodRelation as FoodRelation,
     frequency: m.frequency as Medicine['frequency'],
-    isActive: m.isActive
+    isActive: m.isActive,
+    purpose: m.purpose || undefined
   };
 }
 
@@ -670,7 +846,8 @@ function medicineWriteData(med: Omit<Medicine, 'id' | 'parentId'>) {
     timingSlots: med.timingSlots && med.timingSlots.length > 0 ? med.timingSlots : [med.timeOfDay || 'morning'],
     foodRelation: med.foodRelation || 'not_specified',
     frequency: med.frequency || 'daily',
-    isActive: med.isActive
+    isActive: med.isActive,
+    purpose: med.purpose?.trim() ? med.purpose.trim().slice(0, 160) : null
   };
 }
 
@@ -692,6 +869,24 @@ export async function addMedicine(parentId: string, medData: Omit<Medicine, 'id'
     data: { id: newId('med'), parentId, ...medicineWriteData(medData) }
   });
   return toMedicine(created);
+}
+
+/** The family's own words for why a medicine matters (Saathi repeats them; it never invents a reason). */
+export async function setMedicinePurpose(parentId: string, medicineId: string, purpose: string | null): Promise<Medicine | null> {
+  const med = await prisma.medicine.findFirst({ where: { id: medicineId, parentId } });
+  if (!med) return null;
+  const updated = await prisma.medicine.update({
+    where: { id: medicineId },
+    data: { purpose: purpose?.trim() ? purpose.trim().slice(0, 160) : null }
+  });
+  return toMedicine(updated);
+}
+
+/** Medicines the family marks as stopped after a new prescription (kept, just inactive). */
+export async function deactivateMedicines(parentId: string, medicineIds: string[]): Promise<number> {
+  if (medicineIds.length === 0) return 0;
+  const res = await prisma.medicine.updateMany({ where: { parentId, id: { in: medicineIds } }, data: { isActive: false } });
+  return res.count;
 }
 
 export async function toggleMedicineStatus(parentId: string, medicineId: string): Promise<Medicine | null> {
@@ -787,8 +982,43 @@ export async function getEmergencyContacts(parentId: string): Promise<EmergencyC
     name: c.name,
     relation: c.relation,
     phone: c.phone,
-    priority: c.priority as EmergencyContact['priority']
+    priority: c.priority as EmergencyContact['priority'],
+    role: (c.role || undefined) as EmergencyContact['role'],
+    isLocal: c.isLocal,
+    practiceAt: c.practiceAt?.toISOString(),
+    practiceResult: c.practiceResult || undefined
   }));
+}
+
+const CONTACT_ROLES = ['family', 'neighbour', 'security', 'doctor', 'caregiver', 'other'];
+
+/**
+ * Replaces a parent's emergency contacts with the family's edited list (validated by the route).
+ * Contacts no longer on the list are removed; practice results of kept contacts stay.
+ */
+export async function replaceEmergencyContacts(
+  parentId: string,
+  list: Array<{ id?: string; name: string; relation: string; phone: string; role?: string; isLocal?: boolean }>
+): Promise<EmergencyContact[]> {
+  const existing = await prisma.emergencyContact.findMany({ where: { parentId } });
+  const keepIds = new Set(list.map(c => c.id).filter((id): id is string => !!id && existing.some(e => e.id === id)));
+  await prisma.$transaction([
+    prisma.emergencyContact.deleteMany({ where: { parentId, id: { notIn: [...keepIds] } } }),
+    ...list.map((c, i) => {
+      const data = {
+        name: c.name,
+        relation: c.relation,
+        phone: c.phone,
+        priority: i === 0 ? 'primary' : 'secondary',
+        role: c.role && CONTACT_ROLES.includes(c.role) ? c.role : null,
+        isLocal: !!c.isLocal
+      };
+      return c.id && keepIds.has(c.id)
+        ? prisma.emergencyContact.update({ where: { id: c.id }, data })
+        : prisma.emergencyContact.create({ data: { id: newId('emg'), parentId, ...data } });
+    })
+  ]);
+  return getEmergencyContacts(parentId);
 }
 
 export async function setEmergencyContacts(parentId: string, list: EmergencyContact[]): Promise<EmergencyContact[]> {
@@ -796,8 +1026,11 @@ export async function setEmergencyContacts(parentId: string, list: EmergencyCont
     list.map(c =>
       prisma.emergencyContact.upsert({
         where: { id: c.id },
-        create: { id: c.id, parentId, name: c.name, relation: c.relation, phone: c.phone, priority: c.priority },
-        update: { name: c.name, relation: c.relation, phone: c.phone, priority: c.priority }
+        create: {
+          id: c.id, parentId, name: c.name, relation: c.relation, phone: c.phone, priority: c.priority,
+          role: c.role || null, isLocal: !!c.isLocal
+        },
+        update: { name: c.name, relation: c.relation, phone: c.phone, priority: c.priority, role: c.role || null, isLocal: !!c.isLocal }
       })
     )
   );
@@ -824,8 +1057,32 @@ export async function getCallLogsForParent(parentId: string): Promise<CallLog[]>
     slot: cl.slot || undefined,
     slotId: cl.slotId || undefined,
     attemptNumber: cl.attemptNumber,
-    failureReason: cl.failureReason || undefined
+    failureReason: cl.failureReason || undefined,
+    details: cl.status === 'answered' ? callDetails(cl.resultJson) : undefined
   }));
+}
+
+/** The structured end-of-call result kept on the CallLog (no transcript). */
+export function callDetails(resultJson: string | null): CallLog['details'] {
+  if (!resultJson) return undefined;
+  try {
+    const r = JSON.parse(resultJson);
+    return {
+      medicineResults: Array.isArray(r.medicineResults) ? r.medicineResults : [],
+      healthConcern: r.healthConcern ?? null,
+      emergencyFlag: !!r.emergencyFlag,
+      sleep: r.sleep ?? null,
+      appetite: r.appetite ?? null,
+      pain: r.pain ?? null,
+      painWhere: r.painWhere ?? null,
+      runningLow: Array.isArray(r.runningLow) ? r.runningLow : [],
+      stoppedReason: r.stoppedReason ?? null,
+      consent: r.consent ?? null,
+      callType: r.callType
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 export async function addCallLog(parentId: string, log: Omit<CallLog, 'id' | 'parentId'>): Promise<CallLog> {
@@ -899,7 +1156,11 @@ export async function updateScheduleSuggestionStatus(
 // ALERTS
 // ---------------------------------------------------------------------------
 export async function getAlertsForParent(parentId: string): Promise<AlertRecord[]> {
-  const list = await prisma.alertRecord.findMany({ where: { parentId }, orderBy: { createdAt: 'desc' } });
+  const [list, escalations] = await Promise.all([
+    prisma.alertRecord.findMany({ where: { parentId }, orderBy: { createdAt: 'desc' } }),
+    prisma.escalation.findMany({ where: { parentId, alertId: { not: null } }, include: { attempts: true } })
+  ]);
+  const byAlert = new Map(escalations.map(e => [e.alertId!, e]));
   return list.map(al => ({
     id: al.id,
     parentId,
@@ -910,7 +1171,13 @@ export async function getAlertsForParent(parentId: string): Promise<AlertRecord[
     timestamp: al.timestamp,
     status: al.status as AlertRecord['status'],
     createdAt: al.createdAt.toISOString(),
-    acknowledgedAt: al.acknowledgedAt ? al.acknowledgedAt.toISOString() : undefined
+    acknowledgedAt: al.acknowledgedAt ? al.acknowledgedAt.toISOString() : undefined,
+    handledByName: al.handledByName || undefined,
+    handledVia: al.handledVia || undefined,
+    outcome: (al.outcome || undefined) as AlertRecord['outcome'],
+    outcomeNote: al.outcomeNote || undefined,
+    outcomeAt: al.outcomeAt?.toISOString(),
+    escalation: byAlert.has(al.id) ? toEscalationSummary(byAlert.get(al.id)!) : undefined
   }));
 }
 
@@ -918,7 +1185,8 @@ export async function getAlertsForParent(parentId: string): Promise<AlertRecord[
 // CAREGIVERS
 // ---------------------------------------------------------------------------
 export async function getCaregiversForParent(parentId: string): Promise<CaregiverInvite[]> {
-  const list = await prisma.caregiverInvite.findMany({ where: { parentId }, orderBy: { invitedAt: 'asc' } });
+  const list = await prisma.caregiverInvite.findMany({ where: { parentId, status: { not: 'revoked' } }, orderBy: { invitedAt: 'asc' } });
+  const base = (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').replace(/\/$/, '');
   return list.map(cg => ({
     id: cg.id,
     parentId,
@@ -926,33 +1194,11 @@ export async function getCaregiversForParent(parentId: string): Promise<Caregive
     name: cg.name,
     role: cg.role as CaregiverInvite['role'],
     status: cg.status as CaregiverInvite['status'],
-    invitedAt: cg.invitedAt.toISOString()
+    invitedAt: cg.invitedAt.toISOString(),
+    phone: cg.phone || undefined,
+    acceptedAt: cg.acceptedAt?.toISOString(),
+    inviteUrl: cg.status === 'pending' && cg.token ? `${base}/invite/${cg.token}` : undefined
   }));
-}
-
-export async function inviteCaregiver(
-  parentId: string,
-  email: string,
-  name: string,
-  role: 'viewer' | 'co_manager'
-): Promise<CaregiverInvite> {
-  const cleanEmail = email.toLowerCase().trim();
-  const existing = await prisma.caregiverInvite.findFirst({ where: { parentId, email: cleanEmail } });
-  if (existing) {
-    throw new Error(`${cleanEmail} has already been invited for this parent.`);
-  }
-  const created = await prisma.caregiverInvite.create({
-    data: { id: newId('cg'), parentId, email: cleanEmail, name, role, status: 'pending' }
-  });
-  return {
-    id: created.id,
-    parentId,
-    email: created.email,
-    name: created.name,
-    role: created.role as CaregiverInvite['role'],
-    status: 'pending',
-    invitedAt: created.invitedAt.toISOString()
-  };
 }
 
 // ---------------------------------------------------------------------------

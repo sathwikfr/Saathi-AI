@@ -129,6 +129,49 @@ export default async function AdminPage() {
           </div>
         </div>
 
+        <section className="panel" aria-labelledby="engagement-title">
+          <div className="panel-head">
+            <div>
+              <h3 id="engagement-title">Is it working for families?</h3>
+              <p>Active = opened the dashboard in the last 7 days. Acted on = someone said &ldquo;I&apos;m on it&rdquo; or recorded what happened.</p>
+            </div>
+          </div>
+          <div className="kv">
+            <div>
+              <span>Families active this week</span>
+              <strong>{s.engagement.activeFamilies7d} of {s.engagement.familiesWithParents}</strong>
+            </div>
+            <div>
+              <span>Alerts acted on (30 days)</span>
+              <strong>
+                {s.engagement.alertsNeedingAction30
+                  ? `${Math.round((s.engagement.alertsActedOn30 / s.engagement.alertsNeedingAction30) * 100)}% (${s.engagement.alertsActedOn30} of ${s.engagement.alertsNeedingAction30})`
+                  : 'No alerts'}
+              </strong>
+            </div>
+            <div>
+              <span>Emergency escalations (30 days)</span>
+              <strong>{s.engagement.escalations30.total} · {s.engagement.escalations30.handled} handled · {s.engagement.escalations30.exhausted} nobody answered</strong>
+            </div>
+            <div>
+              <span>Parents&apos; own consent</span>
+              <strong>{s.engagement.parentConsent.given} yes · {s.engagement.parentConsent.pending} not asked yet · {s.engagement.parentConsent.said_no} said no</strong>
+            </div>
+            <div>
+              <span>Siblings and carers joined</span>
+              <strong>{s.engagement.familyMembers}</strong>
+            </div>
+          </div>
+          {s.engagement.cancelReasons.length > 0 && (
+            <>
+              <h4 style={{ marginTop: '16px', marginBottom: '6px', fontSize: '0.95rem' }}>Why people cancelled</h4>
+              <ul style={{ paddingLeft: '18px', display: 'grid', gap: '4px', fontSize: '0.9rem' }}>
+                {s.engagement.cancelReasons.map((c, i) => <li key={i}>{fmtDate(c.at)}: {c.reason}</li>)}
+              </ul>
+            </>
+          )}
+        </section>
+
         <section className="panel" aria-labelledby="calls-title">
           <div className="panel-head">
             <div>

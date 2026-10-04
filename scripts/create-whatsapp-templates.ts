@@ -22,7 +22,9 @@ const EMERGENCY_ACK_TEXT = "I'm on it";
 const EXAMPLES: Record<WhatsAppTemplateKind, string[]> = {
   call_update: ['Amma', 'Answered the morning call at 09:10 AM. Medicines: Telmisartan taken, Metformin taken. Mood: cheerful.'],
   attention: ['Amma', 'Amma said she has not taken Metformin this evening. Call details: Answered the evening call at 08:05 PM.'],
-  emergency: ['Amma', 'During the afternoon call, Amma may have described an emergency: "chest pain".', '+91 98765 43210']
+  emergency: ['Amma', 'During the afternoon call, Amma may have described an emergency: "chest pain".', '+91 98765 43210'],
+  handled: ['Amma', 'Ravi (neighbour)'],
+  summary: ['weekly', 'Amma', 'Medicines taken on 19 of 21 calls (90%). Mood mostly calm. Mentioned knee pain on Tuesday and Friday.']
 };
 
 function arg(name: string): string | undefined {

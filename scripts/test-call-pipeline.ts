@@ -429,24 +429,24 @@ async function partB() {
     // ---- B11 manual / test calls --------------------------------------------------
     console.log('\nB11. Test / manual calls');
     const sarvam11 = makeFakeSarvam();
-    const noCfg = await placeManualCall({ parentId: parent.id, ownerId: user.id, kind: 'test' }, { config: null });
+    const noCfg = await placeManualCall({ parentId: parent.id, requesterId: user.id, kind: 'test' }, { config: null });
     check('not configured → 503', !noCfg.ok && noCfg.status === 503 && noCfg.code === 'CALLING_NOT_CONNECTED');
-    const wrongOwner = await placeManualCall({ parentId: parent.id, ownerId: 'someone-else', kind: 'test' }, { config: cfg, fetchImpl: sarvam11.fetchImpl });
+    const wrongOwner = await placeManualCall({ parentId: parent.id, requesterId: 'someone-else', kind: 'test' }, { config: cfg, fetchImpl: sarvam11.fetchImpl });
     check("someone else's parent → 404, no call", !wrongOwner.ok && wrongOwner.status === 404 && sarvam11.calls.length === 0);
-    const m1 = await placeManualCall({ parentId: parent.id, ownerId: user.id, kind: 'test' }, { config: cfg, fetchImpl: sarvam11.fetchImpl });
+    const m1 = await placeManualCall({ parentId: parent.id, requesterId: user.id, kind: 'test' }, { config: cfg, fetchImpl: sarvam11.fetchImpl });
     check('test call placed', m1.ok && sarvam11.calls.length === 1, m1);
     const mlog = m1.ok ? await prisma.callLog.findUnique({ where: { id: m1.callLogId } }) : null;
     check("test call logged with slot 'test', no slot id", mlog?.slot === 'test' && mlog.slotId === null && mlog.status === 'placed');
     const mo = m1.ok ? await processSarvamWebhook({ attempt_id: mlog!.providerAttemptId, status: 'no_answer' }, { deps: alertDeps }) : null;
     check('test call never retried', mo?.status === 'processed' && (mo as { retryAt: string | null }).retryAt === null);
     const noCredits11 = makeFakeSarvam({ mode: 'http', status: 402 });
-    const mx = await placeManualCall({ parentId: parent.id, ownerId: user.id, kind: 'test' }, { config: cfg, fetchImpl: noCredits11.fetchImpl });
+    const mx = await placeManualCall({ parentId: parent.id, requesterId: user.id, kind: 'test' }, { config: cfg, fetchImpl: noCredits11.fetchImpl });
     check('402 from Sarvam → clear "problem on our side" error (503), not "try again in a few minutes"', !mx.ok && mx.status === 503 && mx.code === 'CALLING_UNAVAILABLE', mx);
-    const m2 = await placeManualCall({ parentId: parent.id, ownerId: user.id, kind: 'test' }, { config: cfg, fetchImpl: sarvam11.fetchImpl });
-    const m3 = await placeManualCall({ parentId: parent.id, ownerId: user.id, kind: 'test' }, { config: cfg, fetchImpl: sarvam11.fetchImpl });
+    const m2 = await placeManualCall({ parentId: parent.id, requesterId: user.id, kind: 'test' }, { config: cfg, fetchImpl: sarvam11.fetchImpl });
+    const m3 = await placeManualCall({ parentId: parent.id, requesterId: user.id, kind: 'test' }, { config: cfg, fetchImpl: sarvam11.fetchImpl });
     check('2 per hour allowed, 3rd rate-limited (a refused attempt does not count)', m2.ok && !m3.ok && m3.status === 429, [m2.ok, m3.ok]);
     await prisma.parentProfile.update({ where: { id: parent.id }, data: { isPaused: true } });
-    const mp = await placeManualCall({ parentId: parent.id, ownerId: user.id, kind: 'test' }, { config: cfg, fetchImpl: sarvam11.fetchImpl });
+    const mp = await placeManualCall({ parentId: parent.id, requesterId: user.id, kind: 'test' }, { config: cfg, fetchImpl: sarvam11.fetchImpl });
     check('paused parent → 409', !mp.ok && mp.status === 409);
 
     // ---- B12 unconfigured dispatch does nothing ------------------------------------
@@ -469,7 +469,7 @@ async function partB() {
     const sarvam14 = makeFakeSarvam();
     const s14 = await runDispatch({ now: new Date(Date.UTC(2026, 9, 15, 3, 30)), fetchImpl: sarvam14.fetchImpl, config: cfg, alertDeps, parentIds: scope });
     check('expired trial: no calls placed', s14.placed === 0 && sarvam14.calls.length === 0, s14);
-    const m14 = await placeManualCall({ parentId: parent.id, ownerId: user.id, kind: 'test' }, { config: cfg, fetchImpl: sarvam14.fetchImpl });
+    const m14 = await placeManualCall({ parentId: parent.id, requesterId: user.id, kind: 'test' }, { config: cfg, fetchImpl: sarvam14.fetchImpl });
     check('expired trial: test call refused (402 TRIAL_ENDED)', !m14.ok && m14.status === 402 && m14.code === 'TRIAL_ENDED', m14);
     await prisma.userSubscription.update({ where: { userId: user.id }, data: { planId: 'family', status: 'active', currentPeriodEnd: new Date(Date.now() + 30 * 864e5) } });
     const s14b = await runDispatch({ now: new Date(Date.UTC(2026, 9, 15, 3, 35)), fetchImpl: sarvam14.fetchImpl, config: cfg, alertDeps, parentIds: scope });

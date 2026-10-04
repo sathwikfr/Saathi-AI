@@ -96,6 +96,35 @@ Their phone number is {{3}}. Please call them now.
 Buttons, in this order: **Quick reply** `I'm on it` · **Visit website** `Open Aaptha` → `https://<your-domain>/dashboard`.
 Samples: `{{1}}` = `Amma`, `{{2}}` = `During the afternoon call, Amma may have described an emergency: "chest pain".`, `{{3}}` = `+91 98765 43210`.
 
+### `aaptha_alert_handled` (added 2026-10-03)
+Sent to everyone else in the family once someone says "I'm on it" during an urgent alert.
+Body:
+```
+Update on the urgent alert from the check-in call with {{1}}: {{2}} is handling it now.
+
+This update is part of the care plan you set up on Aaptha.
+```
+Buttons: **Visit website** `Open Aaptha` → `https://<your-domain>/dashboard`.
+Samples: `{{1}}` = `Amma`, `{{2}}` = `Ravi (neighbour)`.
+
+### `aaptha_care_summary` (added 2026-10-03)
+The daily / weekly / monthly summary, at the hour each family member picked.
+Body:
+```
+Your {{1}} summary of the check-in calls with {{2}}: {{3}}
+
+This summary is part of the care plan you set up on Aaptha.
+```
+Buttons: **Visit website** `Open Aaptha` → `https://<your-domain>/dashboard`.
+Samples: `{{1}}` = `weekly`, `{{2}}` = `Amma`, `{{3}}` = `Medicines taken on 19 of 21 calls (90%). Mood mostly calm. Mentioned knee pain on Tuesday and Friday.`
+
+`scripts/create-whatsapp-templates.ts` submits all five; re-run it (dry run first) to add the two new ones.
+Meta may file a summary under MARKETING; if it does, reword it to be more transactional before families rely on it.
+
+**Parents can also message this number.** A message (or screenshot) from a parent's phone gets the scam check: a short
+reply in their language, never "this is safe", and a dashboard alert for the family when it looks like a scam.
+That reply is free-form, which WhatsApp allows within 24 hours of the parent's own message.
+
 Approval usually takes minutes to a few hours. A template that is rejected or not yet approved makes sends fail with
 error 132001; level 3–4 alerts then fall back to email.
 

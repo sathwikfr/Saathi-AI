@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server';
 import { getMedicineReportsForParent, createMedicineReport } from '@/lib/db';
-import { requireOwnedParent } from '@/lib/access';
+import { requireParentAccess } from '@/lib/access';
 import { extractFromRequest } from '@/lib/medicineReportIntake';
 
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function GET(req: Request, { params }: Ctx) {
   const { id } = await params;
-  const access = await requireOwnedParent(id);
+  const access = await requireParentAccess(id, 'view');
   if (!access.ok) return access.response;
 
   const reports = await getMedicineReportsForParent(id);
@@ -16,7 +16,7 @@ export async function GET(req: Request, { params }: Ctx) {
 
 export async function POST(req: Request, { params }: Ctx) {
   const { id } = await params;
-  const access = await requireOwnedParent(id);
+  const access = await requireParentAccess(id, 'manage');
   if (!access.ok) return access.response;
 
   try {

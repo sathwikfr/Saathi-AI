@@ -60,19 +60,9 @@ export async function PATCH(req: Request) {
       }
     }
 
-    // Validate notification preferences if provided
-    let cleanNotifPrefs: NotificationPreferences | undefined = undefined;
-    if (notificationPreferences && typeof notificationPreferences === 'object') {
-      cleanNotifPrefs = {
-        whatsapp: Boolean(notificationPreferences.whatsapp),
-        sms: Boolean(notificationPreferences.sms),
-        email: Boolean(notificationPreferences.email),
-        push: Boolean(notificationPreferences.push),
-        minimumAlertLevel: typeof notificationPreferences.minimumAlertLevel === 'number'
-          ? Math.max(1, Math.min(4, notificationPreferences.minimumAlertLevel))
-          : 1
-      };
-    }
+    // Partial updates are fine: db.updateUserProfile whitelists and validates each field it is given.
+    const cleanNotifPrefs: Partial<NotificationPreferences> | undefined =
+      notificationPreferences && typeof notificationPreferences === 'object' ? notificationPreferences : undefined;
 
     const updateResult = await updateUserProfile(sessionUser.id, {
       name,

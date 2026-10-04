@@ -8,6 +8,11 @@
  *    with overlapping cron runs.
  *  - Nothing happens (and nothing is logged) when Sarvam isn't configured.
  *  - Each plan's calls-per-day cap applies, controlling call cost.
+ *  - A parent who said no (or "stop calling me") is never called until the
+ *    family resumes calls, and then Saathi asks again first.
+ *
+ * Besides the scheduled slots it places: retries, one follow-up about medicines
+ * the parent said they'd take "later", and the weekly companion call.
  */
 import { Prisma } from '@prisma/client';
 import { prisma } from './prisma';
@@ -16,15 +21,21 @@ import { getEffectivePlan } from './plans';
 import { normalizePhone } from './phone';
 import { generateMedicineCheckinQuestion } from './scheduleGenerator';
 import { istDateString, istMinutesOfDay, isSlotDue, parseClockTime } from './ist';
-import { SarvamConfig, getSarvamConfig, createOutboundCall, SarvamApiError, OutboundCallInput } from './sarvam';
+import {
+  SarvamConfig, getSarvamConfig, createOutboundCall, SarvamApiError, OutboundCallInput, CallType, isProviderAccountProblem, logProviderProblem
+} from './sarvam';
 import { LinkedMedicineDetail, PlanId } from './types';
 import { MAX_CALL_ATTEMPTS, RETRY_DELAY_MINUTES, RESULT_NOT_RECEIVED } from './callResults';
 import { raiseUnreachableAlert, AlertDeps } from './alerts';
+import { CallExtras, NO_EXTRAS, CallSnapshot, planCallExtras, readSnapshot, NON_RETRY_SLOTS } from './callPlanning';
+import { parentRoleFor, roleAllows } from './familyAccess';
 
 /** A slot stays "due" for this long after its scheduled time (covers cron gaps and outages). */
 export const DUE_WINDOW_MINUTES = 90;
 /** A call with no end-of-call result after this long is closed as "result not received". */
 export const STALE_PLACED_MINUTES = 45;
+/** Slot ids for calls that aren't one of the parent's ScheduledCallSlots (kept unique per day by the same index). */
+export const COMPANION_SLOT_ID = 'companion';
 
 export interface DispatchDeps {
   now?: Date;
@@ -40,12 +51,21 @@ export interface DispatchSummary {
   parentsChecked: number;
   placed: number;
   retried: number;
+  followUps: number;
+  companion: number;
   failedToPlace: number;
   alreadyCalled: number;
   cappedByPlan: number;
   staleClosed: number;
   autoResumed: number;
   errors: string[];
+}
+
+function emptySummary(configured: boolean): DispatchSummary {
+  return {
+    configured, parentsChecked: 0, placed: 0, retried: 0, followUps: 0, companion: 0, failedToPlace: 0,
+    alreadyCalled: 0, cappedByPlan: 0, staleClosed: 0, autoResumed: 0, errors: []
+  };
 }
 
 interface SlotRow {
@@ -61,8 +81,11 @@ function isUniqueViolation(err: unknown): boolean {
   return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
 }
 
-/** Medicines Saathi should ask about on this slot (skips ones the family has since paused). */
-export function slotMedicines(slot: SlotRow, inactiveNames: Set<string>): LinkedMedicineDetail[] {
+/**
+ * Medicines Saathi should ask about on this slot (skips ones the family has since paused),
+ * with the family's current "why" for each.
+ */
+export function slotMedicines(slot: SlotRow, inactiveNames: Set<string>, purposes: Map<string, string> = new Map()): LinkedMedicineDetail[] {
   let linked: LinkedMedicineDetail[] = [];
   if (slot.linkedMedicinesJson) {
     try {
@@ -79,7 +102,18 @@ export function slotMedicines(slot: SlotRow, inactiveNames: Set<string>): Linked
       questionScript: generateMedicineCheckinQuestion(name, 'not_specified', slot.slot)
     }));
   }
-  return linked.filter(m => !inactiveNames.has(m.name));
+  return linked
+    .filter(m => !inactiveNames.has(m.name))
+    .map(m => (purposes.get(m.name) ? { ...m, purpose: purposes.get(m.name) } : m));
+}
+
+type MedicineRow = { name: string; isActive: boolean; purpose: string | null };
+
+function medicineMaps(medicines: MedicineRow[]) {
+  const inactiveNames = new Set(medicines.filter(m => !m.isActive).map(m => m.name));
+  const purposes = new Map(medicines.filter(m => m.isActive && m.purpose?.trim()).map(m => [m.name, m.purpose!.trim()]));
+  const activeNames = medicines.filter(m => m.isActive).map(m => m.name);
+  return { inactiveNames, purposes, activeNames };
 }
 
 interface ParentForCall {
@@ -88,6 +122,12 @@ interface ParentForCall {
   phone: string;
   language: string;
   relationship: string;
+  parentConsent: string | null;
+  lastSafetyLineAt: Date | null;
+  lastWellbeingAt: Date | null;
+  lastRefillCheckAt: Date | null;
+  birthDate: string | null;
+  companionTopics?: string | null;
   user: { name: string };
 }
 
@@ -97,7 +137,7 @@ interface ClaimData {
   slot: string;
   callDate: string;
   attemptNumber: number;
-  medicines: LinkedMedicineDetail[];
+  snapshot: CallSnapshot;
   now: Date;
 }
 
@@ -122,6 +162,8 @@ async function claimAttempt(data: ClaimData) {
         slot: data.slot,
         callDate: data.callDate,
         attemptNumber: data.attemptNumber,
+        // The dispatcher's clock (same as the database's in production; tests run on a fake clock).
+        createdAt: data.now,
         scheduledTime: data.now.toISOString(),
         status: 'scheduled',
         durationSeconds: 0,
@@ -129,7 +171,7 @@ async function claimAttempt(data: ClaimData) {
         mood: 'neutral',
         summary: 'Call is being placed.',
         // Snapshot of what Saathi is asked to check, so the result can be matched later.
-        resultJson: JSON.stringify({ medicines: data.medicines })
+        resultJson: JSON.stringify(data.snapshot)
       }
     });
   } catch (err) {
@@ -141,12 +183,8 @@ async function claimAttempt(data: ClaimData) {
 /** 'provider_account' = our own Sarvam account can't place calls (bad key, no access, out of credits). */
 type PlaceOutcome = 'placed' | 'failed' | 'provider_account';
 
-/**
- * Sarvam refused because of OUR account, not the parent's phone: 401/403 = key or access,
- * 402 = Payment Required (credits used up). Retrying or alerting the family won't help.
- */
-function isProviderAccountProblem(httpStatus: number | undefined): boolean {
-  return httpStatus === 401 || httpStatus === 402 || httpStatus === 403;
+function supportPhone(): string | null {
+  return process.env.NEXT_PUBLIC_SUPPORT_PHONE?.trim() || null;
 }
 
 async function placeClaimedCall(
@@ -154,11 +192,12 @@ async function placeClaimedCall(
   log: { id: string; parentId: string; slotId: string | null; slot: string | null; attemptNumber: number },
   parent: ParentForCall,
   slotLabel: string,
-  medicines: LinkedMedicineDetail[],
+  snapshot: CallSnapshot,
   deps: DispatchDeps,
   now: Date,
   summary: DispatchSummary
 ): Promise<PlaceOutcome> {
+  const extras: CallExtras = snapshot.asked || NO_EXTRAS;
   const input: OutboundCallInput = {
     callLogId: log.id,
     parentId: parent.id,
@@ -170,7 +209,16 @@ async function placeClaimedCall(
     language: parent.language,
     caregiverName: parent.user.name,
     relationship: parent.relationship,
-    medicines
+    medicines: snapshot.medicines,
+    callType: snapshot.callType || 'reminder',
+    askConsent: extras.askConsent,
+    saySafetyLine: extras.saySafetyLine,
+    lastCallNote: extras.lastCallNote,
+    askWellbeing: extras.askWellbeing,
+    refillMedicines: extras.refillMedicines,
+    specialDay: extras.specialDay,
+    companionTopics: snapshot.callType === 'companion' ? parent.companionTopics || null : null,
+    supportPhone: supportPhone()
   };
 
   try {
@@ -184,15 +232,10 @@ async function placeClaimedCall(
     const httpStatus = err instanceof SarvamApiError ? err.status : undefined;
     const message = err instanceof Error ? err.message : 'unknown error';
     const configProblem = isProviderAccountProblem(httpStatus);
-    if (configProblem) {
-      console.error(
-        httpStatus === 402
-          ? '[calls] Sarvam returned 402 Payment Required: the Sarvam account is out of credits. Top up in the Sarvam dashboard; no calls can be placed until then.'
-          : `[calls] Sarvam returned ${httpStatus}: check SARVAM_API_KEY and the agent/workspace ids. No calls can be placed until this is fixed.`
-      );
-    }
+    if (configProblem) logProviderProblem(httpStatus);
     const retryable = !configProblem && (httpStatus === undefined || httpStatus >= 500 || httpStatus === 429);
-    const canRetry = retryable && !!log.slotId && log.attemptNumber < MAX_CALL_ATTEMPTS;
+    const scheduled = !!log.slotId && !NON_RETRY_SLOTS.includes(log.slot || '');
+    const canRetry = retryable && scheduled && log.attemptNumber < MAX_CALL_ATTEMPTS;
     const retryAt = canRetry ? new Date(now.getTime() + RETRY_DELAY_MINUTES * 60000) : null;
 
     await prisma.callLog.update({
@@ -210,7 +253,7 @@ async function placeClaimedCall(
     summary.errors.push(`${parent.id}: ${message}`);
 
     // Only scheduled calls alert the family; a failed test call is just reported back to the user.
-    if (!retryAt && !configProblem && log.slotId) {
+    if (!retryAt && !configProblem && scheduled) {
       await raiseUnreachableAlert(
         { id: log.id, parentId: parent.id, attemptNumber: log.attemptNumber, slot: log.slot },
         parent.name,
@@ -223,22 +266,76 @@ async function placeClaimedCall(
   }
 }
 
-/** Places every call that is due right now, plus retries. */
+/**
+ * The data planCallExtras needs about a parent's recent calls. "The last call" for the
+ * remember-the-last-call note is the latest answered call that mentioned a concern, as long
+ * as no call since then has already asked about it (a short follow-up call in between
+ * doesn't make Saathi forget the morning's knee pain).
+ */
+async function recentCallFacts(parentId: string, today: string, now: Date) {
+  const [recent, answeredToday] = await Promise.all([
+    prisma.callLog.findMany({
+      where: { parentId, status: 'answered', createdAt: { gte: new Date(now.getTime() - 7 * 86400000) } },
+      orderBy: { createdAt: 'desc' },
+      take: 6,
+      select: { createdAt: true, resultJson: true }
+    }),
+    prisma.callLog.count({ where: { parentId, status: 'answered', callDate: today } })
+  ]);
+  let lastAnswered = null;
+  for (const call of recent) {
+    let r: Record<string, unknown> = {};
+    try {
+      r = JSON.parse(call.resultJson || '{}');
+    } catch {
+      r = {};
+    }
+    const concern = typeof r.healthConcern === 'string' ? r.healthConcern : null;
+    const pain = typeof r.pain === 'string' ? r.pain : null;
+    if (concern || pain === 'mild' || pain === 'severe') {
+      lastAnswered = { createdAt: call.createdAt, healthConcern: concern, pain, painWhere: typeof r.painWhere === 'string' ? r.painWhere : null };
+      break;
+    }
+    // A later call already followed up on a concern and heard nothing new: nothing to remember.
+    const asked = r.asked as { lastCallNote?: string | null } | undefined;
+    if (asked?.lastCallNote) break;
+  }
+  return { lastAnswered, answeredToday: answeredToday > 0 };
+}
+
+async function extrasFor(parent: ParentForCall, callType: CallType, activeNames: string[], now: Date): Promise<CallExtras> {
+  const facts = await recentCallFacts(parent.id, istDateString(now), now);
+  return planCallExtras({
+    callType,
+    rhythm: {
+      parentConsent: parent.parentConsent,
+      lastSafetyLineAt: parent.lastSafetyLineAt,
+      lastWellbeingAt: parent.lastWellbeingAt,
+      lastRefillCheckAt: parent.lastRefillCheckAt,
+      birthDate: parent.birthDate
+    },
+    lastAnswered: facts.lastAnswered,
+    activeMedicineNames: activeNames,
+    answeredToday: facts.answeredToday,
+    now
+  });
+}
+
+/** Parents who said no, or asked Saathi to stop, are not called until the family resumes calls. */
+export function consentBlocksCalls(parentConsent: string | null | undefined): boolean {
+  return parentConsent === 'declined' || parentConsent === 'withdrawn';
+}
+
+/** IST weekday, 0 = Sunday. */
+function istWeekday(now: Date): number {
+  return new Date(now.getTime() + 5.5 * 3600000).getUTCDay();
+}
+
+/** Places every call that is due right now, plus retries, follow-ups and companion calls. */
 export async function runDispatch(deps: DispatchDeps = {}): Promise<DispatchSummary> {
   const now = deps.now || new Date();
   const cfg = deps.config !== undefined ? deps.config : getSarvamConfig();
-  const summary: DispatchSummary = {
-    configured: !!cfg,
-    parentsChecked: 0,
-    placed: 0,
-    retried: 0,
-    failedToPlace: 0,
-    alreadyCalled: 0,
-    cappedByPlan: 0,
-    staleClosed: 0,
-    autoResumed: 0,
-    errors: []
-  };
+  const summary = emptySummary(!!cfg);
   if (!cfg) return summary;
 
   const today = istDateString(now);
@@ -262,7 +359,7 @@ export async function runDispatch(deps: DispatchDeps = {}): Promise<DispatchSumm
   });
   summary.staleClosed = stale.count;
 
-  // 2. Scheduled slots that are due.
+  // 2. Scheduled slots that are due (and the weekly companion call).
   const parents = await prisma.parentProfile.findMany({
     where: { isDeleted: false, consentGiven: true, ...(scope ? { id: scope } : {}) },
     include: {
@@ -276,7 +373,8 @@ export async function runDispatch(deps: DispatchDeps = {}): Promise<DispatchSumm
     summary.parentsChecked += 1;
     try {
       if (parent.isPaused) {
-        if (parent.pauseUntil && parent.pauseUntil.getTime() <= now.getTime()) {
+        // A pause the parent asked for ("no" / "stop calling me") never ends by itself.
+        if (parent.pauseUntil && parent.pauseUntil.getTime() <= now.getTime() && !consentBlocksCalls(parent.parentConsent)) {
           await prisma.parentProfile.update({
             where: { id: parent.id },
             data: { isPaused: false, pauseReason: null, pauseUntil: null }
@@ -286,6 +384,7 @@ export async function runDispatch(deps: DispatchDeps = {}): Promise<DispatchSumm
           continue;
         }
       }
+      if (consentBlocksCalls(parent.parentConsent)) continue;
 
       const phone = normalizePhone(parent.phone);
       if (!phone.ok) continue;
@@ -303,47 +402,82 @@ export async function runDispatch(deps: DispatchDeps = {}): Promise<DispatchSumm
         .sort((a, b) => (parseClockTime(a.time) as number) - (parseClockTime(b.time) as number));
       if (slots.length > plan.callsPerDay) summary.cappedByPlan += slots.length - plan.callsPerDay;
 
-      const inactiveNames = new Set(parent.medicines.filter(m => !m.isActive).map(m => m.name));
+      const { inactiveNames, purposes, activeNames } = medicineMaps(parent.medicines);
       const createdToday = istDateString(parent.createdAt) === today;
       const createdMinutes = istMinutesOfDay(parent.createdAt);
+      const forCall: ParentForCall = { ...parent, phone: phone.e164 };
+      // Extras (wellbeing, refill, …) go on the first call placed in this run only.
+      let extrasUsed = false;
 
       for (const slot of slots.slice(0, plan.callsPerDay)) {
         if (!isSlotDue(slot.time, now, DUE_WINDOW_MINUTES)) continue;
         // A newly added parent is first called the next day, not about a slot that already passed.
         if (createdToday && (parseClockTime(slot.time) as number) <= createdMinutes) continue;
 
-        const medicines = slotMedicines(slot, inactiveNames);
+        const medicines = slotMedicines(slot, inactiveNames, purposes);
+        const extras = extrasUsed
+          ? { ...NO_EXTRAS, askConsent: forCall.parentConsent !== 'given' }
+          : await extrasFor(forCall, 'reminder', activeNames, now);
+        const snapshot: CallSnapshot = { medicines, callType: 'reminder', asked: extras };
         const log = await claimAttempt({
           parentId: parent.id,
           slotId: slot.id,
           slot: slot.slot,
           callDate: today,
           attemptNumber: 1,
-          medicines,
+          snapshot,
           now
         });
         if (!log) {
           summary.alreadyCalled += 1;
           continue;
         }
-        const outcome = await placeClaimedCall(
-          cfg, log, { ...parent, phone: phone.e164, user: parent.user }, slot.label, medicines, deps, now, summary
-        );
+        extrasUsed = true;
+        const outcome = await placeClaimedCall(cfg, log, forCall, slot.label, snapshot, deps, now, summary);
         if (outcome === 'placed') summary.placed += 1;
+      }
+
+      // Weekly companion call: opted in, paid plan (trial included), its day and time.
+      if (
+        parent.companionEnabled &&
+        plan.id !== 'free' &&
+        parent.companionDay === istWeekday(now) &&
+        parent.companionTime &&
+        isSlotDue(parent.companionTime, now, DUE_WINDOW_MINUTES) &&
+        !(createdToday && (parseClockTime(parent.companionTime) ?? 0) <= createdMinutes)
+      ) {
+        const extras = extrasUsed
+          ? { ...NO_EXTRAS, askConsent: forCall.parentConsent !== 'given' }
+          : await extrasFor(forCall, 'companion', activeNames, now);
+        const snapshot: CallSnapshot = { medicines: [], callType: 'companion', asked: extras };
+        const log = await claimAttempt({
+          parentId: parent.id,
+          slotId: COMPANION_SLOT_ID,
+          slot: 'companion',
+          callDate: today,
+          attemptNumber: 1,
+          snapshot,
+          now
+        });
+        if (log) {
+          const outcome = await placeClaimedCall(cfg, log, forCall, 'Weekly chat', snapshot, deps, now, summary);
+          if (outcome === 'placed') summary.companion += 1;
+        }
       }
     } catch (err) {
       summary.errors.push(`${parent.id}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
-  // 3. Retries for unanswered / busy / temporarily failed calls (same IST day only).
+  // 3. Retries for unanswered / busy / temporarily failed calls (same IST day, scheduled slots only).
   const retries = await prisma.callLog.findMany({
     where: {
       ...(scope ? { parentId: scope } : {}),
       nextRetryAt: { lte: now },
       callDate: today,
       attemptNumber: { lt: MAX_CALL_ATTEMPTS },
-      slotId: { not: null }
+      slotId: { not: null },
+      NOT: { slot: { in: NON_RETRY_SLOTS } }
     },
     orderBy: { nextRetryAt: 'asc' },
     take: 100
@@ -362,13 +496,15 @@ export async function runDispatch(deps: DispatchDeps = {}): Promise<DispatchSumm
         where: { id: prev.parentId },
         include: { callSchedule: true, medicines: true, user: true }
       });
-      if (!parent || parent.isDeleted || parent.isPaused) continue;
+      if (!parent || parent.isDeleted || parent.isPaused || consentBlocksCalls(parent.parentConsent)) continue;
       const phone = normalizePhone(parent.phone);
       if (!phone.ok) continue;
 
       const slot = parent.callSchedule.find(s => s.id === prev.slotId && s.isActive);
-      const inactiveNames = new Set(parent.medicines.filter(m => !m.isActive).map(m => m.name));
-      const medicines = slot ? slotMedicines(slot, inactiveNames) : [];
+      const { inactiveNames, purposes, activeNames } = medicineMaps(parent.medicines);
+      const medicines = slot ? slotMedicines(slot, inactiveNames, purposes) : [];
+      const forCall: ParentForCall = { ...parent, phone: phone.e164 };
+      const snapshot: CallSnapshot = { medicines, callType: 'reminder', asked: await extrasFor(forCall, 'reminder', activeNames, now) };
 
       const log = await claimAttempt({
         parentId: parent.id,
@@ -376,17 +512,70 @@ export async function runDispatch(deps: DispatchDeps = {}): Promise<DispatchSumm
         slot: prev.slot || 'check-in',
         callDate: today,
         attemptNumber: prev.attemptNumber + 1,
-        medicines,
+        snapshot,
         now
       });
       if (!log) continue;
 
-      const outcome = await placeClaimedCall(
-        cfg, log, { ...parent, phone: phone.e164 }, slot?.label || prev.slot || 'check-in', medicines, deps, now, summary
-      );
+      const outcome = await placeClaimedCall(cfg, log, forCall, slot?.label || prev.slot || 'check-in', snapshot, deps, now, summary);
       if (outcome === 'placed') summary.retried += 1;
     } catch (err) {
       summary.errors.push(`retry ${prev.id}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  // 4. Follow-ups: the parent said "later" / "not yet" about some medicines.
+  const followUps = await prisma.callLog.findMany({
+    where: { ...(scope ? { parentId: scope } : {}), followUpAt: { lte: now }, callDate: today },
+    orderBy: { followUpAt: 'asc' },
+    take: 100
+  });
+
+  for (const prev of followUps) {
+    try {
+      const claimed = await prisma.callLog.updateMany({
+        where: { id: prev.id, followUpAt: { not: null } },
+        data: { followUpAt: null }
+      });
+      if (claimed.count !== 1) continue;
+
+      const parent = await prisma.parentProfile.findUnique({ where: { id: prev.parentId }, include: { user: true } });
+      if (!parent || parent.isDeleted || parent.isPaused || consentBlocksCalls(parent.parentConsent)) continue;
+      const phone = normalizePhone(parent.phone);
+      if (!phone.ok) continue;
+
+      const original = readSnapshot(prev.resultJson);
+      let laterNames: string[] = [];
+      try {
+        const results = JSON.parse(prev.resultJson || '{}')?.medicineResults;
+        if (Array.isArray(results)) laterNames = results.filter((r: { status?: string }) => r.status === 'later').map((r: { name: string }) => r.name);
+      } catch {
+        laterNames = [];
+      }
+      const medicines = original.medicines.filter(m => laterNames.includes(m.name));
+      if (medicines.length === 0) continue;
+
+      const forCall: ParentForCall = { ...parent, phone: phone.e164 };
+      const snapshot: CallSnapshot = {
+        medicines,
+        callType: 'followup',
+        asked: await extrasFor(forCall, 'followup', [], now),
+        followUpOf: prev.id
+      };
+      const log = await claimAttempt({
+        parentId: parent.id,
+        slotId: null,
+        slot: 'followup',
+        callDate: today,
+        attemptNumber: 1,
+        snapshot,
+        now
+      });
+      if (!log) continue;
+      const outcome = await placeClaimedCall(cfg, log, forCall, 'Follow-up', snapshot, deps, now, summary);
+      if (outcome === 'placed') summary.followUps += 1;
+    } catch (err) {
+      summary.errors.push(`follow-up ${prev.id}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -401,11 +590,12 @@ const MAX_MANUAL_PER_HOUR = 2;
 const MAX_MANUAL_PER_DAY = 5;
 
 /**
- * A call requested by the parent's owner ("test call" / "call now"). Never
+ * A call requested by the parent's family ("test call" / "call now"). Never
  * retried, and rate-limited because every call costs money.
+ * `requesterId` must already have manage access to the parent (owner or co-manager).
  */
 export async function placeManualCall(
-  input: { parentId: string; ownerId: string; kind: 'test' | 'manual'; slotType?: string },
+  input: { parentId: string; requesterId: string; kind: 'test' | 'manual'; slotType?: string },
   deps: DispatchDeps = {}
 ): Promise<ManualCallResult> {
   const cfg = deps.config !== undefined ? deps.config : getSarvamConfig();
@@ -423,7 +613,8 @@ export async function placeManualCall(
     where: { id: input.parentId },
     include: { callSchedule: { where: { isActive: true } }, medicines: true, user: { include: { subscription: true } } }
   });
-  if (!parent || parent.isDeleted || parent.userId !== input.ownerId) {
+  // Routes check access too; this keeps the rule even for callers that forget (e.g. a WhatsApp button).
+  if (!parent || parent.isDeleted || !roleAllows(await parentRoleFor(input.requesterId, parent.id), 'manage')) {
     return { ok: false, status: 404, code: 'NOT_FOUND', error: 'Parent profile not found.' };
   }
   const sub = parent.user.subscription;
@@ -437,6 +628,14 @@ export async function placeManualCall(
   }
   if (!parent.consentGiven) {
     return { ok: false, status: 409, code: 'NO_CONSENT', error: 'Parent consent is required before calls can be placed.' };
+  }
+  if (consentBlocksCalls(parent.parentConsent)) {
+    return {
+      ok: false,
+      status: 409,
+      code: 'PARENT_SAID_NO',
+      error: `${parent.name} asked not to be called. Talk with them first; resuming calls lets Saathi ask them again.`
+    };
   }
   if (parent.isPaused) {
     return { ok: false, status: 409, code: 'PAUSED', error: 'Calls are paused for this parent. Resume calls first.' };
@@ -475,8 +674,10 @@ export async function placeManualCall(
     slots.find(s => s.linkedMedicineNames.length > 0) ||
     slots[0];
 
-  const inactiveNames = new Set(parent.medicines.filter(m => !m.isActive).map(m => m.name));
-  const medicines = chosen ? slotMedicines(chosen, inactiveNames) : [];
+  const { inactiveNames, purposes, activeNames } = medicineMaps(parent.medicines);
+  const medicines = chosen ? slotMedicines(chosen, inactiveNames, purposes) : [];
+  const forCall: ParentForCall = { ...parent, phone: phone.e164 };
+  const snapshot: CallSnapshot = { medicines, callType: 'reminder', asked: await extrasFor(forCall, 'reminder', activeNames, now) };
 
   const log = await claimAttempt({
     parentId: parent.id,
@@ -484,20 +685,16 @@ export async function placeManualCall(
     slot: input.kind,
     callDate: istDateString(now),
     attemptNumber: 1,
-    medicines,
+    snapshot,
     now
   });
   if (!log) {
     return { ok: false, status: 409, code: 'DUPLICATE', error: 'A call is already being placed.' };
   }
 
-  const summary: DispatchSummary = {
-    configured: true, parentsChecked: 1, placed: 0, retried: 0, failedToPlace: 0,
-    alreadyCalled: 0, cappedByPlan: 0, staleClosed: 0, autoResumed: 0, errors: []
-  };
-  const outcome = await placeClaimedCall(
-    cfg, log, { ...parent, phone: phone.e164 }, chosen?.label || 'check-in', medicines, deps, now, summary
-  );
+  const summary = emptySummary(true);
+  summary.parentsChecked = 1;
+  const outcome = await placeClaimedCall(cfg, log, forCall, chosen?.label || 'check-in', snapshot, deps, now, summary);
   if (outcome === 'provider_account') {
     return {
       ok: false,

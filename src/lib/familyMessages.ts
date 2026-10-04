@@ -20,8 +20,10 @@ export interface NotifyAlert {
   message: string;
 }
 
+export type FamilyMessageKind = Extract<WhatsAppTemplateKind, 'call_update' | 'attention' | 'emergency'>;
+
 export interface PlannedMessage {
-  kind: WhatsAppTemplateKind;
+  kind: FamilyMessageKind;
   level: number;
   params: string[];
   /** The rendered text, as the family will read it. */
@@ -38,7 +40,13 @@ export interface AnsweredCallFacts {
   feedback?: string | null;
 }
 
-const STATUS_WORD: Record<MedicineResult['status'], string> = { taken: 'taken', missed: 'missed', unknown: 'not sure' };
+const STATUS_WORD: Record<MedicineResult['status'], string> = {
+  taken: 'taken',
+  missed: 'missed',
+  unknown: 'not sure',
+  later: 'will take later (Saathi will call back)',
+  stopped: 'stopped taking it'
+};
 
 /** "Answered the morning call at 09:10 AM. Medicines: Telmisartan taken, Metformin missed. Mood: calm. They said: "..."" */
 export function describeAnsweredCall(f: AnsweredCallFacts): string {
@@ -68,7 +76,7 @@ export function planFamilyMessage(input: {
   if (!top && !input.update) return null;
 
   const name = cleanParam(input.parentName, 60);
-  let kind: WhatsAppTemplateKind;
+  let kind: FamilyMessageKind;
   let params: string[];
 
   if (level >= 4) {
@@ -99,6 +107,7 @@ export const WA_REPLIES = {
   alreadyAcknowledged: 'This alert was already marked as handled.',
   calling: (parentName: string) => `Saathi is calling ${parentName} now. You will get the result here when the call ends.`,
   callFailed: (reason: string) => `We could not start the call: ${reason}`,
+  handledBy: (name: string) => `Thanks. ${name} is already handling this alert.`,
   stopped: 'You will no longer get WhatsApp updates from Aaptha. Reply START to turn them back on.',
   started: 'WhatsApp updates from Aaptha are on. You will get a message after each call.',
   autoReply: (appUrl: string) =>

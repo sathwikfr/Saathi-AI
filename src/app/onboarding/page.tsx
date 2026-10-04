@@ -29,7 +29,10 @@ import {
   Coffee,
   Check,
   Camera,
-  CalendarClock
+  CalendarClock,
+  ShieldAlert,
+  MessageCircle,
+  Download
 } from 'lucide-react';
 import { WizardShell, StepHeader, SlotPicker, FoodPicker, foodLabel } from '@/components/onboarding/WizardUI';
 import { PhoneField } from '@/components/auth/AuthUI';
@@ -42,6 +45,7 @@ import {
   getSelectableCallTimes
 } from '@/lib/scheduleGenerator';
 import { PARENT_LANGUAGES } from '@/lib/parentLanguages';
+import { introScript, noticeLangFor, NOTICES } from '@/lib/parentNotices';
 
 function OnboardingContent() {
   const router = useRouter();
@@ -107,6 +111,7 @@ function OnboardingContent() {
     timingSlots?: MedicineTimingSlot[];
     foodRelation?: FoodRelation;
     frequency: Medicine['frequency'];
+    purpose?: string;
   }>>([
     { name: '', dosage: '1 tablet after breakfast', timeOfDay: 'morning', timingSlots: ['morning'], foodRelation: 'after_food', frequency: 'daily' }
   ]);
@@ -117,9 +122,11 @@ function OnboardingContent() {
   const [unspecifiedMeds, setUnspecifiedMeds] = useState<Array<{ name: string; dosage?: string; index: number }>>([]);
 
   // Step 4: Emergency Contacts
-  const [emergencyContacts, setEmergencyContacts] = useState<Array<{ name: string; relation: string; phone: string; priority: 'primary' | 'secondary' }>>([
-    { name: user?.name || '', relation: 'Son / Primary Caregiver', phone: user?.phone || '', priority: 'primary' }
+  const [emergencyContacts, setEmergencyContacts] = useState<Array<{ name: string; relation: string; phone: string; priority: 'primary' | 'secondary'; isLocal?: boolean }>>([
+    { name: user?.name || '', relation: 'Son / Primary Caregiver', phone: user?.phone || '', priority: 'primary', isLocal: false }
   ]);
+  const [address, setAddress] = useState('');
+  const [livesAlone, setLivesAlone] = useState(false);
 
   // Step 5: Consent
   const [consentConfirmed, setConsentConfirmed] = useState(false);
@@ -128,6 +135,8 @@ function OnboardingContent() {
   const [createdParentId, setCreatedParentId] = useState<string>('');
   const [testCalling, setTestCalling] = useState(false);
   const [testCallResult, setTestCallResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [saathiNumber, setSaathiNumber] = useState<string | null>(null);
+  const [introDone, setIntroDone] = useState(false);
 
   // --------------------------------------------------------------------------
   // MEDICINE REPORT EXTRACTION HANDLERS
@@ -434,7 +443,7 @@ function OnboardingContent() {
   const addContactRow = () => {
     setEmergencyContacts([
       ...emergencyContacts,
-      { name: '', relation: 'Family Member', phone: '', priority: 'secondary' }
+      { name: '', relation: 'Neighbour', phone: '', priority: 'secondary', isLocal: true }
     ]);
   };
 
@@ -473,6 +482,10 @@ function OnboardingContent() {
         setErrorMsg('At least one primary emergency contact is required');
         return;
       }
+      if (livesAlone && !emergencyContacts.some(c => c.isLocal && c.name.trim() && c.phone.trim())) {
+        setErrorMsg(`Since ${name} lives alone, please add someone who lives nearby and can go and check on them.`);
+        return;
+      }
       setStep(5);
     }
   };
@@ -505,7 +518,8 @@ function OnboardingContent() {
           callSchedule: activeSchedule,
           consentGiven: true,
           medicines: validMeds,
-          emergencyContacts
+          emergencyContacts,
+          details: { address: address.trim() || null, livesAlone }
         })
       });
 
@@ -521,6 +535,11 @@ function OnboardingContent() {
 
       setCreatedParentId(data.parent.id);
       setStep(6);
+      // Saathi's fixed calling number, for the contact card on the last step.
+      fetch(`/api/parents/${data.parent.id}`)
+        .then(r => (r.ok ? r.json() : null))
+        .then(d => setSaathiNumber(d?.saathiNumber || null))
+        .catch(() => undefined);
     } catch {
       setErrorMsg('Network error. Please try again.');
     } finally {
@@ -1032,6 +1051,18 @@ function OnboardingContent() {
                         <span className="mini-label">With food?</span>
                         <FoodPicker value={med.foodRelation} onChange={(v) => updateManualMedicineFoodRelation(idx, v)} />
                       </div>
+                      <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                        <label className="mini-label" htmlFor={`med-why-${idx}`}>Why it matters, in your words (optional)</label>
+                        <input
+                          id={`med-why-${idx}`}
+                          type="text"
+                          placeholder="e.g. keeps your BP steady"
+                          value={med.purpose || ''}
+                          onChange={(e) => updateMedicineField(idx, 'purpose', e.target.value)}
+                          className="form-input"
+                          maxLength={160}
+                        />
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -1201,9 +1232,37 @@ function OnboardingContent() {
       {/* STEP 4: EMERGENCY CONTACTS */}
       {step === 4 && (
         <div className="animate-fade-in">
-          <StepHeader eyebrow="Step 4 · Family contacts" title="Who should we reach if something is wrong?">
-            These people are saved with {name}&apos;s profile, starting with the person to contact first.
+          <StepHeader eyebrow="Step 4 · Emergency plan" title="Who should we reach if something is wrong?">
+            If Saathi hears an emergency, we phone you and the first person who lives near {name}, with the address. If nobody answers in 10 minutes, we phone the next person.
           </StepHeader>
+
+          <div className="notice amber" role="note" style={{ marginBottom: '16px' }}>
+            <ShieldAlert size={18} />
+            <div>
+              <b>Aaptha is not an emergency service.</b> In an emergency, {name} or anyone nearby should call <b>112</b>. Saathi says this on the call too.
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label" htmlFor="parent-address">{name}&apos;s home address</label>
+            <textarea
+              id="parent-address"
+              className="form-input"
+              rows={2}
+              placeholder="House, street, area, city, PIN, landmark"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+            />
+            <span className="form-hint">Read out to the nearby contact during an emergency call.</span>
+          </div>
+
+          <div className="toggle-row" style={{ marginBottom: '12px' }}>
+            <div>
+              <strong>{name} lives alone</strong>
+              <p>If {name} can&apos;t be reached all day, we ask someone nearby to go and check.</p>
+            </div>
+            <button type="button" role="switch" aria-checked={livesAlone} aria-label="Lives alone" className="switch" onClick={() => setLivesAlone(v => !v)} />
+          </div>
 
           <div style={{ display: 'grid', gap: '12px', marginBottom: '16px' }}>
             {emergencyContacts.map((c, idx) => (
@@ -1252,6 +1311,22 @@ function OnboardingContent() {
                     />
                   </div>
                   <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                    <label style={{ display: 'flex', gap: '10px', alignItems: 'center', fontSize: '0.88rem', fontWeight: 500 }}>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={!!c.isLocal}
+                        className="switch"
+                        onClick={() => {
+                          const updated = [...emergencyContacts];
+                          updated[idx].isLocal = !updated[idx].isLocal;
+                          setEmergencyContacts(updated);
+                        }}
+                      />
+                      Lives near {name || 'them'} and can go there
+                    </label>
+                  </div>
+                  <div className="form-group" style={{ gridColumn: '1 / -1' }}>
                     <label className="mini-label" htmlFor={`c-phone-${idx}`}>Mobile number</label>
                     <input
                       id={`c-phone-${idx}`}
@@ -1291,8 +1366,8 @@ function OnboardingContent() {
       {/* STEP 5: CONSENT */}
       {step === 5 && (
         <div className="animate-fade-in">
-          <StepHeader eyebrow="Step 5 · Consent" title={<>Has {name} agreed to the calls?</>}>
-            Saathi only calls people who know to expect it. It&apos;s kinder, and it&apos;s the right thing to do.
+          <StepHeader eyebrow="Step 5 · Consent" title={<>Have you told {name} about the calls?</>}>
+            Saathi only calls people who know to expect it. On the first call Saathi also asks {name} directly, in their language, and calls only continue if they say yes.
           </StepHeader>
 
           <div className="card-flat" style={{ background: 'var(--paper)', marginBottom: '20px', padding: '20px 22px' }}>
@@ -1326,9 +1401,9 @@ function OnboardingContent() {
             </span>
             <span>
               <strong style={{ color: 'var(--ink)', display: 'block', marginBottom: '2px', fontSize: '0.95rem' }}>
-                {name} knows about Saathi and has agreed to receive these calls.
+                I have told {name} about Saathi, and that I will see what they say on the calls.
               </strong>
-              <span style={{ fontSize: '0.84rem' }}>They can hang up at any time, and you can pause calls whenever you like.</span>
+              <span style={{ fontSize: '0.84rem' }}>{name} can say &ldquo;stop calling me&rdquo; on any call, and you can pause calls whenever you like.</span>
             </span>
           </label>
 
@@ -1355,6 +1430,54 @@ function OnboardingContent() {
           <p style={{ fontSize: '1.02rem', color: 'var(--ink-muted)', marginBottom: '28px', maxWidth: '46ch', marginInline: 'auto' }}>
             Check-ins are scheduled for <strong style={{ color: 'var(--ink)' }}>{formatScheduleSummary(callSchedule.filter(s => s.isActive))}</strong>, in {language}.
           </p>
+
+          {(() => {
+            const lang = noticeLangFor(language);
+            const firstTime = callSchedule.filter(s => s.isActive)[0]?.time || callTime;
+            const script = introScript(lang, { parentName: name, time: firstTime, familyName: (user?.name || '').split(' ')[0] });
+            const digits = phone.replace(/\D/g, '');
+            const waTo = digits.length === 10 ? `91${digits}` : digits;
+            return (
+              <div className="card-flat" style={{ textAlign: 'left', marginBottom: '16px', padding: '20px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+                  <span className="icon-tile gold"><MessageCircle size={20} /></span>
+                  <div>
+                    <div style={{ fontWeight: 600 }}>Tell {name} Saathi will call</div>
+                    <div style={{ fontSize: '0.84rem', color: 'var(--ink-muted)' }}>Elders rightly hang up on strangers. A voice note from you makes Saathi a caller they expect.</div>
+                  </div>
+                </div>
+                <p className="quote" style={{ fontSize: '0.98rem', marginBottom: '12px' }}>{script}</p>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <a className="btn btn-primary btn-sm" href={`https://wa.me/${waTo}?text=${encodeURIComponent(script)}`} target="_blank" rel="noreferrer">
+                    <MessageCircle size={14} /> Send on WhatsApp
+                  </a>
+                  <a className="btn btn-ghost btn-sm" href={`/notice/${lang}`} target="_blank" rel="noreferrer">Short notice in {NOTICES[lang].label}</a>
+                  {saathiNumber && (
+                    <a className="btn btn-ghost btn-sm" href="/api/saathi/contact" download="Saathi.vcf">
+                      <Download size={14} /> Save Saathi&apos;s number
+                    </a>
+                  )}
+                  {createdParentId && !introDone && (
+                    <button
+                      type="button"
+                      className="btn btn-quiet btn-sm"
+                      onClick={async () => {
+                        const res = await fetch(`/api/parents/${createdParentId}`, {
+                          method: 'PATCH',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ action: 'setup_step', step: 'introduced', done: true })
+                        });
+                        if (res.ok) setIntroDone(true);
+                      }}
+                    >
+                      <Check size={14} /> I&apos;ve told them
+                    </button>
+                  )}
+                  {introDone && <span className="badge badge-green"><Check size={12} /> Done</span>}
+                </div>
+              </div>
+            );
+          })()}
 
           <div className="card-flat" style={{ textAlign: 'left', marginBottom: '24px', padding: '20px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px' }}>

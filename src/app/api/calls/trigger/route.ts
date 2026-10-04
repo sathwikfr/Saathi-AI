@@ -3,7 +3,7 @@ import { requireUser } from '@/lib/access';
 import { placeManualCall } from '@/lib/callDispatch';
 
 /**
- * "Call now": the parent's owner asks Saathi to call immediately. Scheduled
+ * "Call now": the parent's owner or a co-manager asks Saathi to call immediately. Scheduled
  * daily calls are placed by /api/cron/dispatch, not by this route.
  * Manual calls are rate-limited and never retried.
  */
@@ -23,7 +23,7 @@ export async function POST(req: Request) {
 
   const result = await placeManualCall({
     parentId: body.parentId,
-    ownerId: auth.user.id,
+    requesterId: auth.user.id,
     kind: 'manual',
     slotType: body.slot
   });

@@ -7,7 +7,7 @@ import { Brand } from '@/components/Navbar';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { FoodRelation, MedicineTimingSlot } from '@/lib/types';
 
-const STEPS = ['Parent', 'Medicines', 'Call times', 'Contacts', 'Consent'];
+const STEPS = ['Parent', 'Medicines', 'Call times', 'Emergency plan', 'Consent'];
 
 /** Focused full-page frame for the onboarding wizard. */
 export function WizardShell({ step, children }: { step: number; children: React.ReactNode }) {

@@ -10,9 +10,11 @@ import { newId } from './db';
 import { ALERT_TITLES } from './callInterpretation';
 import { NotifyAlert } from './familyMessages';
 import { notifyFamily, NotifyDeps, NotifyResult } from './familyNotify';
+import { startEscalation, EscalationDeps } from './escalation';
+import { NON_RETRY_SLOTS } from './callPlanning';
 
 /** Injectable dependencies (tests replace the email sender and WhatsApp). */
-export type AlertDeps = NotifyDeps;
+export type AlertDeps = NotifyDeps & EscalationDeps;
 
 export interface RaiseAlertInput {
   parentId: string;
@@ -74,7 +76,7 @@ export async function raiseAlert(input: RaiseAlertInput, deps: AlertDeps = {}): 
   return { ...rec, notified };
 }
 
-/** Level-2 alert once every attempt to reach the parent has failed. */
+/** Level-2 alert once every attempt to reach the parent has failed (level 3, plus a wellness check, if they live alone). */
 export async function raiseUnreachableAlert(
   callLog: { id: string; parentId: string; attemptNumber: number; slot: string | null },
   parentName: string,
@@ -95,14 +97,43 @@ export async function raiseUnreachableAlert(
       deps
     );
   }
-  return raiseAlert(
+  const parent = await prisma.parentProfile.findUnique({ where: { id: callLog.parentId }, select: { livesAlone: true } });
+  // Only a missed daily call means "nobody has heard from them today"; a missed test call doesn't.
+  const livesAlone = !!parent?.livesAlone && !NON_RETRY_SLOTS.includes(callLog.slot || '');
+  const tried = `We tried ${callLog.attemptNumber} time${callLog.attemptNumber === 1 ? '' : 's'} today but could not reach ${parentName} for the ${slotText}check-in call (${reason === 'busy' ? 'line busy' : 'no answer'}).`;
+  const res = await raiseAlert(
     {
       parentId: callLog.parentId,
       callLogId: callLog.id,
-      level: 2,
+      level: livesAlone ? 3 : 2,
       title: ALERT_TITLES.unreachable,
-      message: `We tried ${callLog.attemptNumber} time${callLog.attemptNumber === 1 ? '' : 's'} today but could not reach ${parentName} for the ${slotText}check-in call (${reason === 'busy' ? 'line busy' : 'no answer'}). Please call them when you can.`
+      message: livesAlone
+        ? `${tried} ${parentName} lives alone, so we are asking their local contact to check on them. Please call them too.`
+        : `${tried} Please call them when you can.`
     },
     deps
   );
+  // "Are you OK?" check: a parent who lives alone and can't be reached gets a visit from someone nearby.
+  if (livesAlone && res.alertId && res.created) {
+    await startEscalation(
+      {
+        parentId: callLog.parentId,
+        alertId: res.alertId,
+        kind: 'wellness_check',
+        reason: `${parentName} lives alone and has not answered their check-in calls today.`
+      },
+      deps
+    ).catch(err => console.error('[alerts] Wellness check could not start:', err));
+  }
+  return res;
+}
+
+/** Starts the escalation ladder for every newly created level-4 alert. */
+export async function escalateEmergencies(parentId: string, created: RecordAlertResult[], reason: string, deps: AlertDeps = {}) {
+  for (const r of created) {
+    if (!r.alert || r.alert.level < 4) continue;
+    await startEscalation({ parentId, alertId: r.alert.id, kind: 'emergency', reason }, deps).catch(err =>
+      console.error('[alerts] Escalation could not start:', err)
+    );
+  }
 }

@@ -8,6 +8,25 @@ import { NotificationPreferences } from '@/lib/types';
 import { User as UserIcon, Mail, Lock, Bell, CheckCircle2, AlertCircle, ShieldCheck, KeyRound, Save, Smartphone, X } from 'lucide-react';
 import { WhatsAppSettings } from '@/components/account/WhatsAppSettings';
 
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const HOURS = Array.from({ length: 24 }, (_, h) => h);
+const hourLabel = (h: number) => `${h % 12 === 0 ? 12 : h % 12}:00 ${h < 12 ? 'AM' : 'PM'}`;
+const COMMON_ZONES = [
+  'Asia/Kolkata', 'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles', 'America/Toronto',
+  'Europe/London', 'Europe/Berlin', 'Europe/Amsterdam', 'Asia/Dubai', 'Asia/Singapore', 'Asia/Tokyo', 'Australia/Sydney', 'Pacific/Auckland'
+];
+
+/** Common zones plus the browser's own and the saved one. */
+function timeZoneOptions(saved?: string | null): string[] {
+  let detected = '';
+  try {
+    detected = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  } catch {
+    detected = '';
+  }
+  return [...new Set([...COMMON_ZONES, detected, saved || ''].filter(Boolean))];
+}
+
 export default function EditProfilePage() {
   const { user, refreshUser, setUserDirectly } = useAuth();
 
@@ -61,6 +80,7 @@ export default function EditProfilePage() {
       setAvatar(user.avatar || '');
       if (user.notificationPreferences) {
         setNotifPrefs({
+          ...user.notificationPreferences,
           whatsapp: user.notificationPreferences.whatsapp ?? true,
           sms: user.notificationPreferences.sms ?? true,
           email: user.notificationPreferences.email ?? true,
@@ -410,6 +430,76 @@ export default function EditProfilePage() {
                   <option value={4}>Only emergencies</option>
                 </select>
                 <span className="form-hint">Emergencies are always sent. Every call and alert also appears on your dashboard.</span>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label" htmlFor="tz">Your time zone</label>
+                <select
+                  id="tz"
+                  className="form-input"
+                  value={notifPrefs.timezone || 'Asia/Kolkata'}
+                  onChange={(e) => setNotifPrefs({ ...notifPrefs, timezone: e.target.value === 'Asia/Kolkata' ? null : e.target.value })}
+                >
+                  {timeZoneOptions(notifPrefs.timezone).map(tz => <option key={tz} value={tz}>{tz.replace('_', ' ')}</option>)}
+                </select>
+                <span className="form-hint">Summaries arrive at the hour you pick in this time zone. Call times stay in India time.</span>
+              </div>
+
+              <div>
+                <div className="toggle-row">
+                  <div>
+                    <strong>One summary a day instead of every call</strong>
+                    <p>Routine results wait for one evening message. Anything that needs attention still comes at once.</p>
+                    {notifPrefs.dailySummary && (
+                      <select aria-label="Daily summary time" className="form-input" style={{ marginTop: '8px', maxWidth: '200px' }} value={notifPrefs.dailySummaryHour ?? 20} onChange={(e) => setNotifPrefs({ ...notifPrefs, dailySummaryHour: Number(e.target.value) })}>
+                        {HOURS.map(h => <option key={h} value={h}>{hourLabel(h)}</option>)}
+                      </select>
+                    )}
+                  </div>
+                  <button type="button" role="switch" aria-checked={!!notifPrefs.dailySummary} aria-label="Daily summary" className="switch" onClick={() => setNotifPrefs({ ...notifPrefs, dailySummary: !notifPrefs.dailySummary })} />
+                </div>
+                <div className="toggle-row">
+                  <div>
+                    <strong>Weekly summary</strong>
+                    <p>Medicines taken, mood through the week and anything they mentioned, with a nudge if it is a good week to call.</p>
+                    {(notifPrefs.weeklyDigest ?? true) && (
+                      <div style={{ display: 'flex', gap: '8px', marginTop: '8px', flexWrap: 'wrap' }}>
+                        <select aria-label="Weekly summary day" className="form-input" style={{ maxWidth: '170px' }} value={notifPrefs.digestDay ?? 0} onChange={(e) => setNotifPrefs({ ...notifPrefs, digestDay: Number(e.target.value) })}>
+                          {WEEKDAYS.map((d, i) => <option key={d} value={i}>{d}</option>)}
+                        </select>
+                        <select aria-label="Weekly summary time" className="form-input" style={{ maxWidth: '170px' }} value={notifPrefs.digestHour ?? 9} onChange={(e) => setNotifPrefs({ ...notifPrefs, digestHour: Number(e.target.value) })}>
+                          {HOURS.map(h => <option key={h} value={h}>{hourLabel(h)}</option>)}
+                        </select>
+                      </div>
+                    )}
+                  </div>
+                  <button type="button" role="switch" aria-checked={notifPrefs.weeklyDigest ?? true} aria-label="Weekly summary" className="switch" onClick={() => setNotifPrefs({ ...notifPrefs, weeklyDigest: !(notifPrefs.weeklyDigest ?? true) })} />
+                </div>
+                <div className="toggle-row">
+                  <div>
+                    <strong>Monthly summary</strong>
+                    <p>On the 1st, with a one-page summary you can show their doctor.</p>
+                  </div>
+                  <button type="button" role="switch" aria-checked={notifPrefs.monthlySummary ?? true} aria-label="Monthly summary" className="switch" onClick={() => setNotifPrefs({ ...notifPrefs, monthlySummary: !(notifPrefs.monthlySummary ?? true) })} />
+                </div>
+                <div className="toggle-row">
+                  <div>
+                    <strong>Phone me in an emergency</strong>
+                    <p>Besides WhatsApp, an automated call wakes you if Saathi hears an emergency, even at night where you are. Say &ldquo;yes&rdquo; to tell us you are on it.</p>
+                    {(notifPrefs.wakeForEmergency ?? true) && (
+                      <input
+                        aria-label="Number to call in an emergency"
+                        className="form-input"
+                        style={{ marginTop: '8px', maxWidth: '260px' }}
+                        type="tel"
+                        placeholder={phone || '+1 555 123 4567'}
+                        value={notifPrefs.emergencyPhone || ''}
+                        onChange={(e) => setNotifPrefs({ ...notifPrefs, emergencyPhone: e.target.value })}
+                      />
+                    )}
+                  </div>
+                  <button type="button" role="switch" aria-checked={notifPrefs.wakeForEmergency ?? true} aria-label="Emergency phone call" className="switch" onClick={() => setNotifPrefs({ ...notifPrefs, wakeForEmergency: !(notifPrefs.wakeForEmergency ?? true) })} />
+                </div>
               </div>
 
               <div>

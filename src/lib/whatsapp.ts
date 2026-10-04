@@ -61,6 +61,18 @@ export const WHATSAPP_TEMPLATES = {
     name: 'aaptha_call_emergency',
     body: 'Urgent alert from your scheduled check-in call with {{1}}: {{2}}\n\nTheir phone number is {{3}}. Please call them now.',
     quickReplies: [WA_PAYLOAD.ack] as string[]
+  },
+  /** Everyone else in the family, once someone says "I'm on it" during an urgent alert. */
+  handled: {
+    name: 'aaptha_alert_handled',
+    body: 'Update on the urgent alert from the check-in call with {{1}}: {{2}} is handling it now.\n\nThis update is part of the care plan you set up on Aaptha.',
+    quickReplies: [] as string[]
+  },
+  /** Daily / weekly / monthly summary, at the time the family picked. */
+  summary: {
+    name: 'aaptha_care_summary',
+    body: 'Your {{1}} summary of the check-in calls with {{2}}: {{3}}\n\nThis summary is part of the care plan you set up on Aaptha.',
+    quickReplies: [] as string[]
   }
 } as const;
 
@@ -149,6 +161,31 @@ export function sendText(cfg: WhatsAppConfig, to: string, text: string, fetchImp
     { messaging_product: 'whatsapp', recipient_type: 'individual', to: waDigits(to), type: 'text', text: { body: text.slice(0, 4000), preview_url: false } },
     fetchImpl
   );
+}
+
+export const MAX_MEDIA_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Downloads an image someone sent us (e.g. a parent forwarding a suspicious SMS screenshot).
+ * Two steps, both with the access token: the media id gives a short-lived URL, the URL gives the bytes.
+ */
+export async function downloadMedia(
+  cfg: WhatsAppConfig,
+  mediaId: string,
+  fetchImpl: typeof fetch = fetch
+): Promise<{ data: Buffer; mimeType: string }> {
+  const meta = await fetchImpl(`${cfg.apiBase}/${cfg.apiVersion}/${encodeURIComponent(mediaId)}`, {
+    headers: { Authorization: `Bearer ${cfg.accessToken}` },
+    signal: AbortSignal.timeout(15000)
+  });
+  const info = (await meta.json().catch(() => ({}))) as { url?: string; mime_type?: string; file_size?: number };
+  if (!meta.ok || !info.url) throw new WhatsAppApiError(`media lookup failed (HTTP ${meta.status})`, meta.status);
+  if (info.file_size && info.file_size > MAX_MEDIA_BYTES) throw new WhatsAppApiError('media too large', 413);
+  const file = await fetchImpl(info.url, { headers: { Authorization: `Bearer ${cfg.accessToken}` }, signal: AbortSignal.timeout(20000) });
+  if (!file.ok) throw new WhatsAppApiError(`media download failed (HTTP ${file.status})`, file.status);
+  const data = Buffer.from(await file.arrayBuffer());
+  if (data.length > MAX_MEDIA_BYTES) throw new WhatsAppApiError('media too large', 413);
+  return { data, mimeType: (info.mime_type || file.headers.get('content-type') || '').split(';')[0].trim() };
 }
 
 /** Meta signs webhook bodies with the app secret: `X-Hub-Signature-256: sha256=<hex>`. */

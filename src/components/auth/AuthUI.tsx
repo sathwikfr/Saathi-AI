@@ -128,9 +128,11 @@ type PhoneFieldProps = {
   autoFocus?: boolean;
   /** Fixed +91 prefix and no country picker (the parent's phone: Saathi calls numbers in India). */
   indiaOnly?: boolean;
+  /** The number may be left empty (e.g. a family invite's WhatsApp number). */
+  optional?: boolean;
 };
 
-export function PhoneField({ id, value, onChange, autoFocus, indiaOnly = false }: PhoneFieldProps) {
+export function PhoneField({ id, value, onChange, autoFocus, indiaOnly = false, optional = false }: PhoneFieldProps) {
   const [selected, setSelected] = React.useState('IN');
 
   if (indiaOnly) {
@@ -146,7 +148,7 @@ export function PhoneField({ id, value, onChange, autoFocus, indiaOnly = false }
           value={value}
           onChange={(e) => onChange(e.target.value)}
           autoFocus={autoFocus}
-          required
+          required={!optional}
         />
       </div>
     );
@@ -196,7 +198,7 @@ export function PhoneField({ id, value, onChange, autoFocus, indiaOnly = false }
         value={national}
         onChange={(e) => emit(e.target.value, active.dial)}
         autoFocus={autoFocus}
-        required
+        required={!optional}
       />
     </div>
   );

@@ -8,9 +8,12 @@ import {
   CaregiverInvite,
   NotificationPreferences,
   FoodRelation,
-  ScheduledCallSlot
+  ScheduledCallSlot,
+  HealthInsight,
+  ParentAccessRole
 } from '@/lib/types';
 import { timeToMinutes } from '@/lib/scheduleGenerator';
+import { CallFact } from '@/lib/insightRules';
 
 export type ParentDetails = {
   parent: ParentProfile;
@@ -21,7 +24,53 @@ export type ParentDetails = {
   suggestions: ScheduleSuggestion[];
   caregivers: CaregiverInvite[];
   notifPrefs: NotificationPreferences;
+  role: ParentAccessRole;
+  insights: HealthInsight[];
+  saathiNumber: string | null;
+  supportPhone: string | null;
+  cardUrl: string | null;
 };
+
+/** Owner or co-manager: may change calls, medicines, contacts. */
+export function canManage(role?: ParentAccessRole) {
+  return role === 'owner' || role === 'co_manager';
+}
+
+/** A call log as the insight rules see it (client side, for the "usual vs this week" card). */
+export function callLogToFact(c: CallLog): CallFact {
+  const at = new Date(c.createdAt || c.scheduledTime);
+  return {
+    id: c.id,
+    date: new Date(at.getTime() + 5.5 * 3600000).toISOString().slice(0, 10),
+    at,
+    status: c.status,
+    scheduled: !!c.slotId && !['companion', 'followup', 'callback', 'test', 'manual'].includes(c.slot || ''),
+    mood: c.mood,
+    healthConcern: c.details?.healthConcern || null,
+    feedback: c.notes || null,
+    pain: c.details?.pain || null,
+    painWhere: c.details?.painWhere || null,
+    sleep: c.details?.sleep || null,
+    appetite: c.details?.appetite || null,
+    parentWords: null,
+    medicineResults: c.details?.medicineResults || []
+  };
+}
+
+/** wa.me link that opens WhatsApp with a message ready to send (to a number, or let them pick a chat). */
+export function whatsappShareLink(text: string, phone?: string) {
+  const to = phone ? phone.replace(/\D/g, '') : '';
+  return `https://wa.me/${to}?text=${encodeURIComponent(text)}`;
+}
+
+export async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export type Toast = { text: string; type: 'success' | 'info' | 'error' };
 

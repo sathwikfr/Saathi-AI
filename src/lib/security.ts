@@ -64,6 +64,14 @@ export function clearRateLimit(key: string): void {
   rateLimits.delete(key);
 }
 
+/** Counts every use (not only failures): for actions that cost money or could be guessed at. */
+export function consumeRateLimit(key: string, maxAttempts: number, windowMs: number): { allowed: boolean; retryAfterSec?: number } {
+  const check = checkRateLimit(key, maxAttempts, windowMs);
+  if (!check.allowed) return { allowed: false, retryAfterSec: check.retryAfterSec };
+  recordFailedAttempt(key, windowMs);
+  return { allowed: true };
+}
+
 // ---------------------------------------------------------------------------
 // 2. OTP CODES (stored hashed in the database only)
 // ---------------------------------------------------------------------------

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import {
   getParentsForUser,
+  getSharedParentsForUser,
   createParent,
   setMedicinesForParent,
   setEmergencyContacts,
@@ -11,6 +12,7 @@ import { requireUser } from '@/lib/access';
 import { canAddParents, getEffectivePlan, smallestPlanFor } from '@/lib/plans';
 import { Medicine, EmergencyContact, MedicineTimingSlot, FoodRelation } from '@/lib/types';
 import { normalizePhone } from '@/lib/phone';
+import { prisma } from '@/lib/prisma';
 
 const TIMING_SLOTS: MedicineTimingSlot[] = ['morning', 'afternoon', 'evening', 'bedtime', 'as_needed', 'unspecified'];
 const FOOD_RELATIONS: FoodRelation[] = ['before_food', 'after_food', 'with_food', 'not_specified'];
@@ -22,11 +24,18 @@ export async function GET() {
   if (!auth.ok) return auth.response;
   const { user } = auth;
 
-  const list = await getParentsForUser(user.id);
+  const [list, shared] = await Promise.all([getParentsForUser(user.id), getSharedParentsForUser(user.id)]);
+  // "Families active this week" (admin): the dashboard loads this list, so a visit is recorded here, at most hourly.
+  const hourAgo = new Date(Date.now() - 3600000);
+  await prisma.user
+    .updateMany({ where: { id: user.id, OR: [{ lastSeenAt: null }, { lastSeenAt: { lt: hourAgo } }] }, data: { lastSeenAt: new Date() } })
+    .catch(() => undefined);
   const plan = getEffectivePlan(user.subscription, user.createdAt);
 
   return NextResponse.json({
-    parents: list,
+    parents: list.map(p => ({ ...p, accessRole: 'owner' })),
+    // Parents someone else added and shared with this user (family circle).
+    sharedParents: shared,
     planLimits: {
       planId: plan.id,
       planName: plan.name,
@@ -57,7 +66,8 @@ export async function POST(req: Request) {
       callSchedule,
       consentGiven,
       medicines,
-      emergencyContacts
+      emergencyContacts,
+      details
     } = body;
 
     if (!name || typeof name !== 'string' || !name.trim()) {
@@ -96,7 +106,9 @@ export async function POST(req: Request) {
           name: contactName,
           relation: (c.relation || 'Son / Daughter').toString().slice(0, 100),
           phone: norm.e164,
-          priority: formattedContacts.length === 0 ? 'primary' : 'secondary'
+          priority: formattedContacts.length === 0 ? 'primary' : 'secondary',
+          role: c.role,
+          isLocal: c.isLocal === true
         });
       }
     }
@@ -150,7 +162,9 @@ export async function POST(req: Request) {
       timezone: (timezone || 'Asia/Kolkata (IST)').toString().slice(0, 60),
       callTime: callTime || (Array.isArray(callSchedule) && callSchedule[0]?.time) || undefined,
       callSchedule: Array.isArray(callSchedule) ? callSchedule : undefined,
-      consentGiven: true
+      consentGiven: true,
+      // Address, "lives alone", emergency card details (validated in db.cleanParentDetails).
+      details: details && typeof details === 'object' ? details : undefined
     });
 
     try {
@@ -171,7 +185,8 @@ export async function POST(req: Request) {
               timingSlots: slots.length > 0 ? slots : [timeOfDay],
               foodRelation: FOOD_RELATIONS.includes(m.foodRelation as FoodRelation) ? m.foodRelation : 'not_specified',
               frequency: FREQUENCIES.includes(m.frequency as Medicine['frequency']) ? m.frequency! : 'daily',
-              isActive: true
+              isActive: true,
+              purpose: typeof m.purpose === 'string' ? m.purpose : undefined
             };
           });
         if (formattedMeds.length > 0) {

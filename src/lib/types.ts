@@ -103,6 +103,8 @@ export interface LinkedMedicineDetail {
   dosage?: string;
   foodRelation?: FoodRelation;
   questionScript?: string;
+  /** The family's one-line reason ("keeps your BP steady"), filled in from Medicine.purpose when a call is placed. */
+  purpose?: string;
 }
 
 export interface ScheduledCallSlot {
@@ -132,7 +134,32 @@ export interface ParentProfile {
   consentDate: string;
   createdAt: string;
   isDeleted?: boolean;
+  /** The parent's own answer when Saathi asked on a call (consentGiven is the family's confirmation). */
+  parentConsent: ParentConsent;
+  parentConsentAt?: string;
+  address?: string;
+  livesAlone: boolean;
+  bloodGroup?: string;
+  conditions?: string;
+  allergies?: string;
+  nearestHospital?: string;
+  doctorName?: string;
+  doctorPhone?: string;
+  introducedAt?: string;
+  numberSavedAt?: string;
+  birthDate?: string;
+  companionEnabled: boolean;
+  companionDay?: number;
+  companionTime?: string;
+  companionTopics?: string;
+  /** How the logged-in user relates to this parent. */
+  accessRole?: ParentAccessRole;
+  /** Shown on shared parents: who set them up. */
+  ownerName?: string;
 }
+
+export type ParentConsent = 'pending' | 'given' | 'declined' | 'withdrawn';
+export type ParentAccessRole = 'owner' | 'co_manager' | 'viewer';
 
 export interface Medicine {
   id: string;
@@ -144,7 +171,11 @@ export interface Medicine {
   foodRelation?: FoodRelation;
   frequency: 'daily' | 'twice_daily' | 'as_needed';
   isActive: boolean;
+  /** The family's one-line reason, repeated by Saathi. */
+  purpose?: string;
 }
+
+export type ContactRole = 'family' | 'neighbour' | 'security' | 'doctor' | 'caregiver' | 'other';
 
 export interface EmergencyContact {
   id: string;
@@ -153,6 +184,11 @@ export interface EmergencyContact {
   relation: string;
   phone: string;
   priority: 'primary' | 'secondary';
+  role?: ContactRole;
+  /** Lives near the parent and can go there. */
+  isLocal?: boolean;
+  practiceAt?: string;
+  practiceResult?: string;
 }
 
 export interface CallLog {
@@ -176,6 +212,24 @@ export interface CallLog {
   slotId?: string;
   attemptNumber?: number;
   failureReason?: string;
+  /** Parsed from the end-of-call result (answered calls). */
+  details?: CallDetails;
+}
+
+export type MedicineStatus = 'taken' | 'missed' | 'unknown' | 'later' | 'stopped';
+
+export interface CallDetails {
+  medicineResults: { name: string; status: MedicineStatus }[];
+  healthConcern?: string | null;
+  emergencyFlag?: boolean;
+  sleep?: 'good' | 'poor' | null;
+  appetite?: 'good' | 'poor' | null;
+  pain?: 'none' | 'mild' | 'severe' | null;
+  painWhere?: string | null;
+  runningLow?: string[];
+  stoppedReason?: string | null;
+  consent?: string | null;
+  callType?: string;
 }
 
 export interface AlertRecord {
@@ -191,6 +245,49 @@ export interface AlertRecord {
   createdAt?: string;
   /** Set when the family tapped "I'll handle it" on WhatsApp. */
   acknowledgedAt?: string;
+  handledByName?: string;
+  handledVia?: string;
+  outcome?: 'fine' | 'doctor_visit' | 'hospital' | 'other';
+  outcomeNote?: string;
+  outcomeAt?: string;
+  escalation?: EscalationSummary;
+}
+
+export interface EscalationSummary {
+  id: string;
+  kind: 'emergency' | 'wellness_check' | 'practice';
+  status: 'active' | 'handled' | 'exhausted' | 'closed';
+  round: number;
+  handledByName?: string;
+  handledVia?: string;
+  handledAt?: string;
+  nextStepAt?: string;
+  attempts: { name: string; channel: string; status: string; response?: string; createdAt: string; targetType: string }[];
+}
+
+export interface HealthInsight {
+  id: string;
+  parentId: string;
+  kind: string;
+  level: number;
+  title: string;
+  message: string;
+  createdAt: string;
+  dismissedAt?: string;
+}
+
+export interface HealthDocument {
+  id: string;
+  parentId: string;
+  kind: 'prescription' | 'lab_report' | 'scan' | 'bill' | 'discharge' | 'insurance' | 'other';
+  title: string;
+  docDate?: string;
+  renewalDate?: string;
+  notes?: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  createdAt: string;
 }
 
 export interface ScheduleSuggestion {
@@ -211,8 +308,12 @@ export interface CaregiverInvite {
   email: string;
   name: string;
   role: 'viewer' | 'co_manager';
-  status: 'pending' | 'accepted';
+  status: 'pending' | 'accepted' | 'revoked';
   invitedAt: string;
+  phone?: string;
+  acceptedAt?: string;
+  /** Pending invites only, shown to the owner so they can resend the link. */
+  inviteUrl?: string;
 }
 
 export interface NotificationPreferences {
@@ -221,6 +322,15 @@ export interface NotificationPreferences {
   email: boolean;
   push: boolean;
   minimumAlertLevel: number;
+  timezone?: string | null;
+  dailySummary?: boolean;
+  dailySummaryHour?: number;
+  weeklyDigest?: boolean;
+  digestDay?: number;
+  digestHour?: number;
+  monthlySummary?: boolean;
+  wakeForEmergency?: boolean;
+  emergencyPhone?: string | null;
 }
 
 export interface ExtractedMedicineCandidate {

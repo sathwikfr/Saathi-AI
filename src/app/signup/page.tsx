@@ -9,6 +9,7 @@ import { GoogleSignInButton, isGoogleSignInEnabled } from '@/components/GoogleSi
 import { getPlan } from '@/lib/plans';
 import { normalizePhone } from '@/lib/phone';
 import { PlanId } from '@/lib/types';
+import { safeRedirectPath } from '@/lib/redirect';
 import { AlertCircle, ArrowRight, CheckCircle2, Phone, Mail, UserCheck, MessageSquareCode, Sparkles } from 'lucide-react';
 
 function SignUpContent() {
@@ -19,6 +20,9 @@ function SignUpContent() {
   const planParam: PlanId = requestedPlan === 'solo' || requestedPlan === 'extended' ? requestedPlan : 'family';
   const selectedPlan = getPlan(planParam);
   const identifierParam = searchParams.get('identifier') || '';
+  // Family members joining through an invite link go back to it (they don't need a plan of their own).
+  const inviteReturn = safeRedirectPath(searchParams.get('redirect'), '');
+  const afterSignup = inviteReturn.startsWith('/invite/') ? inviteReturn : `/checkout/confirm?plan=${planParam}`;
 
   const { signup, signupWithGoogle, loginWithOtp } = useAuth();
 
@@ -89,7 +93,7 @@ function SignUpContent() {
     setLoading(false);
 
     if (result.success) {
-      router.push(`/checkout/confirm?plan=${planParam}`);
+      router.push(afterSignup);
     } else {
       setErrorMessage(result.error || 'Failed to create account. Please try again.');
       setErrorCode(result.code || null);
@@ -185,7 +189,7 @@ function SignUpContent() {
         return;
       }
 
-      router.push(`/checkout/confirm?plan=${planParam}`);
+      router.push(afterSignup);
     } catch {
       setOtpLoading(false);
       setErrorMessage('Network connection error while verifying code.');
@@ -203,7 +207,7 @@ function SignUpContent() {
     setGoogleLoading(false);
 
     if (result.success) {
-      router.push(`/checkout/confirm?plan=${planParam}`);
+      router.push(afterSignup);
     } else {
       setErrorMessage(result.error || 'Google sign-up failed.');
       setErrorCode(result.code || null);

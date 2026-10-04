@@ -4429,3 +4429,117 @@ svg .steam + .steam {
 .admin-kv > div:last-child { border-bottom: 0; padding-bottom: 0; }
 .admin-kv dt { color: var(--ink-muted); }
 .admin-kv dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* ==========================================================================
+   v1 care features: urgent banner, timeline days, ask chat, escalation steps,
+   medicine week dots, emergency card, printable report. Tokens only.
+   ========================================================================== */
+.banner.red {
+  background: var(--red-soft);
+  border: 1px solid var(--red);
+  color: var(--red);
+}
+.banner.red strong { color: var(--red); }
+.banner.red span { color: var(--ink); }
+
+.chip.good { background: var(--green-soft); border-color: transparent; color: var(--green); }
+.chip.warn { background: var(--amber-soft); border-color: var(--amber-border); color: var(--amber); }
+.chip.alert { background: var(--red-soft); border-color: transparent; color: var(--red); }
+.chip.info { background: var(--teal-soft); border-color: transparent; color: var(--teal); }
+.chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip-row .chip { padding: 3px 10px; font-size: 0.78rem; box-shadow: none; }
+
+.day-list { display: grid; gap: 0; }
+.day-item {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 16px;
+  padding: 16px 0;
+  border-top: 1px solid var(--line-subtle);
+}
+.day-item:first-child { border-top: 0; padding-top: 4px; }
+.day-item time { font-weight: 600; font-size: 0.9rem; color: var(--ink); }
+.day-item time small { display: block; font-weight: 500; font-size: 0.78rem; color: var(--ink-subtle); }
+.day-item p { font-size: 0.92rem; line-height: 1.6; color: var(--ink); margin-top: 8px; }
+@media (max-width: 560px) {
+  .day-item { grid-template-columns: 1fr; gap: 6px; }
+}
+
+.ask-log { display: grid; gap: 10px; margin-bottom: 14px; max-height: 420px; overflow-y: auto; }
+.ask-bubble {
+  max-width: 85%;
+  padding: 10px 14px;
+  border-radius: var(--r-md);
+  font-size: 0.92rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+.ask-bubble.me { justify-self: end; background: var(--teal-fill); color: var(--on-teal); border-bottom-right-radius: 6px; }
+.ask-bubble.ai { justify-self: start; background: var(--panel-elevated); border: 1px solid var(--line-subtle); border-bottom-left-radius: 6px; }
+.ask-form { display: flex; gap: 8px; }
+.ask-form .form-input { flex: 1; }
+
+.esc-steps { list-style: none; display: grid; gap: 6px; margin-top: 10px; font-size: 0.85rem; }
+.esc-steps li { display: flex; gap: 8px; align-items: center; color: var(--ink-muted); }
+.esc-steps li b { color: var(--ink); font-weight: 600; }
+
+.med-week { display: inline-flex; gap: 4px; align-items: center; }
+.med-week i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--line-subtle);
+  display: inline-block;
+}
+.med-week i.taken { background: var(--green); }
+.med-week i.missed, .med-week i.stopped { background: var(--red); }
+.med-week i.later, .med-week i.unknown { background: var(--amber); }
+
+.checklist { list-style: none; display: grid; gap: 10px; }
+.checklist li { display: flex; gap: 12px; align-items: flex-start; }
+.checklist .tick {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid var(--line-strong);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.checklist li.done .tick { background: var(--green); border-color: var(--green); color: #fff; }
+.checklist li.done strong { color: var(--ink-muted); text-decoration: line-through; text-decoration-color: var(--line-strong); }
+.checklist strong { display: block; font-weight: 600; font-size: 0.93rem; }
+.checklist span { font-size: 0.85rem; color: var(--ink-muted); }
+.checklist .row-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+
+.card-sheet {
+  max-width: 640px;
+  margin: 0 auto;
+  background: var(--panel-elevated);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 28px 24px;
+  box-shadow: var(--shadow-xs);
+}
+.card-sheet h1 { font-size: clamp(1.5rem, 4vw, 2rem); letter-spacing: -0.02em; }
+.card-sheet dl { display: grid; grid-template-columns: minmax(110px, 34%) 1fr; gap: 10px 16px; margin-top: 18px; font-size: 0.95rem; }
+.card-sheet dt { color: var(--ink-muted); }
+.card-sheet dd { font-weight: 600; overflow-wrap: anywhere; }
+.card-sheet .sos {
+  margin-top: 18px;
+  padding: 14px 16px;
+  border-radius: var(--r-md);
+  background: var(--red-soft);
+  color: var(--red);
+  font-weight: 600;
+}
+
+@media print {
+  .no-print, nav, header.site-nav, .toast-wrap { display: none !important; }
+  body { background: #fff !important; }
+  .print-sheet { box-shadow: none !important; border: 0 !important; padding: 0 !important; }
+  .print-sheet table { page-break-inside: auto; }
+  .print-sheet tr { page-break-inside: avoid; }
+}

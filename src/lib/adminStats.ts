@@ -69,6 +69,60 @@ export interface AdminStats {
   };
   customerList: AdminCustomer[];
   alerts: AdminAlert[];
+  engagement: AdminEngagement;
+}
+
+/** Is it working for families? (docs/v1-care-plan.md §6: measure it.) */
+export interface AdminEngagement {
+  familiesWithParents: number;
+  activeFamilies7d: number;
+  familyMembers: number;
+  alertsNeedingAction30: number;
+  alertsActedOn30: number;
+  escalations30: { total: number; handled: number; exhausted: number };
+  parentConsent: { given: number; pending: number; said_no: number };
+  cancelReasons: { reason: string; at: string }[];
+}
+
+/** Engagement numbers; real customers only (test accounts are filtered like the rest of the page). */
+async function getEngagement(now: Date): Promise<AdminEngagement> {
+  const since30 = new Date(now.getTime() - 30 * DAY_MS);
+  const since7 = new Date(now.getTime() - 7 * DAY_MS);
+  const real = { user: realUser };
+  const [families, active, members, needing, actedOn, escalations, consent, cancels] = await Promise.all([
+    prisma.user.count({ where: { ...realUser, parents: { some: { isDeleted: false } } } }),
+    prisma.user.count({ where: { ...realUser, parents: { some: { isDeleted: false } }, lastSeenAt: { gte: since7 } } }),
+    prisma.caregiverInvite.count({ where: { status: 'accepted', parent: real } }),
+    prisma.alertRecord.count({ where: { level: { gte: 2 }, createdAt: { gte: since30 }, parent: real } }),
+    prisma.alertRecord.count({
+      where: { level: { gte: 2 }, createdAt: { gte: since30 }, parent: real, OR: [{ acknowledgedAt: { not: null } }, { outcome: { not: null } }] }
+    }),
+    prisma.escalation.groupBy({ by: ['status'], where: { kind: { not: 'practice' }, createdAt: { gte: since30 }, parent: real }, _count: true }),
+    prisma.parentProfile.groupBy({ by: ['parentConsent'], where: { isDeleted: false, ...real }, _count: true }),
+    prisma.userSubscription.findMany({
+      where: { cancelReason: { not: null }, user: realUser },
+      orderBy: { cancelledAt: 'desc' },
+      take: 20,
+      select: { cancelReason: true, cancelledAt: true, updatedAt: true }
+    })
+  ]);
+  const escCount = (st: string) => escalations.find(e => e.status === st)?._count || 0;
+  const consentCount = (vals: Array<string | null>) =>
+    consent.filter(c => vals.includes(c.parentConsent)).reduce((n, c) => n + c._count, 0);
+  return {
+    familiesWithParents: families,
+    activeFamilies7d: active,
+    familyMembers: members,
+    alertsNeedingAction30: needing,
+    alertsActedOn30: actedOn,
+    escalations30: {
+      total: escalations.reduce((n, e) => n + e._count, 0),
+      handled: escCount('handled') + escCount('closed'),
+      exhausted: escCount('exhausted')
+    },
+    parentConsent: { given: consentCount(['given']), pending: consentCount(['pending', null]), said_no: consentCount(['declined', 'withdrawn']) },
+    cancelReasons: cancels.map(c => ({ reason: c.cancelReason || '', at: (c.cancelledAt || c.updatedAt).toISOString() }))
+  };
 }
 
 function dayLabel(date: string): string {
@@ -86,7 +140,7 @@ function bucketFor(planId: PlanId, expired: boolean): PlanBucket {
 export async function getAdminStats(now: Date = new Date()): Promise<AdminStats> {
   const since30 = new Date(now.getTime() - CALL_WINDOW_DAYS * DAY_MS);
 
-  const [users, calls, alertRows] = await Promise.all([
+  const [users, calls, alertRows, engagement] = await Promise.all([
     prisma.user.findMany({
       where: realUser,
       orderBy: { createdAt: 'desc' },
@@ -114,7 +168,8 @@ export async function getAdminStats(now: Date = new Date()): Promise<AdminStats>
         createdAt: true,
         parent: { select: { name: true, user: { select: { name: true, email: true } } } }
       }
-    })
+    }),
+    getEngagement(now)
   ]);
 
   // ---- calls -------------------------------------------------------------
@@ -245,6 +300,7 @@ export async function getAdminStats(now: Date = new Date()): Promise<AdminStats>
       customerName: a.parent.user.name,
       customerEmail: a.parent.user.email,
       createdAt: a.createdAt.toISOString()
-    }))
+    })),
+    engagement
   };
 }

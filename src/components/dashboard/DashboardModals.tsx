@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { AlertTriangle, CheckCircle2, Download, FileText, Pause, Pencil, Pill, Sparkles, Trash2, UploadCloud, Users, ArrowRight } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Copy, Download, FileText, MessageCircle, Pause, Pencil, Pill, Sparkles, Trash2, UploadCloud, Users, ArrowRight } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
 import { SlotPicker, FoodPicker } from '@/components/onboarding/WizardUI';
 import { ExtractedMedicineCandidate, FoodRelation, Medicine, MedicineTimingSlot, ParentProfile } from '@/lib/types';
@@ -9,6 +9,8 @@ import { PhoneField } from '@/components/auth/AuthUI';
 import { normalizePhone } from '@/lib/phone';
 import { PARENT_LANGUAGES } from '@/lib/parentLanguages';
 import { SAMPLE_PRESCRIPTIONS } from '@/lib/medicineExtractor';
+import { medicineKey } from '@/lib/callInterpretation';
+import { copyText, whatsappShareLink } from './helpers';
 
 function ModalTitle({ id, icon, title, sub }: { id: string; icon: React.ReactNode; title: React.ReactNode; sub?: React.ReactNode }) {
   return (
@@ -34,6 +36,8 @@ type AddMedicineProps = {
   setTiming: (v: Medicine['timeOfDay']) => void;
   food: FoodRelation;
   setFood: (v: FoodRelation) => void;
+  purpose: string;
+  setPurpose: (v: string) => void;
   onSubmit: (e: React.FormEvent) => void;
 };
 
@@ -62,6 +66,11 @@ export function AddMedicineModal(p: AddMedicineProps) {
         <div className="form-group">
           <span className="form-label">With food?</span>
           <FoodPicker value={p.food} onChange={p.setFood} />
+        </div>
+        <div className="form-group">
+          <label className="form-label" htmlFor="add-med-purpose">Why it matters, in your words <span className="form-hint">Optional</span></label>
+          <input id="add-med-purpose" type="text" placeholder="e.g. keeps your BP steady" value={p.purpose} onChange={(e) => p.setPurpose(e.target.value)} className="form-input" maxLength={160} />
+          <span className="form-hint">Saathi says this when it asks. People take medicines more often when they hear why. Saathi never makes up a reason.</span>
         </div>
         <button type="submit" className="btn btn-primary btn-block btn-lg" style={{ marginTop: '8px' }}>
           Add medicine
@@ -120,32 +129,90 @@ export function PauseModal(p: PauseProps) {
 type InviteProps = {
   open: boolean;
   onClose: () => void;
+  parentId: string;
   parentName: string;
-  name: string;
-  setName: (v: string) => void;
-  email: string;
-  setEmail: (v: string) => void;
-  onSubmit: (e: React.FormEvent) => void;
+  onCreated: () => void;
 };
 
 export function InviteModal(p: InviteProps) {
   return (
     <Modal open={p.open} onClose={p.onClose} labelledBy="invite-title">
-      <ModalTitle id="invite-title" icon={<Users size={20} />} title="Invite a sibling or caregiver" sub={`Share the care of ${p.parentName}. We’ll save the invite now; email invitations are coming soon.`} />
-      <form onSubmit={p.onSubmit}>
+      {p.open && <InviteForm {...p} />}
+    </Modal>
+  );
+}
+
+function InviteForm({ parentId, parentName, onCreated, onClose }: InviteProps) {
+  const [name, setName] = React.useState('');
+  const [email, setEmail] = React.useState('');
+  const [phone, setPhone] = React.useState('');
+  const [role, setRole] = React.useState<'co_manager' | 'viewer'>('co_manager');
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState('');
+  const [result, setResult] = React.useState<{ url: string; message: string } | null>(null);
+  const [copied, setCopied] = React.useState(false);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError('');
+    const res = await fetch(`/api/parents/${parentId}/caregivers`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, email: email || null, phone: phone || null, role })
+    });
+    const data = await res.json().catch(() => ({}));
+    setBusy(false);
+    if (!res.ok) return setError(data.error || 'Could not create the invite.');
+    setResult({ url: data.url, message: data.message });
+    onCreated();
+  };
+
+  if (result) {
+    const shareText = `Join me in looking after ${parentName} on Aaptha. You'll get the call updates too: ${result.url}`;
+    return (
+      <>
+        <ModalTitle id="invite-title" icon={<Users size={20} />} title={`Send ${name} the link`} sub={result.message} />
+        <div className="card-flat" style={{ background: 'var(--paper)', wordBreak: 'break-all', fontSize: '0.86rem', marginBottom: '14px' }}>{result.url}</div>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <a className="btn btn-primary" href={whatsappShareLink(shareText, phone || undefined)} target="_blank" rel="noreferrer"><MessageCircle size={16} /> Send on WhatsApp</a>
+          <button className="btn btn-ghost" onClick={async () => setCopied(await copyText(result.url))}><Copy size={16} /> {copied ? 'Copied' : 'Copy link'}</button>
+          <button className="btn btn-quiet" onClick={onClose}>Done</button>
+        </div>
+        <p className="form-hint" style={{ marginTop: '12px' }}>The link works once. They sign up or log in, then {parentName} appears on their dashboard.</p>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <ModalTitle id="invite-title" icon={<Users size={20} />} title="Invite a sibling or caregiver" sub={`Share the care of ${parentName}. They get their own updates and can say "I'm on it" when something comes up.`} />
+      <form onSubmit={submit}>
+        {error && <div className="alert-box error" role="alert"><AlertTriangle size={18} /><span>{error}</span></div>}
         <div className="form-group">
           <label className="form-label" htmlFor="invite-name">Their name</label>
-          <input id="invite-name" type="text" placeholder="e.g. Priya Rao" value={p.name} onChange={(e) => p.setName(e.target.value)} className="form-input" autoFocus required />
+          <input id="invite-name" type="text" placeholder="e.g. Priya Rao" value={name} onChange={(e) => setName(e.target.value)} className="form-input" autoFocus required />
         </div>
         <div className="form-group">
-          <label className="form-label" htmlFor="invite-email">Their email</label>
-          <input id="invite-email" type="email" placeholder="priya@example.com" value={p.email} onChange={(e) => p.setEmail(e.target.value)} className="form-input" required />
+          <label className="form-label" htmlFor="invite-phone">Their WhatsApp number <span className="form-hint">Optional, to send the link</span></label>
+          <PhoneField id="invite-phone" value={phone} onChange={setPhone} optional />
         </div>
-        <button type="submit" className="btn btn-primary btn-block btn-lg" style={{ marginTop: '8px' }}>
-          Save invite
+        <div className="form-group">
+          <label className="form-label" htmlFor="invite-email">Their email <span className="form-hint">Optional</span></label>
+          <input id="invite-email" type="email" placeholder="priya@example.com" value={email} onChange={(e) => setEmail(e.target.value)} className="form-input" />
+        </div>
+        <div className="form-group">
+          <span className="form-label">What can they do?</span>
+          <div className="segmented" role="radiogroup" aria-label="What they can do">
+            <button type="button" role="radio" aria-checked={role === 'co_manager'} className={role === 'co_manager' ? 'active' : ''} onClick={() => setRole('co_manager')}>See and manage</button>
+            <button type="button" role="radio" aria-checked={role === 'viewer'} className={role === 'viewer' ? 'active' : ''} onClick={() => setRole('viewer')}>Only see updates</button>
+          </div>
+        </div>
+        <button type="submit" disabled={busy || !name.trim()} className="btn btn-primary btn-block btn-lg" style={{ marginTop: '8px' }}>
+          {busy ? <><span className="spinner" /> Creating…</> : 'Create invite link'}
         </button>
       </form>
-    </Modal>
+    </>
   );
 }
 
@@ -222,10 +289,18 @@ type UploadProps = {
   onReset: () => void;
   confirming: boolean;
   onConfirm: () => void;
+  /** The parent's current medicines, to show what this prescription adds or no longer lists. */
+  currentMedicines: Medicine[];
+  stopIds: string[];
+  setStopIds: (ids: string[]) => void;
 };
 
 export function UploadReportModal(p: UploadProps) {
   const selectedCount = p.meds.filter(m => m.selected && m.name.trim()).length;
+  const active = p.currentMedicines.filter(m => m.isActive);
+  const extractedKeys = new Set(p.meds.filter(m => m.selected && m.name.trim()).map(m => medicineKey(m.name)));
+  const alreadyListed = (name: string) => active.some(a => medicineKey(a.name) === medicineKey(name));
+  const notOnPrescription = active.filter(a => !extractedKeys.has(medicineKey(a.name)));
   const update = (idx: number, patch: Partial<ExtractedMedicineCandidate> | ((m: ExtractedMedicineCandidate) => ExtractedMedicineCandidate)) => {
     p.setMeds(p.meds.map((m, i) => (i === idx ? (typeof patch === 'function' ? patch(m) : { ...m, ...patch }) : m)));
   };
@@ -308,7 +383,12 @@ export function UploadReportModal(p: UploadProps) {
                     />
                     {med.selected ? 'Include' : 'Skipped'}
                   </label>
-                  {med.confidence === 'low' && <span className="badge badge-amber"><AlertTriangle size={12} /> Please check</span>}
+                  <span style={{ display: 'flex', gap: '6px' }}>
+                    {med.name.trim() && (alreadyListed(med.name)
+                      ? <span className="badge badge-neutral">Already on the list</span>
+                      : <span className="badge badge-teal">New</span>)}
+                    {med.confidence === 'low' && <span className="badge badge-amber"><AlertTriangle size={12} /> Please check</span>}
+                  </span>
                 </div>
                 <div className="row-grid" style={{ gap: '10px 12px' }}>
                   <input
@@ -340,6 +420,28 @@ export function UploadReportModal(p: UploadProps) {
               </div>
             ))}
           </div>
+
+          {notOnPrescription.length > 0 && (
+            <div className="card-flat" style={{ marginBottom: '16px', background: 'var(--paper)' }}>
+              <div style={{ fontWeight: 600, fontSize: '0.9rem', marginBottom: '4px' }}>Not on this prescription</div>
+              <p style={{ fontSize: '0.84rem', color: 'var(--ink-muted)', marginBottom: '10px' }}>
+                If the doctor stopped any of these, tick them and Saathi will stop asking. Leave them if they come from another prescription.
+              </p>
+              <div style={{ display: 'grid', gap: '6px' }}>
+                {notOnPrescription.map(m => (
+                  <label key={m.id} style={{ display: 'flex', gap: '10px', alignItems: 'center', fontSize: '0.9rem', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={p.stopIds.includes(m.id)}
+                      onChange={() => p.setStopIds(p.stopIds.includes(m.id) ? p.stopIds.filter(x => x !== m.id) : [...p.stopIds, m.id])}
+                      style={{ width: '17px', height: '17px', accentColor: 'var(--teal)' }}
+                    />
+                    {m.name} <span style={{ color: 'var(--ink-subtle)' }}>{m.dosage}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div style={{ display: 'flex', gap: '10px' }}>
             <button type="button" onClick={p.onClose} className="btn btn-ghost">Cancel</button>

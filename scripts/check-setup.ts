@@ -94,6 +94,35 @@ const GROUPS: Group[] = [
     ]
   },
   {
+    title: 'Emergency phone calls (Sarvam "Aaptha Alert" agent)',
+    why: 'Phones you and a nearby contact in an emergency, and neighbours when a parent who lives alone is unreachable. Without it, escalations send WhatsApp/email only.',
+    checks: [
+      { name: 'SARVAM_ALERT_APP_ID', hint: 'The second agent in docs/sarvam-agent.md §9' },
+      { name: 'SARVAM_ALERT_APP_VERSION', hint: 'Its committed version number' }
+    ]
+  },
+  {
+    title: 'Family AI and scam check (Claude)',
+    why: '"Ask about your parent" and the WhatsApp scam check. Optional: everything else works without it.',
+    optional: true,
+    checks: [{ name: 'ANTHROPIC_API_KEY', hint: 'platform.claude.com → API keys' }]
+  },
+  {
+    title: 'Health record vault (Supabase Storage)',
+    why: 'Private storage for reports, scans and bills. Optional: the vault shows "not switched on" without it.',
+    optional: true,
+    checks: [
+      { name: 'SUPABASE_URL', hint: 'Supabase → Project settings → API → Project URL' },
+      { name: 'SUPABASE_SERVICE_ROLE_KEY', hint: 'Supabase → Project settings → API → service_role key (server only, never NEXT_PUBLIC)' }
+    ]
+  },
+  {
+    title: 'Support phone',
+    why: 'A human number parents can call to check Saathi is real or to stop the calls.',
+    optional: true,
+    checks: [{ name: 'NEXT_PUBLIC_SUPPORT_PHONE', hint: 'Any number a person answers, in +91… format' }]
+  },
+  {
     title: 'WhatsApp call updates (Meta Cloud API)',
     why: 'Sends families one WhatsApp message per call. Until these are set, call alerts are emailed as before.',
     checks: [
@@ -146,6 +175,15 @@ async function checkDatabase(): Promise<string[]> {
       lines.push('✓ WhatsApp tables/columns exist');
     } catch {
       lines.push('✗ WhatsApp tables/columns are missing: apply the additive WhatsApp schema update (see CLAUDE.md, never --accept-data-loss)');
+    }
+    try {
+      await prisma.escalation.findFirst({ select: { id: true } });
+      await prisma.healthInsight.findFirst({ select: { id: true } });
+      await prisma.healthDocument.findFirst({ select: { id: true } });
+      await prisma.parentProfile.findFirst({ select: { parentConsent: true, cardToken: true, companionEnabled: true } });
+      lines.push('✓ v1 care tables/columns exist (escalations, insights, vault, consent)');
+    } catch {
+      lines.push('✗ v1 care tables/columns are missing: apply the reviewed additive SQL (docs/v1-care-plan.md, never --accept-data-loss)');
     }
     await prisma.$disconnect();
   } catch (err) {
