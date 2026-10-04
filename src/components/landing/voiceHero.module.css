@@ -2,9 +2,9 @@
    Landing hero on the page background, one centred composition:
    - left: the pitch. Its tagline lines up with the top of the orb and its
      buttons with the bottom; the headline fills between.
-   - right: the demo. Saathi's voice orb (red/blue particle ring with phone
-     waves, SaathiOrb.tsx 'day' variant). The live captions sit INSIDE the ring,
-     above the waves; the language switch and a one-line note sit under it.
+   - right: the demo. Saathi's voice orb (SaathiBlob.tsx, a living glass blob).
+     The live captions sit INSIDE the orb, above its centre; the language
+     switch and a one-line note sit under it.
    Phones stack it: orb, its controls, then the pitch.
    ========================================================================== */
 
@@ -20,12 +20,16 @@
   --edge: 56px;                       /* side margin */
   --gutter: clamp(48px, 6vw, 120px);  /* between the pitch and the demo */
   --controlsh: 78px;                  /* language switch + note under the orb */
-  /* The orb's footprint (its ring's outer radius): as big as the window height
-     allows with the controls underneath, leaving the pitch at least 420px.
+  /* The demo's footprint (half its height): as big as the window height allows
+     with the controls underneath, leaving the pitch at least 420px. The pitch is
+     as tall as this (2 x --hole), and the headline is sized from it.
      (cqw: the panel's content width; these resolve on the panel's children.) */
   --hole: min(300px,
               calc((clamp(660px, 100svh - 84px, 980px) - var(--controlsh) - 70px) / 2),
               calc((100cqw - var(--gutter) - 420px) / 2));
+  /* The orb's own footprint inside it, a little smaller so the orb doesn't
+     outweigh the headline; the captions and the tap pill are sized from it. */
+  --orb: calc(var(--hole) * 0.82);
   --leftw: min(640px, calc(100cqw - var(--gutter) - var(--hole) * 2));   /* the pitch column */
   --h1: clamp(56px, 6vw, 104px);      /* the most the headline may grow; .h1 fits it to the column */
   --ui: clamp(15px, 1.05vw, 18px);
@@ -123,6 +127,7 @@
   grid-column: 1;
   grid-row: 1;
   align-self: stretch;
+  min-height: calc(var(--hole) * 2);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -225,28 +230,28 @@
   display: contents;
 }
 
-/* The orb's footprint: a 2 x --hole square the tap target fills. */
+/* The orb's footprint: a 2 x --orb square the tap target fills, centred beside the pitch. */
 .stage {
   position: relative;
   z-index: 1;
   grid-column: 2;
   grid-row: 1;
   justify-self: center;
+  align-self: center;
   flex: none;
-  width: calc(var(--hole) * 2);
-  height: calc(var(--hole) * 2);
+  width: calc(var(--orb) * 2);
+  height: calc(var(--orb) * 2);
 }
 
-/* The canvas is 2.9x --hole: the ring's centre line sits at ~0.9 x --hole, so the
-   band's outer edge lands on --hole and its inner edge near 0.72 x --hole. The glow
-   and the echo rings fade out just inside the canvas edge. */
+/* The canvas is 2.9x --orb; the ball's outline sits at about 0.78 x --orb, and
+   its glow and dust fade out just inside the canvas edge. */
 .orb {
   position: absolute;
   z-index: 0;
   left: 50%;
   top: 50%;
-  width: calc(var(--hole) * 2.9);
-  height: calc(var(--hole) * 2.9);
+  width: calc(var(--orb) * 2.9);
+  height: calc(var(--orb) * 2.9);
   transform: translate(-50%, -50%);
   pointer-events: none;
   /* The glow and dust fade out before the canvas edge (the orb's biggest bumps reach
@@ -256,19 +261,17 @@
 }
 
 /* ---------- Live captions, inside the orb ----------
-   The waves run through the exact centre (at their loudest they reach about
-   0.2 x --hole above and below it). The captions sit above them: bottom 0.22 x
-   --hole above centre, at most 0.44 x --hole tall and 0.9 x --hole wide, which
-   keeps them inside the ring's inner edge. They grow upward from the waves. */
+   Above the centre: bottom 0.22 x --orb above it, at most 0.44 x --orb tall and
+   0.9 x --orb wide, which keeps them inside the ball's outline. They grow upward. */
 .inside {
-  --cap: clamp(14px, calc(var(--hole) * 0.078), 24px);
+  --cap: clamp(14px, calc(var(--orb) * 0.078), 24px);
   position: absolute;
   z-index: 1;
   left: 50%;
-  bottom: calc(50% + var(--hole) * 0.22);
+  bottom: calc(50% + var(--orb) * 0.22);
   transform: translateX(-50%);
-  width: calc(var(--hole) * 0.9);
-  max-height: calc(var(--hole) * 0.44);
+  width: calc(var(--orb) * 0.9);
+  max-height: calc(var(--orb) * 0.44);
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
@@ -333,7 +336,7 @@
 }
 
 .insideEn {
-  font-size: clamp(12px, calc(var(--hole) * 0.052), 16px);
+  font-size: clamp(12px, calc(var(--orb) * 0.052), 16px);
   line-height: 1.35;
   color: var(--dim);
   text-wrap: balance;
@@ -370,9 +373,8 @@
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  /* The pill's top sits 0.24 x --hole below centre: just under the waves' loudest
-     reach (0.2 x --hole) at every size, and well inside the ring's inner edge. */
-  padding-top: calc(var(--hole) * 1.24);
+  /* The pill's top sits 0.24 x --orb below centre, well inside the ball's outline. */
+  padding-top: calc(var(--orb) * 1.24);
 }
 
 .circle:focus-visible {
@@ -424,6 +426,7 @@
   grid-column: 2;
   grid-row: 2;
   justify-self: center;
+  margin-top: calc(var(--orb) - var(--hole));   /* up against the (smaller, centred) orb */
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -496,6 +499,7 @@
   .panel {
     --edge: 34px;
     --hole: min(190px, 50cqw);
+    --orb: var(--hole);                 /* phones keep the full size: the captions need the room */
     --h1: 58px;
     --ui: 16px;
     --btnh: 52px;
@@ -533,7 +537,7 @@
   .ctas a { flex: 1 1 0; padding: 0 12px; }
   .circleHint { font-size: 0.84rem; padding: 5px 14px 5px 5px; }
   .circleIcon { width: 26px; height: 26px; }
-  .inside { max-height: calc(var(--hole) * 0.48); }
+  .inside { max-height: calc(var(--orb) * 0.48); }
   .insideEn { display: none; }
 }
 

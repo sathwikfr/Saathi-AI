@@ -131,8 +131,14 @@ src/components/landing/LiveCallPhone.tsx   "How it works": scripted example call
                               Plays twice by itself, then waits with "Ring again". The summary card's call length reads CALL_MS.
 src/components/voice/SaathiBlob.tsx    the hero's voice orb (raw WebGL1, no three.js): a living glass blob. Bumpy
                               geodesic net of dots + lines, glass rim/glint, two inner ribbons (cyan = Saathi,
-                              pink = family), offscreen bloom (two blur sizes), drifting dust, leans toward the mouse.
-                              Modes idle/ringing/saathi/family/thinking/ended; inner light swells per syllable; 'day' variant = ink on light pages. Handle
+                              pink = family), offscreen bloom (two blur sizes), drifting dust.
+                              Voice (2026-10-04): each word -> rough sounds (vowel/hum/hiss/stop, Indic letters too) -> a
+                              loudness level like real audio: swell + rim/inner-light flare per syllable, hiss sparkle,
+                              one thin ring per syllable in the speaker's colour (out from the centre = Saathi, in from
+                              the rim = family). Touch: spring physics (turns/leans to the pointer, surface rises + glows
+                              under it, light streams in, dust parts, jelly wobble on fast moves; press = dent, drag =
+                              stretch, release = ripple; a drag swallows the click so it never starts the call).
+                              Modes idle/ringing/saathi/family/thinking/ended; 'day' variant = ink on light pages. Handle
                               (setMode/pulse/say/level/echo) shared with the older SaathiOrb (red/blue ring, also
                               exports NOISE + syllables) and SaathiSphere (wave-line sheet); those two are only used
                               by src/app/dev/orb, the dev-only playground ("Look" button cycles; 404 outside `next dev`)
