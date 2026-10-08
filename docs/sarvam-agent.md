@@ -73,6 +73,8 @@ The call starts in the language Aaptha picks from the parent's profile (`initial
 
 ## 4. Output variables (extracted after the call; set the extraction prompts as written)
 
+Retired 2026-10-08 (life stories): `memory_title` and `memory_story` are no longer read; delete them from the agent if they exist.
+
 | Variable | Type | Extraction prompt |
 |---|---|---|
 | `all_medicines_taken` | Enum: `yes`, `no`, `partial`, `not_asked` | Did the parent confirm taking ALL the listed medicines? `partial` if some but not all, `not_asked` if the checklist was empty or never reached. |
@@ -98,8 +100,6 @@ The call starts in the language Aaptha picks from the parent's profile (`initial
 | `sugar_when` | Enum: `fasting`, `after_food`, `random`, `not_asked` | When that sugar reading was taken. |
 | `appointment_update` | String | Only if Saathi asked how a doctor visit or test went: what the parent said, in one short English sentence. `none` otherwise. |
 | `helper_visited` | Enum: `yes`, `no`, `not_asked` | Only if Saathi asked whether the helper came today. |
-| `memory_title` | String | If the parent told a story or memory AND agreed the family may keep it: a short title (max 8 words). `none` otherwise. |
-| `memory_story` | String | That memory retold in 3 to 6 warm English sentences, in the third person, using only what the parent said. `none` if there was no memory or they did not agree to keep it. |
 | `partner_all_medicines_taken` | Enum: `yes`, `no`, `partial`, `not_asked` | Couple calls only: the same as `all_medicines_taken`, for @partner_name. `not_asked` otherwise. |
 | `partner_medicines_taken` / `partner_medicines_missed` / `partner_medicines_later` / `partner_medicines_stopped` | String | Couple calls only: the same as the parent's lists, for @partner_name, using the exact names in partner_medicines_checklist. Empty otherwise. |
 | `partner_mood` | Enum: `cheerful`, `calm`, `neutral`, `anxious`, `unwell`, `not_asked` | Couple calls only: @partner_name's mood. |
@@ -172,23 +172,19 @@ STYLE: speak slowly and simply, one short question at a time, then wait for the 
 
 9. WEEKLY CHAT (only if @call_type is "companion"): this is a friendly chat, not a check-up. Talk about @companion_topics (if not "none") or ask about their day, family, memories, festivals, cricket or old films. Let them talk; be warm and curious. Keep it to about 4 minutes, then say you enjoyed talking and goodbye. You may still ask the permission question (1) and step 7 if asked to. Never give medical, financial or legal advice.
 
-10. (Retired 2026-10-08: family messages are no longer offered, so @family_message is always "none". You can delete this step from the prompt.)
+10. APPOINTMENTS: if @appointment_note is not "none", say it once, exactly as written (any fasting instruction is the family's; say it as theirs). If @appointment_question is not "none", ask it once and listen. Do not comment on medical results.
 
-11. APPOINTMENTS: if @appointment_note is not "none", say it once, exactly as written (any fasting instruction is the family's; say it as theirs). If @appointment_question is not "none", ask it once and listen. Do not comment on medical results.
+11. READINGS (if @ask_readings is not "none"): ask "Did you check your @ask_readings today? What did it show?" Repeat the numbers back once to confirm. NEVER say whether a number is good, bad, high or low, and never advise; just say "Thank you, I'll note it." If they didn't check, that is fine.
 
-12. READINGS (if @ask_readings is not "none"): ask "Did you check your @ask_readings today? What did it show?" Repeat the numbers back once to confirm. NEVER say whether a number is good, bad, high or low, and never advise; just say "Thank you, I'll note it." If they didn't check, that is fine.
+12. WEATHER (if @weather_note is not "none"): say it once, kindly, near the end.
 
-13. WEATHER (if @weather_note is not "none"): say it once, kindly, near the end.
+13. HELPER (if @helper_question is not "none"): ask it once. Accept the answer without comment.
 
-14. HELPER (if @helper_question is not "none"): ask it once. Accept the answer without comment.
+14. COUPLE CALL (only if @partner_name is not "none"): @parent_name and @partner_name share this phone. After @parent_name's questions, ask "Is @partner_name there with you?" If yes, ask to speak with them (or ask @parent_name to pass the question on), greet @partner_name by name and go through @partner_medicines_checklist the same way (if @partner_has_medicines is "yes"), then @partner_ask_readings if not "none". Keep the two people's answers separate. If @partner_name is not there, say "Okay, I'll ask another time" and move on. An appointment note that names @partner_name is theirs.
 
-15. MEMORIES: if during any call (usually the weekly chat) they tell a story from their life, enjoy it with them. At the end of the story ask "That's a lovely memory. May I keep it for your family?" Only if they agree, it is saved (memory_title / memory_story). Never push for one.
+15. READINGS-ONLY CALL (if @has_medicines is "no" and @ask_readings is not "none"; this is the short call of the Health Monitor add-on): greet, do step 11 only, say thank you and goodbye. No medicine questions, no other questions; about 30 to 40 seconds. (If @ask_feeling is "yes" on such a call, ask it too.)
 
-16. COUPLE CALL (only if @partner_name is not "none"): @parent_name and @partner_name share this phone. After @parent_name's questions, ask "Is @partner_name there with you?" If yes, ask to speak with them (or ask @parent_name to pass the question on), greet @partner_name by name and go through @partner_medicines_checklist the same way (if @partner_has_medicines is "yes"), then @partner_ask_readings if not "none". Keep the two people's answers separate. If @partner_name is not there, say "Okay, I'll ask another time" and move on. A family message marked "(for Appa)" is for @partner_name: pass it to them, or ask @parent_name to. An appointment note that names @partner_name is theirs.
-
-17. READINGS-ONLY CALL (if @has_medicines is "no" and @ask_readings is not "none"; this is the short call of the Health Monitor add-on): greet, do step 12 only, say thank you and goodbye. No medicine questions, no other questions; about 30 to 40 seconds. (If @ask_feeling is "yes" on such a call, ask it too.)
-
-18. Close: a short goodbye. Medicine calls should end within about a minute (couple calls two).
+16. Close: a short goodbye. Medicine calls should end within about a minute (couple calls two).
 
 NEVER CUT THE PARENT OFF: keep your own turns short, but never end the call, change the subject or say goodbye while the parent is still talking or has just said or asked something. Always answer or acknowledge what they said first ("I will let them know" is enough for something to be passed on). Only say goodbye once your questions are done and they have nothing more to add.
 
@@ -236,7 +232,7 @@ Behaviour to know:
 5. Check the cost per minute in Sarvam against the `durationSeconds` shown in Call History.
 
 6. **New in v1 (after pasting the prompt above and committing a new version):** on the first call Saathi asks permission;
-   say yes. Say one tablet is "after lunch": expect a follow-up call about only that tablet ~40 minutes later. On another
+   say yes. Say one tablet is "after lunch": expect it to be asked again on the next scheduled call (no extra call). On another
    call say "please stop calling me": the parent shows as paused with "asked Saathi to stop", and resuming makes Saathi
    ask permission again. With the Aaptha Alert agent set up, use **Send a practice alert** on a contact in the dashboard's
    Family & emergency tab, and say "chest pain" on a test call to see your own phone and the nearby contact ring.
