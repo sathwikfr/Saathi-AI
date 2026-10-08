@@ -5,6 +5,8 @@ export interface Plan {
   name: string;
   tagline: string;
   priceMonthly: number;
+  /** The old price, shown struck through next to priceMonthly (launch offer). Never charged. */
+  listPrice?: number;
   currency: string;
   hasTrial: boolean;
   trialDays: number;
@@ -23,7 +25,7 @@ export interface Plan {
   askPerMonth: number;
   /** Family members who get WhatsApp updates (owner first, then accepted family members). Remind: 0 (it has a caretaker instead). */
   whatsappPeople: number;
-  /** Family and Extended: the couple call (one call for two parents on a phone) and the timeline. BP/sugar and the daily touches are add-ons. */
+  /** Family and Extended: the couple call (one call for two parents on a phone) and the timeline. BP/sugar is the Health Monitor add-on. */
   premium: boolean;
   /** Free plan only: it lasts this many days from account creation, then calls stop. */
   expiresAfterDays?: number;
@@ -95,7 +97,6 @@ export interface UserSubscription {
   razorpayPaymentId?: string;
   /** Add-ons (any calling plan). */
   healthMonitor?: boolean;
-  dailyTouches?: boolean;
 }
 
 export interface Invoice {
@@ -169,6 +170,8 @@ export interface ParentProfile {
   companionTopics?: string;
   // v1.1
   readingsToAsk: string[];
+  /** 1 = every day, 3 = every 3 days. */
+  readingsEveryDays: number;
   readingRanges?: { bpSysMax?: number; bpSysMin?: number; bpDiaMax?: number; sugarMax?: number; sugarMin?: number };
   callTogetherWithId?: string;
   city?: string;

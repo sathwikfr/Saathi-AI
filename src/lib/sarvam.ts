@@ -136,6 +136,11 @@ export interface OutboundCallInput {
   weatherNote?: string | null;
   /** Slower, clearer, repeats each question once. */
   hearingMode?: boolean;
+  /**
+   * Family / Extended (plans.firmCallLimit): about 90 seconds in (a couple call: about 1 min 50 s, so both get their turn)
+   * Saathi says it will tell the family and ends the call, so a call never runs to 2 minutes. Off (Solo): never cut off.
+   */
+  firmTimeLimit?: boolean;
   /** "Did Lakshmi come today?" */
   helperQuestion?: string | null;
   /** Couple call: the other parent on the same phone. */
@@ -206,6 +211,7 @@ export function buildAgentVariables(input: OutboundCallInput): Record<string, st
     ask_readings: readingList(input.askReadings),
     weather_note: input.weatherNote?.trim() || 'none',
     hearing_mode: yesNo(input.hearingMode),
+    firm_time_limit: !input.firmTimeLimit ? 'no' : input.partner ? 'couple' : 'yes',
     helper_question: input.helperQuestion?.trim() || 'none',
     partner_name: input.partner?.name || 'none',
     partner_has_medicines: yesNo(!!input.partner?.medicines.length),

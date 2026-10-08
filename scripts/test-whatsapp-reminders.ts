@@ -160,7 +160,7 @@ function partA() {
   check('fill() leaves Meta placeholders alone', fill('Hi {{1}} {name}', { name: 'X' }) === 'Hi {{1}} X');
 
   console.log('\nA3. Plans');
-  check('Remind (internal id essential): WhatsApp only, ₹149', PLANS.essential.name === 'Remind' && PLANS.essential.channel === 'whatsapp' && PLANS.essential.priceMonthly === 149 && PLANS.essential.callsPerDay === 0);
+  check('Remind (internal id essential): WhatsApp only, ₹99 (was ₹149)', PLANS.essential.name === 'Remind' && PLANS.essential.channel === 'whatsapp' && PLANS.essential.priceMonthly === 99 && PLANS.essential.listPrice === 149 && PLANS.essential.callsPerDay === 0);
   check('calling plans keep 3 calls a day', [PLANS.solo, PLANS.family, PLANS.extended].every(p => p.channel === 'call' && p.callsPerDay === 3));
   check('Ask: 10 / 20 / 30, none on Remind', PLANS.solo.askPerMonth === 10 && PLANS.family.askPerMonth === 20 && PLANS.extended.askPerMonth === 30 && PLANS.essential.askPerMonth === 0);
   check('WhatsApp people: 1 / 2 / 5', PLANS.solo.whatsappPeople === 1 && PLANS.family.whatsappPeople === 2 && PLANS.extended.whatsappPeople === 5);

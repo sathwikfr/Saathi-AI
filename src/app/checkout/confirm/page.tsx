@@ -3,7 +3,7 @@
 import React, { useState, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { PLANS, PAID_PLAN_IDS, getPlan, HEALTH_MONITOR, DAILY_TOUCHES, healthMonitorPrice, cleanAddons, monthlyPrice } from '@/lib/plans';
+import { PLANS, PAID_PLAN_IDS, getPlan, HEALTH_MONITOR, healthMonitorPrice, healthMonitorListPrice, cleanAddons, monthlyPrice } from '@/lib/plans';
 import { PlanId } from '@/lib/types';
 import { Check, AlertCircle, ArrowRight, ShieldCheck } from 'lucide-react';
 import { CheckoutShell, PageTitle, CheckRow, SummaryRow } from '@/components/checkout/CheckoutUI';
@@ -16,16 +16,15 @@ function ConfirmContent() {
   const initialPlan: PlanId = requestedPlan === 'essential' || requestedPlan === 'solo' || requestedPlan === 'extended' ? requestedPlan : 'family';
 
   const [selectedPlanId, setSelectedPlanId] = useState<PlanId>(initialPlan);
-  // Add-ons on a calling plan: Health Monitor and Daily Touches. ?monitor=1 / ?touches=1 pre-tick them.
+  // The Health Monitor add-on on a calling plan. ?monitor=1 pre-ticks it.
   const [wantsMonitor, setWantsMonitor] = useState(searchParams.get('monitor') === '1');
-  const [wantsTouches, setWantsTouches] = useState(searchParams.get('touches') === '1');
   const [parentConsentChecked, setParentConsentChecked] = useState(false);
   const [termsChecked, setTermsChecked] = useState(false);
   const [errorNotice, setErrorNotice] = useState('');
   const [loading, setLoading] = useState(false);
 
   const plan = getPlan(selectedPlanId);
-  const add = cleanAddons(plan.id, { healthMonitor: wantsMonitor, dailyTouches: wantsTouches });
+  const add = cleanAddons(plan.id, { healthMonitor: wantsMonitor });
   const offersAddons = plan.channel === 'call' && plan.priceMonthly > 0;
   const price = monthlyPrice(plan.id, add);
 
@@ -51,7 +50,7 @@ function ConfirmContent() {
     }
 
     setLoading(true);
-    router.push(`/checkout/payment?plan=${plan.id}${add.healthMonitor ? '&monitor=1' : ''}${add.dailyTouches ? '&touches=1' : ''}`);
+    router.push(`/checkout/payment?plan=${plan.id}${add.healthMonitor ? '&monitor=1' : ''}`);
   };
 
   return (
@@ -74,7 +73,7 @@ function ConfirmContent() {
                   onClick={() => setSelectedPlanId(pid)}
                 >
                   <strong>{p.name}</strong>
-                  <span>{p.priceMonthly === 0 ? 'Free' : `₹${p.priceMonthly}/month`}</span>
+                  <span>{p.priceMonthly === 0 ? 'Free' : <>{p.listPrice && <s className="was-price">₹{p.listPrice}</s>}₹{p.priceMonthly}/month</>}</span>
                 </button>
               );
             })}
@@ -87,10 +86,10 @@ function ConfirmContent() {
             </div>
             <div style={{ textAlign: 'right', flexShrink: 0 }}>
               <div style={{ fontFamily: 'var(--font-serif)', fontSize: '2.2rem', fontWeight: 500, letterSpacing: '-0.03em', lineHeight: 1 }}>
-                ₹{price}
+                {plan.listPrice && !add.healthMonitor && <s className="was-price" style={{ fontSize: '1.1rem' }}>₹{plan.listPrice}</s>}₹{price}
               </div>
               <div style={{ fontSize: '0.8rem', color: 'var(--ink-muted)', marginTop: '4px' }}>
-                {plan.priceMonthly === 0 ? 'for 7 days' : 'per month'}
+                {plan.priceMonthly === 0 ? 'for 7 days' : plan.listPrice ? 'per month · launch offer' : 'per month'}
               </div>
             </div>
           </div>
@@ -111,18 +110,9 @@ function ConfirmContent() {
               <label className="notice" style={{ margin: 0, display: 'flex', gap: '12px', alignItems: 'flex-start', cursor: 'pointer' }}>
                 <input type="checkbox" checked={wantsMonitor} onChange={e => setWantsMonitor(e.target.checked)} style={{ marginTop: '4px' }} />
                 <span>
-                  <strong>Add {HEALTH_MONITOR.name}: +₹{healthMonitorPrice(plan.id)}/month</strong>
+                  <strong>Add {HEALTH_MONITOR.name}: +{healthMonitorListPrice(plan.id) && <s className="was-price">₹{healthMonitorListPrice(plan.id)}</s>}₹{healthMonitorPrice(plan.id)}/month</strong>
                   <span style={{ display: 'block', fontSize: '0.86rem', color: 'var(--ink-muted)', marginTop: '2px' }}>
                     {HEALTH_MONITOR.tagline}. {plan.parentsIncluded > 1 ? `A short readings call a day for each parent (up to ${plan.parentsIncluded}).` : 'A short call a day just for the readings.'} You can add it later too.
-                  </span>
-                </span>
-              </label>
-              <label className="notice" style={{ margin: 0, display: 'flex', gap: '12px', alignItems: 'flex-start', cursor: 'pointer' }}>
-                <input type="checkbox" checked={wantsTouches} onChange={e => setWantsTouches(e.target.checked)} style={{ marginTop: '4px' }} />
-                <span>
-                  <strong>Add {DAILY_TOUCHES.name}: +₹{DAILY_TOUCHES.priceMonthly}/month</strong>
-                  <span style={{ display: 'block', fontSize: '0.86rem', color: 'var(--ink-muted)', marginTop: '2px' }}>
-                    {DAILY_TOUCHES.tagline}. Only on a call that has room, so calls stay short.
                   </span>
                 </span>
               </label>
@@ -146,11 +136,8 @@ function ConfirmContent() {
                 <SummaryRow label={`Due today (${plan.trialDays}-day trial)`} value="₹0" tone="green" strong />
                 <SummaryRow label={`First charge on ${formattedTrialEnd}`} value={`₹${price}`} />
                 <SummaryRow label="After that" value={`₹${price} every month`} />
-                {(add.healthMonitor || add.dailyTouches) && (
-                  <SummaryRow
-                    label="Includes"
-                    value={`${plan.name} ₹${plan.priceMonthly}${add.healthMonitor ? ` + ${HEALTH_MONITOR.name} ₹${healthMonitorPrice(plan.id)}` : ''}${add.dailyTouches ? ` + ${DAILY_TOUCHES.name} ₹${DAILY_TOUCHES.priceMonthly}` : ''}`}
-                  />
+                {add.healthMonitor && (
+                  <SummaryRow label="Includes" value={`${plan.name} ₹${plan.priceMonthly} + ${HEALTH_MONITOR.name} ₹${healthMonitorPrice(plan.id)}`} />
                 )}
               </>
             ) : (

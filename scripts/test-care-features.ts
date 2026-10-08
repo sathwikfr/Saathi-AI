@@ -75,7 +75,9 @@ function partA() {
   check('first call asks consent', first.askConsent);
   check('first call says the safety line', first.saySafetyLine);
   check('at most 2 extras besides consent', [first.askWellbeing, first.refillMedicines.length > 0, !!first.lastCallNote].filter(Boolean).length <= 2, first);
-  check('refill names cleaned for speech', first.refillMedicines[0] === 'Telmisartan 40', first.refillMedicines);
+  check('first call stays short: no feeling, health question or refill', !first.askFeeling && !first.wellbeingTopic && first.refillMedicines.length === 0, first);
+  const refill = planCallExtras({ callType: 'reminder', rhythm: { ...rhythm, parentConsent: 'given' }, lastAnswered: null, activeMedicineNames: ['Tab. Telmisartan 40'], answeredToday: false, now });
+  check('refill names cleaned for speech', refill.refillMedicines[0] === 'Telmisartan 40', refill.refillMedicines);
   const given = planCallExtras({
     callType: 'reminder',
     rhythm: { ...rhythm, parentConsent: 'given', lastSafetyLineAt: new Date(now.getTime() - DAY), lastWellbeingAt: new Date(now.getTime() - DAY), lastRefillCheckAt: new Date(now.getTime() - DAY) },
@@ -348,7 +350,8 @@ async function partB() {
     check('asks consent (new and legacy parents)', c1?.body.app_config.agent_variables.ask_consent === 'yes');
     check('says the safety line', c1?.body.app_config.agent_variables.say_safety_line === 'yes');
     check('medicine reason from the family', c1?.body.app_config.agent_variables.medicines_checklist.includes('[why: keeps your BP steady]'));
-    check('one wellbeing question and the refill check ride along', ['sleep', 'appetite', 'pain'].includes(c1?.body.app_config.agent_variables.wellbeing_topic) && c1?.body.app_config.agent_variables.ask_feeling === 'yes' && c1?.body.app_config.agent_variables.ask_refill === 'yes', c1?.body.app_config.agent_variables);
+    // 2026-10-08: the permission call stays short (a live first call with everything billed 2 minutes).
+    check('no feeling, health question or refill on the permission call', c1?.body.app_config.agent_variables.wellbeing_topic === 'none' && c1?.body.app_config.agent_variables.ask_feeling === 'no' && c1?.body.app_config.agent_variables.ask_refill === 'no', c1?.body.app_config.agent_variables);
 
     // ---- B2 the answers ------------------------------------------------------
     console.log('\nB2. Yes to consent, Metformin "later", knee pain, running low');
@@ -363,7 +366,7 @@ async function partB() {
     }, { now: at(12, 3, 35), deps });
     const p2 = await prisma.parentProfile.findUnique({ where: { id: parent.id } });
     check('consent given, with date and call', p2?.parentConsent === 'given' && !!p2.parentConsentAt && p2.parentConsentCallId === (r2 as { callLogId?: string }).callLogId, p2?.parentConsent);
-    check('wellbeing / refill / safety line marked done', !!p2?.lastWellbeingAt && !!p2?.lastRefillCheckAt && !!p2?.lastSafetyLineAt);
+    check('safety line marked done; wellbeing not (it was not asked)', !!p2?.lastSafetyLineAt && !p2?.lastWellbeingAt, { w: p2?.lastWellbeingAt, r: p2?.lastRefillCheckAt, s: p2?.lastSafetyLineAt });
     check('follow-up scheduled 40 min later', r2.status === 'processed' && !!r2.followUpAt && new Date(r2.followUpAt).getTime() === at(12, 4, 15).getTime(), r2);
     const a2 = await prisma.alertRecord.findMany({ where: { parentId: parent.id } });
     check('no missed-medicine alert for "later"', !a2.some(a => a.title === ALERT_TITLES.missed), a2.map(a => a.title));

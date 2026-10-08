@@ -138,9 +138,9 @@ export default function AccountBillingPage() {
 
   const status = subscription?.status || 'free';
   const isFree = currentPlan.priceMonthly === 0;
-  // What is actually charged each month: the plan plus any add-ons (Health Monitor, Daily Touches).
+  // What is actually charged each month: the plan plus the Health Monitor add-on, if bought.
   const monthlyTotal = isFree ? 0 : subscription?.amount ?? currentPlan.priceMonthly;
-  const addonNames = [subscription?.healthMonitor ? 'Health Monitor' : '', subscription?.dailyTouches ? 'Daily Touches' : ''].filter(Boolean);
+  const addonNames = subscription?.healthMonitor ? ['Health Monitor'] : [];
   const formatDate = (d?: string) =>
     d ? new Date(d).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' }) : null;
   const periodEnd = formatDate(subscription?.currentPeriodEnd);
@@ -354,7 +354,7 @@ export default function AccountBillingPage() {
                       : `${p.parentsIncluded} parent${p.parentsIncluded === 1 ? '' : 's'} · up to ${p.callsPerDay} call${p.callsPerDay === 1 ? '' : 's'} a day`}
                   </span>
                 </div>
-                <strong style={{ fontSize: '1rem' }}>{p.priceMonthly === 0 ? 'Free' : `₹${p.priceMonthly}/mo`}</strong>
+                <strong style={{ fontSize: '1rem' }}>{p.priceMonthly === 0 ? 'Free' : <>{p.listPrice && <s className="was-price">₹{p.listPrice}</s>}₹{p.priceMonthly}/mo</>}</strong>
               </button>
             );
           })}

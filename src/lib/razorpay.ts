@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { PlanId } from './types';
-import { PLANS, PAID_PLAN_IDS, HEALTH_MONITOR, DAILY_TOUCHES, Addons, cleanAddons, monthlyPrice } from './plans';
+import { PLANS, PAID_PLAN_IDS, HEALTH_MONITOR, Addons, cleanAddons, monthlyPrice } from './plans';
 import { isLocalDevRequest } from './devMode';
 
 /**
@@ -69,9 +69,9 @@ export function describeRazorpayPaymentMethod(payment: {
  * The real Razorpay plan id from the env (scripts/create-razorpay-plans.ts). The ids in PLANS are
  * placeholders that don't exist in Razorpay, so they are never sent.
  */
-/** "" | "_MONITOR" | "_TOUCHES" | "_MONITOR_TOUCHES": the end of the env variable name for a combination. */
+/** "" | "_MONITOR": the end of the env variable name for a combination. */
 export function addonSuffix(add: Addons): string {
-  return `${add.healthMonitor ? '_MONITOR' : ''}${add.dailyTouches ? '_TOUCHES' : ''}`;
+  return add.healthMonitor ? '_MONITOR' : '';
 }
 
 function getRazorpayPlanId(planId: PlanId, addons: Partial<Addons> = {}): string | undefined {
@@ -106,7 +106,7 @@ export class PaymentsUnavailableError extends Error {}
 export async function createSubscriptionServer(
   planId: PlanId,
   customer: { userId: string; email: string; name: string; phone?: string },
-  opts: { noTrial?: boolean; healthMonitor?: boolean; dailyTouches?: boolean; /** First charge on this date (a plan change: the old paid period runs until then). */ startAt?: Date } = {}
+  opts: { noTrial?: boolean; healthMonitor?: boolean; /** First charge on this date (a plan change: the old paid period runs until then). */ startAt?: Date } = {}
 ): Promise<CreateSubscriptionResult> {
   const plan = PLANS[planId];
   if (!plan || plan.priceMonthly === 0) {
@@ -129,7 +129,7 @@ export async function createSubscriptionServer(
       notes: {
         carecircle_user_id: customer.userId,
         carecircle_plan_id: planId,
-        ...(add.healthMonitor || add.dailyTouches ? { carecircle_addon: [add.healthMonitor ? HEALTH_MONITOR.id : '', add.dailyTouches ? DAILY_TOUCHES.id : ''].filter(Boolean).join(',') } : {}),
+        ...(add.healthMonitor ? { carecircle_addon: HEALTH_MONITOR.id } : {}),
         customer_email: customer.email
       }
     });
@@ -163,7 +163,7 @@ export async function createSubscriptionServer(
 
   if (isRazorpayConfigured() && !rzpPlanId) {
     console.error(`[payments] RAZORPAY_PLAN_ID_${planId.toUpperCase()}${addonSuffix(add)} is missing: run scripts/create-razorpay-plans.ts and add the ids.`);
-    if (add.healthMonitor || add.dailyTouches) throw new PaymentsUnavailableError('That add-on cannot be added just yet. Please start without it and add it later, or try again soon.');
+    if (add.healthMonitor) throw new PaymentsUnavailableError('That add-on cannot be added just yet. Please start without it and add it later, or try again soon.');
   }
   throw new PaymentsUnavailableError('Online payments are not set up yet. Please try again later.');
 }
@@ -186,7 +186,6 @@ export async function verifySubscriptionPayment(params: {
   planId: PlanId;
   /** Add-ons bought with the plan. */
   healthMonitor?: boolean;
-  dailyTouches?: boolean;
 }): Promise<{ ok: true; isSandbox: boolean } | { ok: false; error: string }> {
   const { paymentId, subscriptionId, signature, userId, planId } = params;
   const add = cleanAddons(planId, params);
@@ -225,7 +224,7 @@ export async function verifySubscriptionPayment(params: {
   }
   // The add-on must match what was bought: one cannot be claimed on a plan that didn't include it (or the reverse).
   const boughtAddons = String(sub?.notes?.carecircle_addon || '').split(',').filter(Boolean).sort().join(',');
-  const expectedAddons = [add.dailyTouches ? DAILY_TOUCHES.id : '', add.healthMonitor ? HEALTH_MONITOR.id : ''].filter(Boolean).sort().join(',');
+  const expectedAddons = add.healthMonitor ? HEALTH_MONITOR.id : '';
   if (boughtAddons !== expectedAddons) {
     return { ok: false, error: 'This subscription is for a different plan.' };
   }

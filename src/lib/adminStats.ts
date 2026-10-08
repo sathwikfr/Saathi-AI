@@ -72,6 +72,8 @@ export interface AdminStats {
   customerList: AdminCustomer[];
   alerts: AdminAlert[];
   engagement: AdminEngagement;
+  /** The scheduler's last run; null = never recorded (or the CronRun table isn't there yet). */
+  cron: { lastRunAt: string; ok: boolean; failed: string | null; durationMs: number } | null;
 }
 
 /** Is it working for families? (docs/v1-care-plan.md §6: measure it.) */
@@ -162,7 +164,7 @@ export function callLength(calls: Array<{ status: string; durationSeconds: numbe
 export async function getAdminStats(now: Date = new Date()): Promise<AdminStats> {
   const since30 = new Date(now.getTime() - CALL_WINDOW_DAYS * DAY_MS);
 
-  const [users, calls, alertRows, engagement] = await Promise.all([
+  const [users, calls, alertRows, engagement, cronRow] = await Promise.all([
     prisma.user.findMany({
       where: realUser,
       orderBy: { createdAt: 'desc' },
@@ -191,7 +193,9 @@ export async function getAdminStats(now: Date = new Date()): Promise<AdminStats>
         parent: { select: { name: true, user: { select: { name: true, email: true } } } }
       }
     }),
-    getEngagement(now)
+    getEngagement(now),
+    // async wrapper: also covers a stale Prisma client without the model (throws synchronously), not just a missing table
+    (async () => prisma.cronRun.findUnique({ where: { name: 'dispatch' } }))().catch(() => null)
   ]);
 
   // ---- calls -------------------------------------------------------------
@@ -325,6 +329,9 @@ export async function getAdminStats(now: Date = new Date()): Promise<AdminStats>
       customerEmail: a.parent.user.email,
       createdAt: a.createdAt.toISOString()
     })),
-    engagement
+    engagement,
+    cron: cronRow
+      ? { lastRunAt: cronRow.lastRunAt.toISOString(), ok: cronRow.ok, failed: cronRow.failed, durationMs: cronRow.durationMs }
+      : null
   };
 }

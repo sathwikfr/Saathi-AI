@@ -37,7 +37,7 @@ export type ParentDetails = {
   /** The owner's plan: 'whatsapp' = Remind (can't switch to calls). */
   ownerPlanChannel?: 'call' | 'whatsapp';
   /** The owner's plan limits (premium = Family / Extended features). */
-  ownerPlan?: { id: string; name: string; premium: boolean; askPerMonth: number; whatsappPeople: number; healthMonitor?: boolean; dailyTouches?: boolean; healthMonitorPrice?: number; dailyTouchesPrice?: number };
+  ownerPlan?: { id: string; name: string; premium: boolean; askPerMonth: number; whatsappPeople: number; healthMonitor?: boolean; healthMonitorPrice?: number };
   /** Health Monitor: the time of the short readings call, if one is set. */
   vitalsCall?: string | null;
   /** WhatsApp reminders, last 14 days, newest first. */

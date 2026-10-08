@@ -4,12 +4,11 @@
  *
  *   plan.premium   Family / Extended: one call for a couple sharing a phone, the timeline.
  *   Health Monitor add-on (any calling plan): BP / sugar by voice, the chart, health trends, the short readings call.
- *   Daily Touches add-on (any calling plan): festival / birthday wishes, weather notes, the helper check.
- * Family messages and life stories were removed (2026-10-08).
+ * Family messages, life stories and the Daily Touches add-on were removed (2026-10-08).
  */
 import { NextResponse } from 'next/server';
 import { prisma } from './prisma';
-import { getEffectivePlan, PLANS, HEALTH_MONITOR, DAILY_TOUCHES, healthMonitorAvailable, dailyTouchesAvailable } from './plans';
+import { getEffectivePlan, PLANS, HEALTH_MONITOR, healthMonitorAvailable } from './plans';
 import { Plan, PlanId } from './types';
 
 async function ownerSubscription(userId: string, now: Date) {
@@ -31,12 +30,6 @@ export async function ownerPlanFor(userId: string, now: Date = new Date()): Prom
 export async function ownerHasHealthMonitor(userId: string, now: Date = new Date()): Promise<boolean> {
   const { sub, plan } = await ownerSubscription(userId, now);
   return !!sub?.healthMonitor && !plan.expired && healthMonitorAvailable(plan.id);
-}
-
-/** Daily Touches bought, on a plan that still counts. */
-export async function ownerHasDailyTouches(userId: string, now: Date = new Date()): Promise<boolean> {
-  const { sub, plan } = await ownerSubscription(userId, now);
-  return !!sub?.dailyTouches && !plan.expired && dailyTouchesAvailable(plan.id);
 }
 
 /** BP / sugar by voice, health trends: the Health Monitor add-on. */
@@ -73,14 +66,3 @@ export function readingsRequired(): NextResponse {
   );
 }
 
-/** 402 for festivals, weather and the helper check without the Daily Touches add-on. */
-export function touchesRequired(): NextResponse {
-  return NextResponse.json(
-    {
-      error: `Festival wishes, weather notes and the helper check are the ${DAILY_TOUCHES.name} add-on. You can add it from your plan page.`,
-      code: 'PLAN_UPGRADE_REQUIRED',
-      addon: DAILY_TOUCHES.id
-    },
-    { status: 402 }
-  );
-}

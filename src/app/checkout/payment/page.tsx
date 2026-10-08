@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { CheckoutShell, PageTitle, SummaryRow } from '@/components/checkout/CheckoutUI';
-import { getPlan, monthlyPrice, HEALTH_MONITOR, cleanAddons, DAILY_TOUCHES } from '@/lib/plans';
+import { getPlan, monthlyPrice, HEALTH_MONITOR, cleanAddons } from '@/lib/plans';
 import { PlanId } from '@/lib/types';
 import { useAuth } from '@/context/AuthContext';
 import { Lock, ShieldCheck, AlertTriangle, ArrowRight } from 'lucide-react';
@@ -50,10 +50,9 @@ function PaymentContent() {
   const searchParams = useSearchParams();
   const planParam = (searchParams.get('plan') as PlanId) || 'family';
   const plan = getPlan(planParam);
-  // Add-ons picked on the plan page (?monitor=1, ?touches=1).
-  const add = cleanAddons(plan.id, { healthMonitor: searchParams.get('monitor') === '1', dailyTouches: searchParams.get('touches') === '1' });
+  // The add-on picked on the plan page (?monitor=1).
+  const add = cleanAddons(plan.id, { healthMonitor: searchParams.get('monitor') === '1' });
   const monitor = add.healthMonitor;
-  const touches = add.dailyTouches;
   const price = monthlyPrice(plan.id, add);
 
   const { user, loading: authLoading } = useAuth();
@@ -85,14 +84,14 @@ function PaymentContent() {
     }
     if (authLoading || !userId) return;
 
-    const key = `${userId}:${plan.id}:${monitor ? 'm' : ''}${touches ? 't' : ''}`;
+    const key = `${userId}:${plan.id}:${monitor ? 'm' : ''}`;
     if (subscriptionRequest.current?.key !== key) {
       subscriptionRequest.current = {
         key,
         result: fetch('/api/razorpay/create-subscription', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ planId: plan.id, healthMonitor: monitor, dailyTouches: touches })
+          body: JSON.stringify({ planId: plan.id, healthMonitor: monitor })
         }).then(async res => ({ ok: res.ok, data: (await res.json()) as CreateSubscriptionResponse }))
       };
     }
@@ -116,13 +115,13 @@ function PaymentContent() {
     return () => {
       cancelled = true;
     };
-  }, [plan.id, plan.priceMonthly, monitor, touches, userId, authLoading, router]);
+  }, [plan.id, plan.priceMonthly, monitor, userId, authLoading, router]);
 
   const verifyWithServer = async (resp: RazorpaySuccessResponse, brand: string) => {
     const res = await fetch('/api/razorpay/verify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...resp, planId: plan.id, healthMonitor: monitor, dailyTouches: touches, paymentMethodBrand: brand })
+      body: JSON.stringify({ ...resp, planId: plan.id, healthMonitor: monitor, paymentMethodBrand: brand })
     });
     const verifyData = await res.json();
     if (!res.ok) {
@@ -147,7 +146,7 @@ function PaymentContent() {
       key: subscriptionData.keyId,
       subscription_id: subscriptionData.subscriptionId,
       name: 'Aaptha',
-      description: `${plan.name}${monitor ? ` + ${HEALTH_MONITOR.name}` : ''}${touches ? ` + ${DAILY_TOUCHES.name}` : ''} — monthly subscription`,
+      description: `${plan.name}${monitor ? ` + ${HEALTH_MONITOR.name}` : ''} — monthly subscription`,
       prefill: { name: user.name, email: user.email, contact: user.phone || '' },
       theme: { color: '#2563eb' },
       handler: async (resp: RazorpaySuccessResponse) => {
@@ -301,7 +300,7 @@ function PaymentContent() {
           </button>
 
           <div style={{ textAlign: 'center', marginTop: '14px' }}>
-            <Link href={`/checkout/confirm?plan=${plan.id}${monitor ? '&monitor=1' : ''}${touches ? '&touches=1' : ''}`} className="link" style={{ fontSize: '0.88rem' }}>Change plan</Link>
+            <Link href={`/checkout/confirm?plan=${plan.id}${monitor ? '&monitor=1' : ''}`} className="link" style={{ fontSize: '0.88rem' }}>Change plan</Link>
           </div>
         </section>
 
@@ -311,7 +310,7 @@ function PaymentContent() {
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '12px', marginBottom: '14px' }}>
             <div>
-              <div style={{ fontWeight: 600, fontSize: '1.02rem' }}>{plan.name}{monitor ? ` + ${HEALTH_MONITOR.name}` : ''}{touches ? ` + ${DAILY_TOUCHES.name}` : ''}</div>
+              <div style={{ fontWeight: 600, fontSize: '1.02rem' }}>{plan.name}{monitor ? ` + ${HEALTH_MONITOR.name}` : ''}</div>
               <div style={{ fontSize: '0.84rem', color: 'var(--ink-muted)' }}>Monthly subscription</div>
             </div>
             <div style={{ fontWeight: 600 }}>₹{price}<span style={{ color: 'var(--ink-muted)', fontWeight: 400, fontSize: '0.84rem' }}>/mo</span></div>

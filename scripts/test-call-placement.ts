@@ -11,7 +11,7 @@ import 'dotenv/config';
 import './lib/testDb';
 import { prisma } from '../src/lib/prisma';
 import { newId } from '../src/lib/db';
-import { SarvamConfig } from '../src/lib/sarvam';
+import { SarvamConfig, buildAgentVariables } from '../src/lib/sarvam';
 import { runDispatch } from '../src/lib/callDispatch';
 import { processSarvamWebhook, RETRY_DELAY_MINUTES, maxFollowUpsPerDay } from '../src/lib/callResults';
 import {
@@ -19,7 +19,7 @@ import {
   CALL_BASE_SECONDS, PER_MEDICINE_SECONDS, HEALTH_BUNDLE_SECONDS, CALL_BUDGET_SECONDS, HEALTH_TAKEOVER_AFTER_MINUTES
 } from '../src/lib/callPlanning';
 import { LinkedMedicineDetail } from '../src/lib/types';
-import { PLANS, DAILY_TOUCHES, healthMonitorPrice, monthlyPrice, healthMonitorAvailable, dailyTouchesAvailable, cleanAddons, carriedPeriod } from '../src/lib/plans';
+import { PLANS, healthMonitorPrice, healthMonitorListPrice, monthlyPrice, healthMonitorAvailable, cleanAddons, carriedPeriod, firmCallLimit } from '../src/lib/plans';
 import { updateUserSubscription } from '../src/lib/db';
 import { ownerHasHealthMonitor, canTrackReadings, isPremiumParent } from '../src/lib/planAccess';
 import { callLength } from '../src/lib/adminStats';
@@ -76,6 +76,11 @@ function partA() {
   check('none: no questions', !none.askFeeling && !none.wellbeingTopic);
   check('full: feeling + one health question', !!full.askFeeling && !!full.wellbeingTopic);
   check('feeling: only "How are you feeling?"', !!feeling.askFeeling && !feeling.wellbeingTopic && feeling.refillMedicines.length === 0);
+  const consentCall = planCallExtras({ ...base, rhythm: { ...base.rhythm, parentConsent: null }, healthCarry: 'full' });
+  check('permission call: only permission + safety line + tablets (health questions move on)', consentCall.askConsent && !consentCall.askFeeling && !consentCall.wellbeingTopic && consentCall.refillMedicines.length === 0 && !consentCall.lastCallNote, consentCall);
+  const noMonitor = planCallExtras({ ...base, rhythm: { ...base.rhythm, lastSafetyLineAt: null, lastRefillCheckAt: null }, healthCarry: 'full', healthQuestions: false, lastAnswered: { createdAt: new Date('2026-10-11T03:30:00Z'), healthConcern: 'knee pain', pain: null, painWhere: null } });
+  check('no Health Monitor: tablets only (no feeling, health question, refill or "is it better?")', !noMonitor.askFeeling && !noMonitor.wellbeingTopic && noMonitor.refillMedicines.length === 0 && !noMonitor.lastCallNote, noMonitor);
+  check('no Health Monitor: no weekly safety line, only on the first (permission) call', !noMonitor.saySafetyLine && planCallExtras({ ...base, rhythm: { ...base.rhythm, parentConsent: null, lastSafetyLineAt: null }, healthQuestions: false }).saySafetyLine);
   check('old rule still there when nothing is decided', !!planCallExtras(base).askFeeling && !planCallExtras({ ...base, answeredToday: true }).askFeeling);
   check('retry gap is 30 minutes, no extra follow-up calls by default', RETRY_DELAY_MINUTES === 30 && maxFollowUpsPerDay() === 0);
 
@@ -101,16 +106,26 @@ function partA() {
 
   console.log('\nA7. Plans and the Health Monitor add-on');
   check('Solo ₹899, 10 Ask questions, 3 calls a day', PLANS.solo.priceMonthly === 899 && PLANS.solo.askPerMonth === 10 && PLANS.solo.callsPerDay === 3);
-  check('Health Monitor ₹299 Solo / ₹499 Family / ₹999 Extended; none on Remind or Free', healthMonitorPrice('solo') === 299 && healthMonitorPrice('family') === 499 && healthMonitorPrice('extended') === 999 && !healthMonitorAvailable('essential') && !healthMonitorAvailable('free'));
-  check('Daily Touches ₹99 on every calling plan, not on Remind', DAILY_TOUCHES.priceMonthly === 99 && dailyTouchesAvailable('solo') && dailyTouchesAvailable('family') && dailyTouchesAvailable('extended') && !dailyTouchesAvailable('essential'));
+  check('launch offer: Remind 149 -> 99, Solo 999 -> 899, Family 1,999 -> 1,699, Extended 4,999 -> 3,999', PLANS.essential.priceMonthly === 99 && PLANS.essential.listPrice === 149 &&
+    PLANS.solo.listPrice === 999 && PLANS.family.listPrice === 1999 && PLANS.extended.listPrice === 4999 && PLANS.free.listPrice === undefined);
+  check('Health Monitor ₹249 Solo (was ₹299) / ₹499 Family / ₹999 Extended; none on Remind or Free', healthMonitorPrice('solo') === 249 && healthMonitorListPrice('solo') === 299 && healthMonitorListPrice('family') === undefined && healthMonitorPrice('family') === 499 && healthMonitorPrice('extended') === 999 && !healthMonitorAvailable('essential') && !healthMonitorAvailable('free'));
+  check('firm call limit (wrap up ~90 s) on Family and Extended only', firmCallLimit('family') && firmCallLimit('extended') && !firmCallLimit('solo') && !firmCallLimit('essential'));
+  {
+    const base = { callLogId: 'c', parentId: 'p', slot: 'morning', slotLabel: 'Morning', parentName: 'Amma', parentPhone: '+919999999999', language: 'Telugu', caregiverName: 'Ravi', relationship: 'mother', medicines: [] };
+    const partner = { name: 'Appa', medicines: [], askReadings: [] };
+    check('firm_time_limit: yes (one parent) / couple (couple call) / no (Solo)',
+      buildAgentVariables({ ...base, firmTimeLimit: true }).firm_time_limit === 'yes' &&
+      buildAgentVariables({ ...base, firmTimeLimit: true, partner }).firm_time_limit === 'couple' &&
+      buildAgentVariables({ ...base, firmTimeLimit: false, partner }).firm_time_limit === 'no');
+  }
   check('Family ₹1,699, 2 parents, 2 WhatsApp people, 20 Ask', PLANS.family.priceMonthly === 1699 && PLANS.family.parentsIncluded === 2 && PLANS.family.whatsappPeople === 2 && PLANS.family.askPerMonth === 20);
   check('Extended ₹3,999, 5 parents, 5 WhatsApp people, 30 Ask; ₹800 a parent, cheaper per parent than Family and Solo', PLANS.extended.priceMonthly === 3999 && PLANS.extended.parentsIncluded === 5 && PLANS.extended.whatsappPeople === 5 && PLANS.extended.askPerMonth === 30 &&
     PLANS.extended.priceMonthly / 5 < PLANS.family.priceMonthly / 2 && PLANS.family.priceMonthly / 2 < PLANS.solo.priceMonthly);
-  check('Extended totals with add-ons: 3,999 / 4,998 / 4,098 / 5,097', monthlyPrice('extended', false) === 3999 && monthlyPrice('extended', true) === 4998 && monthlyPrice('extended', false, true) === 4098 && monthlyPrice('extended', true, true) === 5097);
+  check('Extended totals: 3,999 / with Health Monitor 4,998', monthlyPrice('extended', false) === 3999 && monthlyPrice('extended', true) === 4998);
   check('Family is cheaper than two Solo plans', PLANS.family.priceMonthly < 2 * PLANS.solo.priceMonthly && PLANS.family.priceMonthly < 1800);
-  check('monthly totals: Solo 899 / +monitor 1,198 / +touches 998 / both 1,297; Family 1,699 / 2,198 / 1,798 / 2,297', monthlyPrice('solo', false) === 899 && monthlyPrice('solo', true) === 1198 && monthlyPrice('solo', false, true) === 998 && monthlyPrice('solo', true, true) === 1297 &&
-    monthlyPrice('family', false) === 1699 && monthlyPrice('family', true) === 2198 && monthlyPrice('family', { dailyTouches: true }) === 1798 && monthlyPrice('family', { healthMonitor: true, dailyTouches: true }) === 2297);
-  check('add-ons ignored where not offered (Remind)', monthlyPrice('essential', true, true) === PLANS.essential.priceMonthly && !cleanAddons('essential', { healthMonitor: true, dailyTouches: true }).healthMonitor);
+  check('monthly totals: Solo 899 / +monitor 1,148; Family 1,699 / 2,198', monthlyPrice('solo', false) === 899 && monthlyPrice('solo', true) === 1148 &&
+    monthlyPrice('family', false) === 1699 && monthlyPrice('family', true) === 2198 && monthlyPrice('family', { healthMonitor: true }) === 2198);
+  check('add-ons ignored where not offered (Remind)', monthlyPrice('essential', true) === PLANS.essential.priceMonthly && !cleanAddons('essential', { healthMonitor: true }).healthMonitor);
 }
 
 function fakeConfig(): SarvamConfig {
@@ -141,7 +156,7 @@ async function partB() {
   const user = await prisma.user.create({
     data: {
       id: newId('usr'), name: 'Placement Tester', email: `placement-test-${stamp}@example.com`, phone: null,
-      subscription: { create: { id: newId('sub'), planId: 'family', status: 'active', currentPeriodEnd: new Date(Date.now() + 30 * 864e5), amount: 1999 } },
+      subscription: { create: { id: newId('sub'), planId: 'family', status: 'active', currentPeriodEnd: new Date(Date.now() + 30 * 864e5), amount: 2198, healthMonitor: true } },
       notificationPreferences: { create: {} }
     }
   });
@@ -277,7 +292,7 @@ async function partB() {
     const noAddon = makeFakeSarvam();
     const r5a = await runDispatch({ now: utc(16, 2, 10), fetchImpl: noAddon.fetchImpl, config: cfg, alertDeps, parentIds: [soloParent.id] });
     check('without the add-on a 4th call (the no-tablet one) is over the cap of 3', r5a.cappedByPlan === 1, r5a);
-    await prisma.userSubscription.update({ where: { userId: solo.id }, data: { healthMonitor: true, amount: 1198 } });
+    await prisma.userSubscription.update({ where: { userId: solo.id }, data: { healthMonitor: true, amount: 1148 } });
     check('with the add-on: Health Monitor yes, Family features (couple call, timeline) no', (await ownerHasHealthMonitor(solo.id)) && (await canTrackReadings(solo.id)) && !(await isPremiumParent(solo.id)));
     const withAddon = makeFakeSarvam();
     await runDispatch({ now: utc(17, 2, 10), fetchImpl: withAddon.fetchImpl, config: cfg, alertDeps, parentIds: [soloParent.id] }); // 07:40 IST
@@ -289,6 +304,18 @@ async function partB() {
     check('the 4th call is not over the cap with the add-on', r5b.cappedByPlan === 0, r5b);
     check('the morning medicine call does NOT ask for readings', !!soloMorning && soloMorning.vars.ask_readings === 'none' && soloMorning.vars.has_medicines === 'yes', soloMorning?.vars);
     check('and the questions go on the earliest medicine call that fits (the morning, 2 tablets)', soloMorning?.vars.ask_feeling === 'yes', soloMorning?.vars.ask_feeling);
+    // Every 3 days (family's choice): readings on the 17th cover the 18th and 19th; the 20th rings again.
+    await prisma.parentProfile.update({ where: { id: soloParent.id }, data: { readingsEveryDays: 3 } });
+    await prisma.healthReading.createMany({ data: [
+      { parentId: soloParent.id, kind: 'bp', systolic: 130, diastolic: 85, takenAt: utc(17, 2, 15), source: 'family' },
+      { parentId: soloParent.id, kind: 'sugar', value: 140, takenAt: utc(17, 2, 15), source: 'family' }
+    ] });
+    const every3 = makeFakeSarvam();
+    await runDispatch({ now: utc(19, 2, 10), fetchImpl: every3.fetchImpl, config: cfg, alertDeps, parentIds: [soloParent.id] }); // 19th 07:40 IST
+    check('every 3 days: no readings call 2 days after a reading', every3.calls.length === 0, every3.calls.map(c => c.vars.slot));
+    await runDispatch({ now: utc(20, 2, 10), fetchImpl: every3.fetchImpl, config: cfg, alertDeps, parentIds: [soloParent.id] }); // 20th 07:40 IST
+    check('every 3 days: the readings call rings again on the 3rd day', every3.calls.length === 1 && /BP/i.test(every3.calls[0].vars.ask_readings), every3.calls.map(c => c.vars.ask_readings));
+    await prisma.parentProfile.update({ where: { id: soloParent.id }, data: { readingsEveryDays: 1 } });
     // No readings call set: the readings are asked on the first medicine call.
     await prisma.scheduledCallSlot.updateMany({ where: { parentId: soloParent.id, slot: 'wellness' }, data: { isActive: false } });
     const noVitals = makeFakeSarvam();
@@ -296,7 +323,7 @@ async function partB() {
     check('no readings call set: the morning call asks for the readings', /BP/i.test(noVitals.calls[0]?.vars.ask_readings || ''), noVitals.calls[0]?.vars.ask_readings);
     // Subscription bookkeeping
     const sub = await updateUserSubscription(solo.id, { planId: 'solo', healthMonitor: true, noTrial: true });
-    check('subscription stores the add-on and the total price', sub.healthMonitor === true && sub.amount === 1198, sub);
+    check('subscription stores the add-on and the total price', sub.healthMonitor === true && sub.amount === 1148, sub);
     const subFamily = await updateUserSubscription(solo.id, { planId: 'family', healthMonitor: true, noTrial: true });
     check('Family + Health Monitor: ₹1,699 + ₹499, flag kept', subFamily.healthMonitor === true && subFamily.amount === 2198, subFamily);
     check('Family: readings allowed with the add-on, and the couple call / timeline too', (await canTrackReadings(solo.id)) && (await isPremiumParent(solo.id)));
@@ -313,7 +340,7 @@ async function partB() {
     check('12 paid days left: carried', carry?.periodEnd.getTime() === paidUntil.getTime(), carry);
     const invoicesBefore = await prisma.invoice.count({ where: { userId: solo.id } });
     const upgraded = await updateUserSubscription(solo.id, { planId: 'solo', healthMonitor: true, noTrial: true, carry: carry || undefined, razorpaySubscriptionId: `sub_test_new_${stamp}`, invoiceNumber: `CC-TEST-${stamp}`.slice(0, 20) });
-    check('the add-on applies now, at the new total', upgraded.healthMonitor === true && upgraded.amount === 1198, upgraded);
+    check('the add-on applies now, at the new total', upgraded.healthMonitor === true && upgraded.amount === 1148, upgraded);
     check('access runs to the end of the period already paid for (no new 30 days, no gap)', new Date(upgraded.currentPeriodEnd).getTime() === paidUntil.getTime() && upgraded.status === 'active', upgraded);
     const inv = await prisma.invoice.findFirst({ where: { userId: solo.id }, orderBy: { createdAt: 'desc' } });
     check('nothing is charged today: a 0-rupee line that says when the first charge is', (await prisma.invoice.count({ where: { userId: solo.id } })) === invoicesBefore + 1 && inv?.amount === 0 && /first charge/.test(inv.planName), inv);

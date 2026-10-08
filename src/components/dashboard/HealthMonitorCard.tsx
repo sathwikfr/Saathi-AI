@@ -3,8 +3,8 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { HeartPulse } from 'lucide-react';
-import { ParentProfile } from '@/lib/types';
-import { HEALTH_MONITOR } from '@/lib/plans';
+import { ParentProfile, PlanId } from '@/lib/types';
+import { HEALTH_MONITOR, healthMonitorListPrice } from '@/lib/plans';
 
 type Props = {
   parent: ParentProfile;
@@ -53,6 +53,7 @@ export function HealthMonitorCard({ parent, enabled, vitalsCall, planId, price, 
   const [sugarMax, setSugarMax] = useState(str(r.sugarMax));
   const [sugarMin, setSugarMin] = useState(str(r.sugarMin));
   const [time, setTime] = useState(to24(vitalsCall) || '08:00');
+  const [everyDays, setEveryDays] = useState(parent.readingsEveryDays === 3 ? 3 : 1);
   const [saving, setSaving] = useState(false);
 
   const toggle = (k: string) => setReadings(l => (l.includes(k) ? l.filter(x => x !== k) : [...l, k]));
@@ -71,9 +72,9 @@ export function HealthMonitorCard({ parent, enabled, vitalsCall, planId, price, 
       <section className="panel" aria-labelledby="hm-title" style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
         <span className="icon-tile gold"><HeartPulse size={20} /></span>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <strong id="hm-title" style={{ display: 'block', marginBottom: '4px' }}>{HEALTH_MONITOR.name}: +₹{price}/month</strong>
+          <strong id="hm-title" style={{ display: 'block', marginBottom: '4px' }}>{HEALTH_MONITOR.name}: +{healthMonitorListPrice(planId as PlanId) && <s className="was-price">₹{healthMonitorListPrice(planId as PlanId)}</s>}₹{price}/month</strong>
           <p style={{ fontSize: '0.88rem', color: 'var(--ink-muted)', margin: 0 }}>
-            {HEALTH_MONITOR.tagline}. Saathi asks {first} once a day on a short call of its own, shows a chart, alerts you when a reading is out of range, and tells you when sleep, mood or appetite drift from {first}&apos;s usual. Saathi never comments on the numbers.
+            {HEALTH_MONITOR.tagline}. Saathi asks {first} every day or every 3 days (your choice) on a short call of its own, shows a chart, alerts you when a reading is out of range, and tells you when sleep, mood or appetite drift from {first}&apos;s usual. Saathi never comments on the numbers.
           </p>
           {isOwner && (
             <Link href={`/checkout/confirm?plan=${planId}&monitor=1`} className="btn btn-ghost btn-sm" style={{ marginTop: '10px' }}>
@@ -96,7 +97,7 @@ export function HealthMonitorCard({ parent, enabled, vitalsCall, planId, price, 
 
       <fieldset className="pref-block">
         <legend>Readings call</legend>
-        <p className="form-hint">One short call a day, just for the readings, so the medicine calls stay short. Choose a time when {first} usually checks.</p>
+        <p className="form-hint">One short call, just for the readings, so the medicine calls stay short. Choose a time when {first} usually checks.</p>
         <div className="ask-form" style={{ marginTop: '10px', maxWidth: '420px' }}>
           <label htmlFor="hm-time" className="sr-only">Time of the readings call</label>
           <input id="hm-time" type="time" className="form-input" value={time} onChange={e => setTime(e.target.value)} />
@@ -106,8 +107,27 @@ export function HealthMonitorCard({ parent, enabled, vitalsCall, planId, price, 
           {vitalsCall && <button type="button" className="btn btn-quiet" disabled={saving} onClick={() => patch({ action: 'vitals_call', time: null })}>Turn off</button>}
         </div>
         <p className="form-hint" style={{ marginTop: '6px' }}>
-          {vitalsCall ? `Saathi calls ${first} at ${vitalsCall} for BP and sugar.` : `No readings call yet: Saathi asks for the readings on the medicine calls.`}
+          {vitalsCall
+            ? `Saathi calls ${first} at ${vitalsCall} for BP and sugar, ${everyDays === 3 ? 'every 3 days' : 'every day'}.`
+            : `No readings call yet: Saathi asks for the readings on the medicine calls, ${everyDays === 3 ? 'every 3 days' : 'every day'}.`}
         </p>
+        <p className="form-label" style={{ marginTop: '12px' }}>How often</p>
+        <div className="segmented" role="radiogroup" aria-label="How often Saathi asks for readings">
+          {[1, 3].map(n => (
+            <button
+              key={n}
+              type="button"
+              role="radio"
+              aria-checked={everyDays === n}
+              className={everyDays === n ? 'active' : ''}
+              disabled={saving}
+              onClick={() => { setEveryDays(n); patch({ action: 'details', updates: { readingsEveryDays: n } }); }}
+            >
+              {n === 1 ? 'Every day' : 'Every 3 days'}
+            </button>
+          ))}
+        </div>
+        <p className="form-hint" style={{ marginTop: '6px' }}>If {first} misses a day, Saathi asks again the next day.</p>
       </fieldset>
 
       <fieldset className="pref-block">

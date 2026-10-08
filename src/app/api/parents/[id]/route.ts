@@ -14,7 +14,6 @@ import {
   markParentSetupStep,
   setEmergencyCardShared,
   replaceEmergencyContacts,
-  setParentCity,
   setCallTogether,
   ParentUpdates,
   ParentDetailsUpdate
@@ -24,15 +23,14 @@ import { normalizePhone } from '@/lib/phone';
 import { getInsightsForParent } from '@/lib/insights';
 import { roleAllows } from '@/lib/familyAccess';
 import { prisma } from '@/lib/prisma';
-import { geocodeCity } from '@/lib/weather';
-import { getEffectivePlan, reminderChannelFor, DAILY_TOUCHES, healthMonitorPrice } from '@/lib/plans';
+import { getEffectivePlan, reminderChannelFor, healthMonitorPrice } from '@/lib/plans';
 import { isVitalsSlot } from '@/lib/callDispatch';
 import { newId } from '@/lib/db';
 import { parseClockTime } from '@/lib/ist';
 import { getRemindersForParent } from '@/lib/reminders';
 import { getWhatsAppConfig, getBusinessNumber, startLink } from '@/lib/whatsapp';
 import { getUserById, newReminderStartCode, setCaretaker } from '@/lib/db';
-import { isPremiumParent, premiumRequired, canTrackReadings, ownerHasHealthMonitor, ownerHasDailyTouches, readingsRequired, touchesRequired } from '@/lib/planAccess';
+import { isPremiumParent, premiumRequired, canTrackReadings, ownerHasHealthMonitor, readingsRequired } from '@/lib/planAccess';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -96,9 +94,7 @@ export async function GET(req: Request, { params }: Ctx) {
     ownerPlan: {
       id: ownerPlan.id, name: ownerPlan.name, premium: ownerPlan.premium, askPerMonth: ownerPlan.askPerMonth, whatsappPeople: ownerPlan.whatsappPeople,
       healthMonitor: await ownerHasHealthMonitor(parent.userId),
-      dailyTouches: await ownerHasDailyTouches(parent.userId),
-      healthMonitorPrice: healthMonitorPrice(ownerPlan.id),
-      dailyTouchesPrice: DAILY_TOUCHES.priceMonthly
+      healthMonitorPrice: healthMonitorPrice(ownerPlan.id)
     },
     // Health Monitor: the time of the short readings call (a call with no tablets), if one is set.
     vitalsCall: (await prisma.scheduledCallSlot.findMany({ where: { parentId: id, isActive: true, slot: 'wellness' } })).find(isVitalsSlot)?.time || null,
@@ -190,24 +186,20 @@ export async function PATCH(req: Request, { params }: Ctx) {
 
     // Emergency card, "lives alone", birthday and the weekly companion call.
     if (action === 'details' && updates && typeof updates === 'object') {
-      // BP/sugar, festivals, special days, birthday wish and the helper check are Family / Extended features.
       const u = updates as ParentDetailsUpdate;
-      // Festivals, birthdays, special days and the helper check: the Daily Touches add-on.
-      const touchKeys = (u.festivals?.length || u.specialDays?.length || u.helperName || u.helperDays?.length || u.birthDate);
-      if (touchKeys && !(await ownerHasDailyTouches(access.parent.userId))) return touchesRequired();
+      // Festivals, special days and the helper check went with the Daily Touches add-on (removed 2026-10-08).
+      if (u.festivals?.length || u.specialDays?.length || u.helperName || u.helperDays?.length) {
+        return NextResponse.json({ error: 'Festival wishes and the helper check are no longer offered.' }, { status: 410 });
+      }
       // BP / sugar: the Health Monitor add-on.
       if ((u.readingsToAsk?.length || u.readingRanges) && !(await canTrackReadings(access.parent.userId))) return readingsRequired();
       const updated = await updateParentDetails(id, updates as ParentDetailsUpdate);
       return NextResponse.json({ success: true, parent: updated, message: 'Saved.' });
     }
 
-    // City for weather notes (looked up once, Open-Meteo).
+    // City for weather notes: went with the Daily Touches add-on (removed 2026-10-08).
     if (action === 'city') {
-      if (!(await ownerHasDailyTouches(access.parent.userId))) return touchesRequired();
-      const city = (body as { city?: unknown }).city;
-      const res = await setParentCity(id, typeof city === 'string' ? city : null, c => geocodeCity(c));
-      if (!res.ok) return NextResponse.json({ error: res.error }, { status: 400 });
-      return NextResponse.json({ success: true, city: res.city, message: res.city ? `Weather notes for ${res.city}.` : 'Weather notes are off.' });
+      return NextResponse.json({ error: 'Weather notes are no longer offered.' }, { status: 410 });
     }
 
     // One call for both parents on the same phone.
