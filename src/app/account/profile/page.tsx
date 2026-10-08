@@ -37,6 +37,7 @@ export default function EditProfilePage() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
+  const [profilePassword, setProfilePassword] = useState('');
   const [avatar, setAvatar] = useState('');
   const [profileSaving, setProfileSaving] = useState(false);
 
@@ -115,12 +116,14 @@ export default function EditProfilePage() {
           name: name.trim(),
           email: email.trim(),
           phone: phone.trim(),
-          avatar: avatar.trim() || undefined
+          avatar: avatar.trim() || undefined,
+          currentPassword: profilePassword || undefined
         })
       });
 
       const data = await res.json();
       if (res.ok) {
+        setProfilePassword('');
         if (data.user) {
           setUserDirectly(data.user);
         }
@@ -314,6 +317,21 @@ export default function EditProfilePage() {
                   <span className="form-hint">Used for phone OTP login. Include your country code, e.g. +1 415 555 0100.</span>
                 </div>
               </div>
+
+              {(email.trim().toLowerCase() !== (user?.email || '').toLowerCase() || phone.trim() !== (user?.phone || '')) && (
+                <div className="form-group">
+                  <label className="form-label" htmlFor="pf-current-password">Current password</label>
+                  <input
+                    id="pf-current-password"
+                    type="password"
+                    value={profilePassword}
+                    onChange={(e) => setProfilePassword(e.target.value)}
+                    className="form-input"
+                    autoComplete="current-password"
+                  />
+                  <span className="form-hint">Needed to change your email or mobile number. Skip it if you sign in with Google or OTP only.</span>
+                </div>
+              )}
 
               <div className="form-group">
                 <label className="form-label" htmlFor="pf-avatar">Initials <span className="form-hint">Optional</span></label>

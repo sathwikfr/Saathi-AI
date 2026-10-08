@@ -11,6 +11,9 @@
  *         Every run is scoped to the test parent; all test rows are deleted at the end.
  */
 import 'dotenv/config';
+import './lib/testDb';
+// Extra "you said later" calls are off by default since 2026-10-08 (see callResults.maxFollowUpsPerDay); these suites cover the code path that stays, so switch it on here. The default is tested in test-call-placement.ts.
+process.env.FOLLOW_UP_CALLS_PER_DAY = '2';
 import Anthropic from '@anthropic-ai/sdk';
 import { prisma } from '../src/lib/prisma';
 import { newId, updateParent, getSharedParentsForUser } from '../src/lib/db';
@@ -83,7 +86,7 @@ function partA() {
   check('nothing due → no wellbeing, refill or safety line', !given.askWellbeing && given.refillMedicines.length === 0 && !given.saySafetyLine, given);
   check('remembers the last concern', !!given.lastCallNote && given.lastCallNote.includes('knee pain'), given.lastCallNote);
   const followUp = planCallExtras({ callType: 'followup', rhythm, lastAnswered: null, activeMedicineNames: ['X'], answeredToday: true, now });
-  check('follow-up: no extras except consent', followUp.askConsent && !followUp.askWellbeing && !followUp.saySafetyLine && followUp.refillMedicines.length === 0);
+  check('follow-up: no extras except consent', followUp.askConsent && !followUp.wellbeingTopic && !followUp.askFeeling && !followUp.saySafetyLine && followUp.refillMedicines.length === 0);
   check('old concern (8 days) is not brought up', lastCallNote({ createdAt: new Date(now.getTime() - 8 * DAY), healthConcern: 'cough', pain: null, painWhere: null }, now) === null);
   check('IST month-day', istMonthDay(now) === '10-12');
   const bday = planCallExtras({ callType: 'reminder', rhythm: { ...rhythm, parentConsent: 'given', birthDate: '10-12' }, lastAnswered: null, activeMedicineNames: [], answeredToday: false, now });
@@ -95,9 +98,10 @@ function partA() {
     callLogId: 'call_1', parentId: 'p', slot: 'morning', slotLabel: 'Morning', parentName: 'Amma', parentPhone: '+919000000001',
     language: 'Telugu', caregiverName: 'Ravi', relationship: 'Mother', medicines: [MED('Telmisartan', '40mg', 'keeps your BP steady')],
     callType: 'reminder', askConsent: true, saySafetyLine: true, lastCallNote: 'Last time, on Monday, they said: knee pain.',
-    askWellbeing: true, refillMedicines: ['Telmisartan'], supportPhone: '+919876543210'
+    wellbeingTopic: 'sleep', askFeeling: true, refillMedicines: ['Telmisartan'], supportPhone: '+919876543210'
   });
   check('ask_consent yes', vars.ask_consent === 'yes');
+  check('one wellbeing topic + "how are you feeling"', vars.wellbeing_topic === 'sleep' && vars.ask_feeling === 'yes' && vars.ask_wellbeing === 'no');
   check('checklist carries the family\'s "why"', vars.medicines_checklist.includes('[why: keeps your BP steady]'), vars.medicines_checklist);
   check('refill list', vars.ask_refill === 'yes' && vars.refill_medicines === 'Telmisartan');
   check('support number spoken in groups', vars.support_phone === '98765 43210', vars.support_phone);
@@ -295,7 +299,7 @@ async function partB() {
   const owner = await prisma.user.create({
     data: {
       id: newId('usr'), name: 'Ravi Tester', email: `care-test-${stamp}@example.com`, phone: '+919811111111',
-      subscription: { create: { id: newId('sub'), planId: 'family', status: 'active', currentPeriodEnd: new Date(Date.now() + 60 * DAY), amount: 1299 } },
+      subscription: { create: { id: newId('sub'), planId: 'family', status: 'active', currentPeriodEnd: new Date(Date.now() + 60 * DAY), amount: 2198, healthMonitor: true } },
       notificationPreferences: { create: {} }
     }
   });
@@ -344,7 +348,7 @@ async function partB() {
     check('asks consent (new and legacy parents)', c1?.body.app_config.agent_variables.ask_consent === 'yes');
     check('says the safety line', c1?.body.app_config.agent_variables.say_safety_line === 'yes');
     check('medicine reason from the family', c1?.body.app_config.agent_variables.medicines_checklist.includes('[why: keeps your BP steady]'));
-    check('wellbeing and refill questions ride along', c1?.body.app_config.agent_variables.ask_wellbeing === 'yes' && c1?.body.app_config.agent_variables.ask_refill === 'yes', c1?.body.app_config.agent_variables);
+    check('one wellbeing question and the refill check ride along', ['sleep', 'appetite', 'pain'].includes(c1?.body.app_config.agent_variables.wellbeing_topic) && c1?.body.app_config.agent_variables.ask_feeling === 'yes' && c1?.body.app_config.agent_variables.ask_refill === 'yes', c1?.body.app_config.agent_variables);
 
     // ---- B2 the answers ------------------------------------------------------
     console.log('\nB2. Yes to consent, Metformin "later", knee pain, running low');
@@ -614,7 +618,7 @@ async function partB() {
     check('follow-up questions keep the conversation', withHistory.ok && req19b.messages.map(m => m.role).join(',') === 'user,assistant,user');
     const full = await prisma.parentProfile.findUnique({
       where: { id: parent.id },
-      include: { medicines: true, callSchedule: true, callLogs: true, alerts: true, insights: true, documents: true }
+      include: { medicines: true, callSchedule: true, callLogs: true, alerts: true, insights: true, documents: true, readings: true, messages: true, appointments: true, stories: true }
     });
     check('records format is deterministic (prompt cache)', formatRecords(full!, at(17, 6, 0)) === formatRecords(full!, at(17, 6, 0)));
   } finally {

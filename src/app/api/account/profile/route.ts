@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
-import { getSessionUser } from '@/lib/auth';
-import { getUserById, updateUserProfile } from '@/lib/db';
+import { getSessionUser, comparePassword } from '@/lib/auth';
+import { getUserById, getUserPasswordHash, updateUserProfile } from '@/lib/db';
+import { checkRateLimit, recordFailedAttempt, clearRateLimit } from '@/lib/security';
 import { sendVerificationEmail } from '@/lib/email';
 import { NotificationPreferences } from '@/lib/types';
 import { normalizePhone } from '@/lib/phone';
@@ -36,6 +37,12 @@ export async function PATCH(req: Request) {
     if (name !== undefined && (!name || typeof name !== 'string' || name.trim().length < 2)) {
       return NextResponse.json({ error: 'Full name must be at least 2 characters.' }, { status: 400 });
     }
+    if (typeof name === 'string' && name.trim().length > 100) {
+      return NextResponse.json({ error: 'Full name can be up to 100 characters.' }, { status: 400 });
+    }
+    if (avatar !== undefined && (typeof avatar !== 'string' || avatar.length > 8)) {
+      return NextResponse.json({ error: 'Initials can be up to 8 characters.' }, { status: 400 });
+    }
 
     if (email !== undefined) {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -57,6 +64,29 @@ export async function PATCH(req: Request) {
         normalizedPhone = phoneResult.e164;
       } else {
         normalizedPhone = '';
+      }
+    }
+
+    // Changing the email or phone is how a stolen session becomes a permanent takeover (reset links go to the
+    // email), so it needs the current password. Accounts without a password (Google / OTP) have nothing to ask.
+    const emailChanging = typeof email === 'string' && email.trim().toLowerCase() !== sessionUser.email.toLowerCase();
+    const phoneChanging = normalizedPhone !== undefined && normalizedPhone !== (sessionUser.phone || '');
+    if (emailChanging || phoneChanging) {
+      const hash = await getUserPasswordHash(sessionUser.id);
+      if (hash) {
+        const limit = checkRateLimit(`reauth:${sessionUser.id}`, 5, 15 * 60 * 1000);
+        if (!limit.allowed) {
+          return NextResponse.json({ error: 'Too many wrong passwords. Please try again in a few minutes.', code: 'RATE_LIMITED' }, { status: 429 });
+        }
+        const given = typeof body.currentPassword === 'string' ? body.currentPassword : '';
+        if (!given || !(await comparePassword(given, hash))) {
+          recordFailedAttempt(`reauth:${sessionUser.id}`);
+          return NextResponse.json(
+            { error: 'Enter your current password to change your email or phone number.', code: 'REAUTH_REQUIRED' },
+            { status: 403 }
+          );
+        }
+        clearRateLimit(`reauth:${sessionUser.id}`);
       }
     }
 

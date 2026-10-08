@@ -49,12 +49,25 @@ Create every one of these as an input variable on the Saathi agent (type text). 
 | `ask_consent` | `yes` / `no` | `yes` on the first call (and after the parent said no and the family resumed): ask permission before anything else |
 | `say_safety_line` | `yes` / `no` | Once a week: "I will never ask you for money, OTPs or bank details" |
 | `last_call_note` | `Last time, on Monday, they said: knee pain since yesterday.` / `none` | Ask once, kindly, whether it is better |
-| `ask_wellbeing` | `yes` / `no` | Every few days: sleep, appetite, pain |
+| `ask_feeling` | `yes` / `no` | First call the parent answers each day: ask "How are you feeling today?" (added 2026-10-04) |
+| `wellbeing_topic` | `sleep` / `appetite` / `pain` / `none` | ONE wellbeing question a day, in turn, so each comes back every 3 days (replaces `ask_wellbeing`, 2026-10-04) |
+| `ask_wellbeing` | always `no` now | Old: all three wellbeing questions at once. Kept so agents with the old prompt don't break; delete it once the new prompt is in |
 | `ask_refill` | `yes` / `no` | Weekly: whether they have enough of each medicine in `refill_medicines` for the week |
 | `refill_medicines` | `Telmisartan, Metformin` / `none` | |
 | `companion_topics` | `cricket (CSK), old NTR films, grandchildren Riya and Arjun` / `none` | Weekly chat only: what the family says they enjoy |
-| `special_day` | `birthday` / `none` | Wish them warmly from the caregiver and family |
+| `special_day` | `birthday` / `Diwali/Deepavali` / `Wedding anniversary` / `fasting day (Ekadashi)` / couple calls: `birthday of Appa` / `none` | Wish them warmly from the caregiver and family. Festivals are only sent if the family ticked them. A "fasting day" is never wished "happy"; just don't talk about food that day |
 | `support_phone` | `98765 43210` / `none` | A human they can call to check Saathi is real or to stop the calls |
+| `family_message` | `none` | Always `none` since 2026-10-08 (family messages were retired). Kept so older agent versions don't break |
+| `appointment_note` | `Tomorrow at 10 AM: blood test at Vijaya Labs. The family says not to eat anything before it.` / `none` | Say once, as written. Fasting instructions come from the family, never from Saathi |
+| `appointment_question` | `How did the eye check-up visit go?` / `none` | Ask once, listen, no comment |
+| `ask_readings` | `blood pressure (BP), blood sugar` / `none` | Ask for today's reading(s) if they checked; never comment on the numbers |
+| `weather_note` | `It will be very hot today, around 40 degrees. Please drink plenty of water and stay indoors in the afternoon.` / `none` | One line, said once |
+| `hearing_mode` | `yes` / `no` | Speak more slowly, shorter sentences, repeat a question once if not understood |
+| `helper_question` | `Did Lakshmi come today?` / `none` | A paid helper's visit; ask once on the last call of the day |
+| `partner_name` | `Appa (Ramesh Rao)` / `none` | Couple call: the second parent on the same phone (v1.1) |
+| `partner_has_medicines` | `yes` / `no` | |
+| `partner_medicines_checklist` | same format as `medicines_checklist` | The second parent's medicines |
+| `partner_ask_readings` | `blood sugar` / `none` | Readings to ask the second parent for |
 
 The call starts in the language Aaptha picks from the parent's profile (`initial_language_name`).
 
@@ -80,6 +93,26 @@ The call starts in the language Aaptha picks from the parent's profile (`initial
 | `appetite` | Enum: `good`, `poor`, `not_asked` | Only if asked: are they eating well? |
 | `pain` | Enum: `none`, `mild`, `severe`, `not_asked` | Only if asked (or if they said it themselves): any pain, and how bad? |
 | `pain_where` | String | Where it hurts, one or two English words ("knee", "lower back"). `none` if no pain. |
+| `bp_reading` | String | Only if asked: the blood pressure reading the parent gave, as two numbers like "140/90". `none` if not given or not asked. |
+| `sugar_reading` | String | Only if asked: the blood sugar number the parent gave, e.g. "150". `none` if not given or not asked. |
+| `sugar_when` | Enum: `fasting`, `after_food`, `random`, `not_asked` | When that sugar reading was taken. |
+| `appointment_update` | String | Only if Saathi asked how a doctor visit or test went: what the parent said, in one short English sentence. `none` otherwise. |
+| `helper_visited` | Enum: `yes`, `no`, `not_asked` | Only if Saathi asked whether the helper came today. |
+| `memory_title` | String | If the parent told a story or memory AND agreed the family may keep it: a short title (max 8 words). `none` otherwise. |
+| `memory_story` | String | That memory retold in 3 to 6 warm English sentences, in the third person, using only what the parent said. `none` if there was no memory or they did not agree to keep it. |
+| `partner_all_medicines_taken` | Enum: `yes`, `no`, `partial`, `not_asked` | Couple calls only: the same as `all_medicines_taken`, for @partner_name. `not_asked` otherwise. |
+| `partner_medicines_taken` / `partner_medicines_missed` / `partner_medicines_later` / `partner_medicines_stopped` | String | Couple calls only: the same as the parent's lists, for @partner_name, using the exact names in partner_medicines_checklist. Empty otherwise. |
+| `partner_mood` | Enum: `cheerful`, `calm`, `neutral`, `anxious`, `unwell`, `not_asked` | Couple calls only: @partner_name's mood. |
+| `partner_health_concern` | String | Couple calls only: any health worry @partner_name mentioned. `none` if nothing. |
+| `partner_emergency` | Enum: `yes`, `no` | Couple calls only: as `emergency`, for @partner_name. |
+| `partner_feedback` | String | Couple calls only: anything @partner_name wants the family to know. `none` if nothing. |
+| `partner_bp_reading` / `partner_sugar_reading` | String | Couple calls only: as `bp_reading` / `sugar_reading`, for @partner_name. |
+| `partner_sugar_when` | Enum: `fasting`, `after_food`, `random`, `not_asked` | Couple calls only. |
+
+Every `partner_*` output is optional: Aaptha reads any output whose name starts with `partner_` as the second
+parent's version of the same answer (so `partner_pain`, `partner_sleep`, … also work if added later).
+The emergency transcript scan can't tell two voices on one phone apart, so its alerts go to the parent who was rung;
+the `partner_emergency` flag and the escalate tool still cover the second parent.
 
 Aaptha also scans the transcript itself for emergency phrases in all supported languages, so a missed
 `emergency` flag still raises the alert.
@@ -105,7 +138,7 @@ The first question now depends on `ask_consent`, so the greeting no longer asks 
 
 In the Sarvam editor, variables are inserted with `@` and become chips (not `{{…}}`). The `escalate_emergency` sentence in the SAFETY block below is added only after the tool exists (section 5).
 
-Settings to keep fixed: the same voice for every call (familiarity matters to elders), and a **maximum call duration of 6 minutes** if the editor offers one (the weekly chat is capped at 5 in the prompt; medicine calls stay under 1-2).
+Settings to keep fixed: the same voice for every call (familiarity matters to elders), and a **maximum call duration of 4 minutes** if the editor offers one. That is only a runaway guard: Sarvam bills every started minute, so the app plans each day so that calls stay under a minute (it puts the health questions on the one call with room for them), and Saathi must NEVER end a call because of time while the parent is still talking (see NEVER CUT THE PARENT OFF below). The weekly chat is capped at about 4-5 minutes in the prompt.
 
 ```
 You are Saathi AI, a polite voice assistant from Aaptha. Always introduce yourself as "Saathi AI", never by any other name. You are phoning @parent_name. Address them by name with the respectful suffix of the language ("garu" in Telugu, "ji" in Hindi, and so on).
@@ -119,7 +152,7 @@ STYLE: speak slowly and simply, one short question at a time, then wait for the 
 
 2. ALWAYS: if at any point they ask you to stop calling them, say "Okay, I will stop calling. I will let @caregiver_name know. Take care." and end the call.
 
-3. If @special_day is "birthday": wish them a happy birthday warmly from @caregiver_name and the family.
+3. If @special_day is "birthday": wish them a happy birthday warmly from @caregiver_name and the family. (Other special days: see SPECIAL DAY below.)
 
 4. If @say_safety_line is "yes": say once, early: "Remember, Saathi will never ask you for money, OTPs or bank details. If someone asks for these, it is not me."
 
@@ -128,18 +161,40 @@ STYLE: speak slowly and simply, one short question at a time, then wait for the 
 6. If @call_type is "reminder", "followup" or "callback" and @has_medicines is "yes": go through @medicines_checklist one by one, in order, using each medicine's exact name. If an item has [why: ...], you may say that reason in one short phrase ("your BP tablet, the one that keeps your BP steady"). Never add a reason of your own.
    - YES: "Okay, thank you", next medicine.
    - NO: "Okay, please take it as soon as you can", next medicine. Never tell them to skip, change or double a dose.
-   - LATER / NOT YET (for example after food): "Okay, I will call you back a little later to check", next medicine.
+   - LATER / NOT YET (for example after food): "Okay, no problem, please take it when you can. I will ask again on my next call", next medicine. (There are no extra call-backs now: a "later" medicine simply comes up again on the next scheduled call, in its checklist.)
    - If they say they have STOPPED taking a medicine on their own: do not argue or advise. Ask gently why, say "I will let @caregiver_name know so they can talk to your doctor", and move on.
    If @call_type is "followup": this is a quick call back about only these medicines; keep it very short.
    If @call_type is "callback": they called you; thank them for calling back, then ask about the checklist. If the checklist is empty, ask if everything is okay and whether they want you to pass on a message.
 
-7. If @ask_wellbeing is "yes": ask, one at a time: "Did you sleep well last night?", "Are you eating well?", "Any pain today?" If they mention pain, ask where. Do not comment on the answers beyond "okay" or "I'm sorry to hear that, I'll let them know."
+7. FEELING AND ONE HEALTH QUESTION: if @ask_feeling is "yes", ask "How are you feeling today?" and listen. Then, depending on @wellbeing_topic, ask ONE question: "sleep" -> "Did you sleep well last night?"; "appetite" -> "Are you eating well?"; "pain" -> "Any pain today?" (if they mention pain, ask where). If it is "none", skip it. Do not comment on the answers beyond "okay" or "I'm sorry to hear that, I'll let them know." Keep it short: the call should still end within about a minute.
 
 8. If @ask_refill is "yes": ask "Do you have enough of @refill_medicines for the coming week?" Note any that are running low.
 
-9. WEEKLY CHAT (only if @call_type is "companion"): this is a friendly chat, not a check-up. Talk about @companion_topics (if not "none") or ask about their day, family, memories, festivals, cricket or old films. Let them talk; be warm and curious. Keep it to about 4 minutes, then say you enjoyed talking and goodbye. You may still ask the permission question (1) and the wellbeing questions (7) if asked to. Never give medical, financial or legal advice.
+9. WEEKLY CHAT (only if @call_type is "companion"): this is a friendly chat, not a check-up. Talk about @companion_topics (if not "none") or ask about their day, family, memories, festivals, cricket or old films. Let them talk; be warm and curious. Keep it to about 4 minutes, then say you enjoyed talking and goodbye. You may still ask the permission question (1) and step 7 if asked to. Never give medical, financial or legal advice.
 
-10. Close: a short goodbye. Medicine calls should end within about a minute or two.
+10. (Retired 2026-10-08: family messages are no longer offered, so @family_message is always "none". You can delete this step from the prompt.)
+
+11. APPOINTMENTS: if @appointment_note is not "none", say it once, exactly as written (any fasting instruction is the family's; say it as theirs). If @appointment_question is not "none", ask it once and listen. Do not comment on medical results.
+
+12. READINGS (if @ask_readings is not "none"): ask "Did you check your @ask_readings today? What did it show?" Repeat the numbers back once to confirm. NEVER say whether a number is good, bad, high or low, and never advise; just say "Thank you, I'll note it." If they didn't check, that is fine.
+
+13. WEATHER (if @weather_note is not "none"): say it once, kindly, near the end.
+
+14. HELPER (if @helper_question is not "none"): ask it once. Accept the answer without comment.
+
+15. MEMORIES: if during any call (usually the weekly chat) they tell a story from their life, enjoy it with them. At the end of the story ask "That's a lovely memory. May I keep it for your family?" Only if they agree, it is saved (memory_title / memory_story). Never push for one.
+
+16. COUPLE CALL (only if @partner_name is not "none"): @parent_name and @partner_name share this phone. After @parent_name's questions, ask "Is @partner_name there with you?" If yes, ask to speak with them (or ask @parent_name to pass the question on), greet @partner_name by name and go through @partner_medicines_checklist the same way (if @partner_has_medicines is "yes"), then @partner_ask_readings if not "none". Keep the two people's answers separate. If @partner_name is not there, say "Okay, I'll ask another time" and move on. A family message marked "(for Appa)" is for @partner_name: pass it to them, or ask @parent_name to. An appointment note that names @partner_name is theirs.
+
+17. READINGS-ONLY CALL (if @has_medicines is "no" and @ask_readings is not "none"; this is the short call of the Health Monitor add-on): greet, do step 12 only, say thank you and goodbye. No medicine questions, no other questions; about 30 to 40 seconds. (If @ask_feeling is "yes" on such a call, ask it too.)
+
+18. Close: a short goodbye. Medicine calls should end within about a minute (couple calls two).
+
+NEVER CUT THE PARENT OFF: keep your own turns short, but never end the call, change the subject or say goodbye while the parent is still talking or has just said or asked something. Always answer or acknowledge what they said first ("I will let them know" is enough for something to be passed on). Only say goodbye once your questions are done and they have nothing more to add.
+
+HEARING MODE: if @hearing_mode is "yes", speak noticeably more slowly, use very short sentences, and if they don't catch a question, repeat it once in simpler words before moving on.
+
+SPECIAL DAY: if @special_day is a festival or day name, greet them for it warmly at the start (from @caregiver_name and the family). If it names someone ("birthday of Appa", "Wedding anniversary (Appa)"), the wish is for that person. If it starts with "fasting day", don't wish them "happy"; just say you hope the fast goes well and don't talk about food or eating that day (for that person, if it names someone).
 
 SAFETY - ALWAYS
 - Never diagnose, never name a likely condition, never recommend or change any medicine or dose, never give medical advice. If they ask a health question, say you will pass it to their family and doctor.
@@ -159,9 +214,12 @@ database unique index, so a parent is never called twice for the same slot.
 Behaviour to know:
 - A slot is called when its IST time has passed, for up to 90 minutes. Missed beyond that = skipped for the day.
 - Plan cap: Free = 1 call/day (earliest slot), Family/Extended = 3. Change in `src/lib/plans.ts` (`callsPerDay`).
-- No answer / busy → retried after 15 minutes, up to 3 attempts the same day, then a level-2 alert.
+- No answer / busy → tried once more after 30 minutes (2 attempts in all, the same day; 30 min since 2026-10-08), then a level-2 alert.
+- **Call length (2026-10-08):** keep every call under 60 seconds (Sarvam bills every started minute) but NEVER cut the parent off: always answer what they say. Set a generous maximum call duration in the agent (about 4 minutes) only as a runaway guard. The health questions (`ask_feeling`, `wellbeing_topic`) arrive only on the one call the app chose for them; when they are `no` / `none`, do not ask them.
+- **"Later" tablets:** there are no extra follow-up calls any more. A tablet the parent said "later" about earlier today is simply listed again in `medicines_checklist` on the next scheduled call; report it as taken / missed / later as usual (still "later" on the last call of the day counts as not taken).
+- **Readings call (Health Monitor add-on):** a call with `has_medicines = no` and `ask_readings` set (e.g. "blood pressure (BP), blood sugar"): greet, ask for the readings, say thanks, end. No medicine questions.
 - A newly added parent is first called the next day (later slots the same day are still called).
-- The same cron also: moves emergency escalations on every 10 minutes, places "later" follow-ups (40 minutes after, max 2 a day)
+- The same cron also: moves emergency escalations on every 10 minutes, places "later" follow-ups only if FOLLOW_UP_CALLS_PER_DAY is set (off by default since 2026-10-08)
   and the weekly companion call, sends daily/weekly/monthly summaries at each family's hour, and once a day (9:30 PM IST)
   runs the trend checks and clears transcripts older than 90 days.
 - Paused parents are skipped; a pause with an end date resumes automatically.
@@ -174,7 +232,7 @@ Behaviour to know:
    Expect in Call History: status Answered, one medicine missed, and in Alerts: a level-3 health concern and a
    level-2 missed medicine (emailed to the account owner).
 3. Call again and say "I have chest pain": expect a level-4 alert and a critical email within seconds.
-4. Don't answer a call: expect "Attempt 2" 15 minutes later, and after the 3rd miss a level-2 "couldn't reach" alert.
+4. Don't answer a call: expect "Attempt 2" 30 minutes later, and after that 2nd miss a level-2 "couldn't reach" alert.
 5. Check the cost per minute in Sarvam against the `durationSeconds` shown in Call History.
 
 6. **New in v1 (after pasting the prompt above and committing a new version):** on the first call Saathi asks permission;

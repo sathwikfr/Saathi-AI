@@ -9,6 +9,7 @@
  *         accounts (`userIds`), so real customers are never touched. Test rows are deleted at the end.
  */
 import 'dotenv/config';
+import './lib/testDb';
 import crypto from 'crypto';
 
 // Never send real email from a test run.

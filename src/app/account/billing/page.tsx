@@ -138,6 +138,9 @@ export default function AccountBillingPage() {
 
   const status = subscription?.status || 'free';
   const isFree = currentPlan.priceMonthly === 0;
+  // What is actually charged each month: the plan plus any add-ons (Health Monitor, Daily Touches).
+  const monthlyTotal = isFree ? 0 : subscription?.amount ?? currentPlan.priceMonthly;
+  const addonNames = [subscription?.healthMonitor ? 'Health Monitor' : '', subscription?.dailyTouches ? 'Daily Touches' : ''].filter(Boolean);
   const formatDate = (d?: string) =>
     d ? new Date(d).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' }) : null;
   const periodEnd = formatDate(subscription?.currentPeriodEnd);
@@ -183,12 +186,12 @@ export default function AccountBillingPage() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px', marginBottom: '18px' }}>
                 <div>
                   <span className={`badge ${statusBadge.cls}`} style={{ marginBottom: '10px' }}>{statusBadge.text}</span>
-                  <h2 id="plan-title" style={{ fontSize: '1.6rem', letterSpacing: '-0.02em' }}>{currentPlan.name}</h2>
+                  <h2 id="plan-title" style={{ fontSize: '1.6rem', letterSpacing: '-0.02em' }}>{currentPlan.name}{addonNames.length > 0 && ` + ${addonNames.join(' + ')}`}</h2>
                   <p style={{ fontSize: '0.9rem', color: 'var(--ink-muted)', marginTop: '2px' }}>{currentPlan.tagline}</p>
                 </div>
                 <div style={{ textAlign: 'right', flexShrink: 0 }}>
                   <div style={{ fontFamily: 'var(--font-serif)', fontSize: '2.2rem', fontWeight: 500, letterSpacing: '-0.03em', lineHeight: 1 }}>
-                    ₹{currentPlan.priceMonthly}
+                    ₹{monthlyTotal}
                   </div>
                   <div style={{ fontSize: '0.8rem', color: 'var(--ink-muted)', marginTop: '4px' }}>{isFree ? 'no plan yet' : 'per month'}</div>
                 </div>

@@ -196,7 +196,7 @@ function ContactsEditor({ parent, contacts, manage, onChanged, onToast }: { pare
   };
 
   return (
-    <section className="panel" aria-labelledby="contacts-title">
+    <section className="panel" id="emergency-plan" aria-labelledby="contacts-title" style={{ scrollMarginTop: '90px' }}>
       <div className="panel-head">
         <div>
           <h3 id="contacts-title"><Phone size={18} style={{ verticalAlign: '-3px', marginRight: '6px' }} />Who we phone in an emergency</h3>

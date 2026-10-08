@@ -4,6 +4,17 @@ import bcrypt from 'bcryptjs';
 const prisma = new PrismaClient();
 
 async function main() {
+  // This creates demo and personal accounts with a password that is public in git: it must never run against the live database.
+  let host = '';
+  try {
+    host = new URL(process.env.DATABASE_URL || '').hostname;
+  } catch {
+    /* no usable DATABASE_URL */
+  }
+  if (!['localhost', '127.0.0.1', '::1'].includes(host)) {
+    console.error(`Refusing to seed: DATABASE_URL points at "${host || 'unknown'}", not a local database.`);
+    process.exit(1);
+  }
   console.log('Seeding Aaptha database...');
 
   const salt = await bcrypt.genSalt(10);

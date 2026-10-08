@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireUser } from '@/lib/access';
 import { createSubscriptionServer, PaymentsUnavailableError } from '@/lib/razorpay';
 import { PlanId } from '@/lib/types';
-import { PLANS } from '@/lib/plans';
+import { PLANS, carriedPeriod } from '@/lib/plans';
 import { getParentsForUser } from '@/lib/db';
 import { consumeRateLimit } from '@/lib/security';
 
@@ -12,7 +12,7 @@ export async function POST(req: Request) {
   const { user } = auth;
 
   try {
-    const { planId } = await req.json();
+    const { planId, healthMonitor, dailyTouches } = await req.json();
 
     if (!planId || !PLANS[planId as PlanId]) {
       return NextResponse.json({ error: 'Invalid plan selected.' }, { status: 400 });
@@ -41,7 +41,13 @@ export async function POST(req: Request) {
     const subResult = await createSubscriptionServer(
       planId as PlanId,
       { userId: user.id, email: user.email, name: user.name, phone: user.phone || undefined },
-      { noTrial: !!user.subscription?.razorpaySubscriptionId }
+      {
+        noTrial: !!user.subscription?.razorpaySubscriptionId,
+        healthMonitor: healthMonitor === true,
+        dailyTouches: dailyTouches === true,
+        // Paid days left on the current plan are not charged twice: the new plan's first charge waits for them.
+        startAt: carriedPeriod(user.subscription)?.periodEnd
+      }
     );
 
     return NextResponse.json({

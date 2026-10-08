@@ -113,8 +113,8 @@ function SuccessContent() {
               plan.priceMonthly === 0
                 ? 'Free'
                 : firstChargeDate
-                  ? `₹${plan.priceMonthly} on ${new Date(firstChargeDate).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })}`
-                  : `₹${plan.priceMonthly}/month`
+                  ? `₹${sub?.amount ?? plan.priceMonthly} on ${new Date(firstChargeDate).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })}`
+                  : `₹${sub?.amount ?? plan.priceMonthly}/month`
             }
           />
           {subId && <SummaryRow label="Subscription ID" value={<span className="mono">{subId}</span>} />}

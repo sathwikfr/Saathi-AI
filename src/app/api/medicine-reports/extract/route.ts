@@ -3,7 +3,8 @@ import { getGroqVisionModel } from '@/lib/groqVision';
 import { SAMPLE_PRESCRIPTIONS } from '@/lib/medicineExtractor';
 import { createMedicineReport, getParentById } from '@/lib/db';
 import { requireUser } from '@/lib/access';
-import { extractFromRequest } from '@/lib/medicineReportIntake';
+import { extractFromRequest, EXTRACTIONS_PER_HOUR } from '@/lib/medicineReportIntake';
+import { consumeRateLimit } from '@/lib/security';
 
 export async function GET() {
   // Sample prescriptions for 1-click preview (no personal data)
@@ -22,6 +23,10 @@ export async function GET() {
 export async function POST(req: Request) {
   const auth = await requireUser();
   if (!auth.ok) return auth.response;
+  // Each photo is a paid vision request; shared with the per-parent upload route.
+  if (!consumeRateLimit(`extract:${auth.user.id}`, EXTRACTIONS_PER_HOUR, 3600000).allowed) {
+    return NextResponse.json({ error: 'That is a lot of photos in one hour. Please try again later, or add the medicines by hand.' }, { status: 429 });
+  }
 
   try {
     const result = await extractFromRequest(req);

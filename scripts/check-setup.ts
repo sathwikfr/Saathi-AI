@@ -67,6 +67,7 @@ const GROUPS: Group[] = [
       { name: 'NEXT_PUBLIC_RAZORPAY_KEY_ID', hint: 'The same Key ID again (the browser needs it)' },
       { name: 'RAZORPAY_KEY_SECRET', hint: 'Shown once when you generate the key' },
       { name: 'RAZORPAY_WEBHOOK_SECRET', hint: 'Any random string; paste the same value in Razorpay → Webhooks (generated locally already)' },
+      { name: 'RAZORPAY_PLAN_ID_ESSENTIAL', hint: 'Printed by the same script' },
       { name: 'RAZORPAY_PLAN_ID_SOLO', hint: 'Run: npx tsx scripts/create-razorpay-plans.ts --confirm' },
       { name: 'RAZORPAY_PLAN_ID_FAMILY', hint: 'Printed by the same script' },
       { name: 'RAZORPAY_PLAN_ID_EXTENDED', hint: 'Printed by the same script' }
@@ -115,6 +116,12 @@ const GROUPS: Group[] = [
       { name: 'SUPABASE_URL', hint: 'Supabase → Project settings → API → Project URL' },
       { name: 'SUPABASE_SERVICE_ROLE_KEY', hint: 'Supabase → Project settings → API → service_role key (server only, never NEXT_PUBLIC)' }
     ]
+  },
+  {
+    title: 'Scheduler heartbeat',
+    why: 'Emails you when the 5-minute cron stops running (no calls, no reminders). Optional, but set it before real families.',
+    optional: true,
+    checks: [{ name: 'CRON_HEARTBEAT_URL', hint: 'healthchecks.io → new check, period 5 min, grace 15 min → its ping URL', valid: v => (/^https:\/\//.test(v) ? null : 'must start with https://') }]
   },
   {
     title: 'Support phone',
@@ -225,7 +232,7 @@ async function checkRazorpay(): Promise<string[]> {
   }
   lines.push('✓ Subscriptions enabled');
 
-  for (const name of ['RAZORPAY_PLAN_ID_SOLO', 'RAZORPAY_PLAN_ID_FAMILY', 'RAZORPAY_PLAN_ID_EXTENDED']) {
+  for (const name of ['RAZORPAY_PLAN_ID_ESSENTIAL', 'RAZORPAY_PLAN_ID_SOLO', 'RAZORPAY_PLAN_ID_FAMILY', 'RAZORPAY_PLAN_ID_EXTENDED']) {
     const planId = process.env[name];
     if (!isSet(planId)) continue;
     const s = await status(`/plans/${encodeURIComponent(planId!)}`);

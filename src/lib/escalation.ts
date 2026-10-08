@@ -312,6 +312,16 @@ export async function advanceEscalations(deps: EscalationDeps & { parentIds?: st
       advanced += 1;
     } catch (err) {
       console.error(`[escalation] Round ${esc.round + 1} of ${esc.id} failed:`, err);
+      // The claim above cleared nextStepAt; without this the emergency would sit "active" forever and nobody
+      // would be told. Try the round again on a later tick.
+      try {
+        await prisma.escalation.updateMany({
+          where: { id: esc.id, status: 'active', nextStepAt: null },
+          data: { nextStepAt: new Date(now.getTime() + 2 * 60000) }
+        });
+      } catch (restoreErr) {
+        console.error(`[escalation] Could not reschedule ${esc.id}:`, restoreErr);
+      }
     }
   }
   return { advanced };

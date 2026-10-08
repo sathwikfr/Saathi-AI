@@ -13,12 +13,17 @@ import { newId } from './db';
 import Anthropic from '@anthropic-ai/sdk';
 import { WhatsAppConfig, getWhatsAppConfig, sendText, downloadMedia, WA_PAYLOAD } from './whatsapp';
 import { checkForScam, fallbackReply } from './scamCheck';
-import { recordAlert } from './alerts';
+import { recordAlert, escalateEmergencies } from './alerts';
+import { scanMessage, scanSymptomMessage } from './safety';
+import { ALERT_TITLES } from './callInterpretation';
 import { notifyFamily } from './familyNotify';
 import { WA_REPLIES } from './familyMessages';
 import { claimAndEmailFallback, NotifyDeps } from './familyNotify';
 import { placeManualCall, DispatchDeps } from './callDispatch';
 import { escalationForAlert, markHandled } from './escalation';
+import { handleReminderInbound, parsePauseToday, tomorrowStartIst } from './reminders';
+import { parseClockTime } from './ist';
+import { parentRoleFor, roleAllows } from './familyAccess';
 
 export interface InboundDeps extends NotifyDeps {
   now?: Date;
@@ -31,6 +36,22 @@ export interface InboundDeps extends NotifyDeps {
 /** Scam checks a parent can ask for in 24 hours (each one is a Claude request). */
 export const MAX_SCAM_CHECKS_PER_DAY = 20;
 export const SCAM_ALERT_TITLE = 'Possible scam message';
+export const PARENT_EMERGENCY_TITLE = 'Possible emergency in a WhatsApp message';
+/** One alert and one calling ladder per this many minutes for a parent's emergency texts. */
+export const PARENT_EMERGENCY_GAP_MINUTES = 30;
+/** A parent's everyday symptoms on WhatsApp: the family is told at once, then at most once per this many hours. */
+export const PARENT_UNWELL_GAP_HOURS = 2;
+
+export const PARENT_PAUSE_TITLE = 'Asked for no calls today';
+
+export const PARENT_REPLIES = {
+  pausedToday: (time: string | null) =>
+    `OK, Saathi won't call again today. Saathi will call you tomorrow${time ? ` at ${time.replace(/^0/, '')}` : ''}.`,
+  emergency: (family: string) =>
+    `This sounds like it could be urgent. Please call 108 for an ambulance or 112 now, or ask someone near you for help. I am letting ${family} know right away.`,
+  unwell: (family: string) =>
+    `Sorry you're not feeling well. I've let ${family} know. I can't give medical advice: please rest, and if it gets worse, see a doctor. In an emergency call 108.`
+} as const;
 
 export interface InboundSummary {
   statuses: number;
@@ -56,6 +77,15 @@ function isUniqueViolation(err: unknown): boolean {
 
 /** The account a WhatsApp number belongs to: its WhatsApp setting first, then the account phone. */
 async function findUserByPhone(e164: string) {
+  // The account whose OWN phone this is comes first (unless it deliberately points updates at another number): another
+  // account that merely typed this number as its WhatsApp number must not be the one a START or STOP from it lands on.
+  const own = await prisma.user.findFirst({
+    where: {
+      phone: e164,
+      OR: [{ notificationPreferences: { is: null } }, { notificationPreferences: { is: { whatsappNumber: null } } }, { notificationPreferences: { is: { whatsappNumber: e164 } } }]
+    }
+  });
+  if (own) return own;
   const pref = await prisma.notificationPreferences.findFirst({ where: { whatsappNumber: e164 }, select: { userId: true } });
   if (pref) return prisma.user.findUnique({ where: { id: pref.userId } });
   return prisma.user.findFirst({ where: { phone: e164 } });
@@ -114,7 +144,28 @@ async function handleStatus(st: Obj, deps: InboundDeps): Promise<boolean> {
   return moved.count === 1;
 }
 
+/**
+ * The inbound row is stored first so a re-delivery is recognised, but if handling then fails (database error), the
+ * row is removed again before the error goes up: Meta's retry must be processed from scratch, otherwise an
+ * emergency message ("chest pain") would be remembered as "seen" and never reach the family.
+ */
 async function handleMessage(msg: Obj, cfg: WhatsAppConfig | null, deps: InboundDeps): Promise<number> {
+  const claim: { rowId: string | null } = { rowId: null };
+  try {
+    return await handleMessageInner(msg, cfg, deps, claim);
+  } catch (err) {
+    if (claim.rowId) {
+      try {
+        await prisma.whatsAppMessage.deleteMany({ where: { id: claim.rowId, kind: 'inbound', direction: 'in' } });
+      } catch (cleanupErr) {
+        console.error('[whatsapp] Could not release an inbound message after a failure:', cleanupErr);
+      }
+    }
+    throw err;
+  }
+}
+
+async function handleMessageInner(msg: Obj, cfg: WhatsAppConfig | null, deps: InboundDeps, claim: { rowId: string | null }): Promise<number> {
   const waId = str(msg.id);
   const fromDigits = str(msg.from).replace(/\D/g, '');
   if (!waId || !fromDigits) return 0;
@@ -149,6 +200,15 @@ async function handleMessage(msg: Obj, cfg: WhatsAppConfig | null, deps: Inbound
     if (isUniqueViolation(err)) return 0; // Meta re-delivered it
     throw err;
   }
+  claim.rowId = inbound.id;
+  // Medicine reminders on WhatsApp (Remind plan): START codes, Yes / Not yet, STOP, and anything the person writes.
+  const reminderReplies = await handleReminderInbound(
+    { inboundId: inbound.id, phone, type, text, payload, contextId: str(obj(msg.context).id) },
+    cfg,
+    deps
+  );
+  if (reminderReplies !== null) return reminderReplies;
+
   if (!user) {
     // A parent forwarding a message they're unsure about: the scam check.
     const parent = await prisma.parentProfile.findFirst({
@@ -171,6 +231,16 @@ async function handleMessage(msg: Obj, cfg: WhatsAppConfig | null, deps: Inbound
 
     if (payload === WA_PAYLOAD.ack) {
       if (!original.alertId) return 0;
+      // The tap must come from someone who is in this parent's family circle NOW: a member who was removed (or
+      // left) still holds the old alert message and must not be able to stop the emergency calls with it.
+      const alertRow = await prisma.alertRecord.findUnique({ where: { id: original.alertId }, select: { parentId: true } });
+      if (!alertRow) return 0;
+      const role = await parentRoleFor(user.id, alertRow.parentId);
+      if (!roleAllows(role, 'view')) return 0;
+      // Stopping the emergency calls is for the owner and co-managers; a view-only member is told to call instead.
+      if (!roleAllows(role, 'manage')) {
+        return (await reply(cfg, target, 'Only the person who manages this care can stop the emergency calls. Please call them yourself, or ask the owner of the Aaptha account.', deps)) ? 1 : 0;
+      }
       // An urgent alert being escalated: "I'm on it" stops the calls and tells the rest of the family.
       const esc = await escalationForAlert(original.alertId);
       if (esc) {
@@ -206,7 +276,12 @@ async function handleMessage(msg: Obj, cfg: WhatsAppConfig | null, deps: Inbound
     await prisma.notificationPreferences.upsert({
       where: { userId: user.id },
       create: { userId: user.id, whatsapp: false, whatsappOptInAt: null },
-      update: { whatsapp: false, whatsappOptInAt: null }
+      update: { whatsapp: false, whatsappOptInAt: null, whatsappVerifiedAt: null }
+    });
+    // STOP is about the number, not one account: every account that points updates at it stops (and must be proven again).
+    await prisma.notificationPreferences.updateMany({
+      where: { OR: [{ whatsappNumber: phone }, { user: { phone } }] },
+      data: { whatsapp: false, whatsappOptInAt: null, whatsappVerifiedAt: null }
     });
     return (await reply(cfg, target, WA_REPLIES.stopped, deps)) ? 1 : 0;
   }
@@ -215,8 +290,9 @@ async function handleMessage(msg: Obj, cfg: WhatsAppConfig | null, deps: Inbound
     const number = user.phone === phone ? null : phone;
     await prisma.notificationPreferences.upsert({
       where: { userId: user.id },
-      create: { userId: user.id, whatsapp: true, whatsappOptInAt: now, whatsappNumber: number },
-      update: { whatsapp: true, whatsappOptInAt: now, whatsappNumber: number }
+      // Sending START from this number is the proof that it is theirs.
+      create: { userId: user.id, whatsapp: true, whatsappOptInAt: now, whatsappVerifiedAt: now, whatsappNumber: number },
+      update: { whatsapp: true, whatsappOptInAt: now, whatsappVerifiedAt: now, whatsappNumber: number }
     });
     return (await reply(cfg, target, WA_REPLIES.started, deps)) ? 1 : 0;
   }
@@ -241,11 +317,90 @@ async function handleParentMessage(
   deps: InboundDeps
 ): Promise<number> {
   if (!cfg) return 0;
-  const since = new Date((deps.now || new Date()).getTime() - 86400000);
+  const now = deps.now || new Date();
+  const familyName = parent.user.name.split(' ')[0] || 'your family';
+
+  // Before the scam check (2026-10-05): words that may mean an emergency, then everyday symptoms. Never rate-limited.
+  // A photo with a caption ("chest pain") counts too.
+  const scanText = type === 'text' ? text : type === 'image' ? str(obj(msg.image).caption).trim() : '';
+  if (scanText) {
+    const emergency = scanMessage(scanText);
+    if (emergency.hit) {
+      const sent = await reply(cfg, { id: inbound.id, phone: inbound.phone, userId: null }, PARENT_REPLIES.emergency(familyName), deps, 'reply', parent.id);
+      // The parent always gets the 108/112 reply, but one emergency starts one alert and one calling ladder: more
+      // messages in the next half hour would otherwise re-ring family and neighbours every time (and cost money).
+      const recentEmergency = await prisma.alertRecord.count({
+        where: { parentId: parent.id, title: PARENT_EMERGENCY_TITLE, createdAt: { gte: new Date(now.getTime() - PARENT_EMERGENCY_GAP_MINUTES * 60000) } }
+      });
+      if (recentEmergency > 0) return sent ? 1 : 0;
+      const rec = await recordAlert({
+        parentId: parent.id,
+        callLogId: null,
+        level: 4,
+        title: PARENT_EMERGENCY_TITLE,
+        message: `${parent.name} sent Saathi a WhatsApp message with words that may mean an emergency (${emergency.matches.slice(0, 3).join(', ')}): "${scanText.slice(0, 200)}". Please call ${parent.name} right away. If it is serious, call 112 or ask someone nearby to go to them.`
+      });
+      if (rec.alert) {
+        await notifyFamily({ parentId: parent.id, callLogId: null, alerts: [rec.alert] }, deps);
+        // The same calling ladder as an emergency heard on a call (family, then nearby contacts).
+        await escalateEmergencies(parent.id, [rec], scanText.slice(0, 200), { ...deps, now, config: deps.dispatch?.config });
+      }
+      return sent ? 1 : 0;
+    }
+
+    // "pause today" (2026-10-05): no more calls today; they start again tomorrow by themselves. The family is told once
+    // (otherwise they would only see calls not happening).
+    if (type === 'text' && parsePauseToday(scanText)) {
+      const slots = await prisma.scheduledCallSlot.findMany({ where: { parentId: parent.id, isActive: true }, select: { time: true } });
+      const first = slots.map(s => s.time).sort((a, b) => (parseClockTime(a) ?? 0) - (parseClockTime(b) ?? 0))[0] || null;
+      await prisma.parentProfile.update({
+        where: { id: parent.id },
+        data: { isPaused: true, pauseReason: `${parent.name} asked for no calls today (WhatsApp)`, pauseUntil: tomorrowStartIst(now) }
+      });
+      const rec = await recordAlert({
+        parentId: parent.id,
+        callLogId: null,
+        level: 2,
+        title: PARENT_PAUSE_TITLE,
+        message: `${parent.name} asked Saathi on WhatsApp not to call again today: "${scanText.slice(0, 200)}". Calls start again tomorrow${first ? ` at ${first}` : ''}.`
+      });
+      if (rec.alert) await notifyFamily({ parentId: parent.id, callLogId: null, alerts: [rec.alert] }, deps);
+      return (await reply(cfg, { id: inbound.id, phone: inbound.phone, userId: null }, PARENT_REPLIES.pausedToday(first), deps, 'reply', parent.id)) ? 1 : 0;
+    }
+
+    const symptoms = scanSymptomMessage(scanText);
+    if (symptoms.hit) {
+      const gapStart = new Date(now.getTime() - PARENT_UNWELL_GAP_HOURS * 3600000);
+      const alreadyTold = (await prisma.whatsAppMessage.count({ where: { parentId: parent.id, kind: 'unwell_reply', createdAt: { gte: gapStart } } })) > 0;
+      if (!alreadyTold) {
+        const rec = await recordAlert({
+          parentId: parent.id,
+          callLogId: null,
+          level: 3,
+          title: ALERT_TITLES.health,
+          message: `${parent.name} may not be feeling well and wrote to Saathi on WhatsApp: "${scanText.slice(0, 200)}". Please check in with them today.`
+        });
+        if (rec.alert) await notifyFamily({ parentId: parent.id, callLogId: null, alerts: [rec.alert] }, deps);
+      }
+      const row = await prisma.whatsAppMessage.create({
+        // Only replies that went with an alert start the gap ('unwell_reply'); the others are 'unwell_reply_quiet'.
+        data: { id: newId('wam'), userId: null, parentId: parent.id, kind: alreadyTold ? 'unwell_reply_quiet' : 'unwell_reply', refKey: `reply:${inbound.id}`, phone: inbound.phone, body: PARENT_REPLIES.unwell(familyName), createdAt: now }
+      });
+      try {
+        const { messageId } = await sendText(cfg, inbound.phone, PARENT_REPLIES.unwell(familyName), deps.fetchImpl);
+        await prisma.whatsAppMessage.update({ where: { id: row.id }, data: { status: 'sent', providerMessageId: messageId } });
+        return 1;
+      } catch (err) {
+        await prisma.whatsAppMessage.update({ where: { id: row.id }, data: { status: 'failed', error: (err instanceof Error ? err.message : 'unknown').slice(0, 300) } });
+        return 0;
+      }
+    }
+  }
+
+  const since = new Date(now.getTime() - 86400000);
   const recent = await prisma.whatsAppMessage.count({ where: { phone: inbound.phone, kind: 'scam_reply', createdAt: { gte: since } } });
   if (recent >= MAX_SCAM_CHECKS_PER_DAY) return 0;
 
-  const familyName = parent.user.name.split(' ')[0] || 'your family';
   let image: { data: Buffer; mimeType: string } | null = null;
   let caption = text;
   if (type === 'image') {

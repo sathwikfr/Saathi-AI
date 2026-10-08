@@ -10,7 +10,8 @@ import {
   FoodRelation,
   ScheduledCallSlot,
   HealthInsight,
-  ParentAccessRole
+  ParentAccessRole,
+  ReminderView
 } from '@/lib/types';
 import { timeToMinutes } from '@/lib/scheduleGenerator';
 import { CallFact } from '@/lib/insightRules';
@@ -29,6 +30,20 @@ export type ParentDetails = {
   saathiNumber: string | null;
   supportPhone: string | null;
   cardUrl: string | null;
+  /** Owner only: other parents on the account with the same phone (can be called together). */
+  callTogetherCandidates?: { id: string; name: string }[];
+  /** How this person's reminders go out (follows the owner's plan): Saathi calls, or WhatsApp only. */
+  channel?: 'call' | 'whatsapp';
+  /** The owner's plan: 'whatsapp' = Remind (can't switch to calls). */
+  ownerPlanChannel?: 'call' | 'whatsapp';
+  /** The owner's plan limits (premium = Family / Extended features). */
+  ownerPlan?: { id: string; name: string; premium: boolean; askPerMonth: number; whatsappPeople: number; healthMonitor?: boolean; dailyTouches?: boolean; healthMonitorPrice?: number; dailyTouchesPrice?: number };
+  /** Health Monitor: the time of the short readings call, if one is set. */
+  vitalsCall?: string | null;
+  /** WhatsApp reminders, last 14 days, newest first. */
+  reminders?: ReminderView[];
+  /** Managers only: the WhatsApp START link for this person. */
+  reminderStart?: { whatsappReady: boolean; link: string | null; code: string | null; caretakerLink?: string | null } | null;
 };
 
 /** Owner or co-manager: may change calls, medicines, contacts. */

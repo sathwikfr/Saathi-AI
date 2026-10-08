@@ -118,8 +118,96 @@ This summary is part of the care plan you set up on Aaptha.
 Buttons: **Visit website** `Open Aaptha` → `https://<your-domain>/dashboard`.
 Samples: `{{1}}` = `weekly`, `{{2}}` = `Amma`, `{{3}}` = `Medicines taken on 19 of 21 calls (90%). Mood mostly calm. Mentioned knee pain on Tuesday and Friday.`
 
-`scripts/create-whatsapp-templates.ts` submits all five; re-run it (dry run first) to add the two new ones.
+### `aaptha_medicine_check` (Remind plan, 2026-10-04)
+The medicine check sent to the person who takes the medicine (not the family) at each medicine time, and again for
+asks 2 and 3 (30 minutes apart) when they tap "Not yet" or don't answer. Category **UTILITY**.
+Body:
+```
+Hi {{1}}, did you take your {{2}} medicine: {{3}}?
+
+This is the medicine check you set up on Aaptha.
+```
+Buttons (quick replies, in this order): `Yes, taken`, `Not yet`. **No website button** (the person may have no Aaptha account).
+Samples: `{{1}}` = `Priya`, `{{2}}` = `8:00 AM`, `{{3}}` = `Folic acid 5 mg (after food), Iron 1 tablet`.
+In discreet mode `{{3}}` is `your medicines`.
+
+### `aaptha_caretaker_alert` (Remind plan, 2026-10-05)
+To the optional caretaker (husband, parent): a dose not confirmed after 3 asks (at most 2 a day), "not feeling well"
+(at most once per 2 hours), or words that may mean an emergency (once per 6 hours). Category **UTILITY**.
+Body:
+```
+Medicine alert for {{1}}: {{2}}
+
+You get this as the caretaker named for the medicine checks set up on Aaptha.
+```
+Buttons: ONE quick reply, `I'll handle it` (the user's rule: no other option). Tapping it marks the dashboard alert handled
+by the caretaker; we send nothing back.
+Samples: `{{1}}` = `Priya`, `{{2}}` = `Priya has not confirmed the 8:00 AM medicines (Folic acid, Iron) after 3 reminders. You may want to call Priya on +91 98765 43210.`
+
+### `aaptha_appointment_reminder` (Remind plan, 2026-10-08)
+To the person: a doctor / scan / lab visit the family added on the dashboard, once the evening before (from 6 PM IST) and
+once the morning of (from 7 AM IST). Category **UTILITY**, no buttons.
+```
+Hi {{1}}, a reminder: {{2}}
+
+This reminder was set up on Aaptha.
+```
+Sample: `{{1}}` = `Priya`, `{{2}}` = `Tomorrow at 10 AM: scan at Apollo Clinic. Needs an empty stomach.`
+
+### `aaptha_weekly_progress` (Remind plan, opt-in, 2026-10-08)
+To the person, Sunday from 6 PM IST, only if they (or the family) switched "Weekly progress" on and the week had at least 3 checks.
+The caretaker gets the same news through `aaptha_caretaker_update` only if that is switched on too. Category **UTILITY**, no buttons.
+```
+Hi {{1}}, your week: {{2}}
+
+This weekly summary was set up on Aaptha.
+```
+Sample: `{{1}}` = `Priya`, `{{2}}` = `This week you confirmed 13 of 14 medicine checks. Well done! 💪`
+
+### Translations (Remind plan, 2026-10-08)
+`aaptha_medicine_check`, `aaptha_appointment_reminder` and `aaptha_weekly_progress` also exist in hi, te, ta, kn, ml, bn, mr, gu
+(`src/lib/waTranslations.ts`; `npx tsx scripts/create-whatsapp-templates.ts --waba <id> --app-url <https url> --languages all --confirm`).
+They are **drafts**: have a native speaker check them first. The person's language is `ParentProfile.language` (picked in the
+Remind setup wizard). If a translation isn't approved yet, Meta answers error 132001 and the app sends the English template instead.
+The person's free-text replies are translated too (`repliesFor`); everything to the caretaker and the family stays English.
+
+### `aaptha_caretaker_update` (Remind plan, 2026-10-04)
+Good news after an alert: the dose was taken after all. Category **UTILITY**. Same body as above with "Medicine update for".
+```
+Medicine update for {{1}}: {{2}}
+
+You get this as the caretaker named for the medicine checks set up on Aaptha.
+```
+No buttons. Samples: `{{1}}` = `Priya`, `{{2}}` = `Good news: Priya has now confirmed the 8:00 AM medicines (at 9:42 AM).`
+
+(`aaptha_medicine_reminder` from the first version is no longer sent; don't submit it, or delete it if it was.)
+
+`scripts/create-whatsapp-templates.ts` submits all eight; re-run it (dry run first) to add new ones. **Submit the three Remind
+templates early:** the Remind plan sends nothing until Meta approves them.
 Meta may file a summary under MARKETING; if it does, reword it to be more transactional before families rely on it.
+
+**Remind plan: the person and their caretaker message this number too.** Each starts with their own link from onboarding /
+the dashboard (`https://wa.me/<our number>?text=START <code>`; a code changes once used). The person taps Yes, taken / Not yet (or types it: "yes / haan / avunu / done / 👍", "no / nahi / ledu / not yet" count the same, on today's latest open check);
+"Not yet" or no reply is asked again every 30 minutes, 3 asks in all; still no Yes 30 minutes later -> the caretaker (optional)
+gets `aaptha_caretaker_alert` (at most 2 a day). **No spam** (the user's rule, 2026-10-05): other messages get no reply at all,
+and repeated symptom / emergency messages within the gap get nothing more. Both can reply STOP / START. Anything else the person writes is checked for
+emergency words (incl. pregnancy warning signs): one warm message (it still mentions 108), the caretaker is alerted at once and a
+level-4 dashboard alert is raised, then nothing more for 6 hours. Everyday symptoms (fever, headache, dizziness, …, 9 languages)
+get a kind reply, the caretaker is alerted (at most once per 2 hours) and a level-3 alert is raised. **"Pause today"** (2026-10-05:
+"pause", "not today", "aaj nahi", "ఈరోజు వద్దు", … `parsePauseToday`): today's open checks are marked paused (never missed, no
+caretaker alert), one reply says when they start again, and they restart by themselves at midnight IST. **Tablets running out:** if the family set a tablet count (dashboard, Medicines tab) each Yes counts one dose down;
+when about 3 days are left the "Noted" reply adds one line ("Iron is running low: 6 tablets left, about 3 days. Once you buy
+more, reply with the name and number, like "Iron 30""), once per refill. No separate message, so no template. The person's
+reply "Iron 30" (or just "30" when only one medicine is counted) resets the count. Other text: no reply.
+Code: `lib/reminders.ts`.
+
+**Calling-plan parents can write "pause today" too** (`lib/whatsappInbound.ts`): no more calls that day, one reply with the
+next call time, one level-2 alert to the family ("Asked for no calls today"), calls restart at midnight IST. Checked after
+the emergency scan, so "not today, chest pain" is still an emergency.
+
+**How many family members get WhatsApp updates** (calling plans): Solo 1, Family 2, Extended 5 (owner first, then family
+members in the order they joined, counting only those who opted in). Urgent (level 4) alerts go to everyone who opted in.
+People whose number is not +91 start on "only when something needs attention + one daily summary" (foreign messages cost more).
 
 **Parents can also message this number.** A message (or screenshot) from a parent's phone gets the scam check: a short
 reply in their language, never "this is safe", and a dashboard alert for the family when it looks like a scam.
@@ -148,6 +236,7 @@ Locally, use the ngrok URL from `docs/sarvam-agent.md`.
 | `WHATSAPP_VERIFY_TOKEN` | Any random string of 16+ characters; the same value goes in the webhook settings |
 | `WHATSAPP_API_VERSION` | Optional, default `v23.0` |
 | `WHATSAPP_TEMPLATE_LANGUAGE` | Optional, default `en` (must match the templates' language) |
+| `WHATSAPP_BUSINESS_NUMBER` | Optional: our WhatsApp number for the START links (e.g. `+15551697486`). Without it the app asks Meta for the display number once and keeps it for 12 h |
 
 `npm run check:setup` reports which are missing (never prints values). WhatsApp switches on as soon as the token and
 phone number id are set; redeploy after adding them on Vercel.
@@ -158,4 +247,7 @@ phone number id are set; redeploy after adding them on Vercel.
 2. Place a test call from the dashboard and answer it: you should get `aaptha_call_result` (or `aaptha_call_alert` if you say you skipped a medicine).
 3. Tap **I'll handle it**: the alert on the dashboard shows "Handled by you", and WhatsApp replies with a confirmation.
 4. Reply `STOP`, then `START`.
+5. Remind plan: add yourself on a Remind account with a second phone as caretaker; tap **Open WhatsApp and send START** on
+   both phones. At the next medicine time (the cron sends it within ~5 minutes) tap **Not yet**, then don't answer: after
+   3 asks the caretaker phone gets "has not confirmed…". Tap **Yes, taken** on the last ask: the caretaker gets "Good news…".
 5. `WhatsAppMessage` rows show each message's status moving sent → delivered → read.

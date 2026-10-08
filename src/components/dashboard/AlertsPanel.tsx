@@ -74,7 +74,7 @@ function OutcomeForm({ parentId, alert, onDone, onToast }: { parentId: string; a
   );
 }
 
-export function AlertsPanel({ parentId, parentName, alerts, onChanged, onToast }: { parentId: string; parentName: string; alerts: AlertRecord[]; onChanged: () => void; onToast: Toast }) {
+export function AlertsPanel({ parentId, parentName, alerts, onChanged, onToast, manage = true }: { parentId: string; parentName: string; alerts: AlertRecord[]; onChanged: () => void; onToast: Toast; /** false for view-only members: no "I'm on it" / closing, they call the parent themselves */ manage?: boolean }) {
   const shown = alerts.filter(a => a.level > 0);
   if (shown.length === 0) {
     return (
@@ -141,7 +141,7 @@ export function AlertsPanel({ parentId, parentName, alerts, onChanged, onToast }
                   ) : alt.status === 'resolved' ? (
                     <span className="badge badge-green">Resolved</span>
                   ) : null}
-                  {!alt.acknowledgedAt && !alt.outcome && alt.level >= 2 && (
+                  {manage && !alt.acknowledgedAt && !alt.outcome && alt.level >= 2 && (
                     <button
                       className={`btn btn-sm ${live ? 'btn-primary' : 'btn-ghost'}`}
                       onClick={async () => {
@@ -154,7 +154,7 @@ export function AlertsPanel({ parentId, parentName, alerts, onChanged, onToast }
                     </button>
                   )}
                 </div>
-                {needsOutcome && <OutcomeForm parentId={parentId} alert={alt} onDone={onChanged} onToast={onToast} />}
+                {manage && needsOutcome && <OutcomeForm parentId={parentId} alert={alt} onDone={onChanged} onToast={onToast} />}
               </div>
             </article>
           );

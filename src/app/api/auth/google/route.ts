@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getUserByEmail, createUser } from '@/lib/db';
 import { AUTH_COOKIE_NAME } from '@/lib/auth';
-import { createDBSession } from '@/lib/security';
+import { createDBSession, isCrossSiteRequest, CROSS_SITE_ERROR } from '@/lib/security';
 import { prisma } from '@/lib/prisma';
 
 /**
@@ -58,6 +58,7 @@ async function recordOAuthLink(userId: string, email: string) {
 }
 
 export async function POST(req: Request) {
+  if (isCrossSiteRequest(req.headers)) return NextResponse.json(CROSS_SITE_ERROR, { status: 403 });
   try {
     const clientId = getGoogleClientId();
     if (!clientId) {

@@ -17,7 +17,7 @@ function SignUpContent() {
   const searchParams = useSearchParams();
   // Only paid plans (each with a 7-day trial) are offered; old ?plan=free links get Family.
   const requestedPlan = searchParams.get('plan');
-  const planParam: PlanId = requestedPlan === 'solo' || requestedPlan === 'extended' ? requestedPlan : 'family';
+  const planParam: PlanId = requestedPlan === 'essential' || requestedPlan === 'solo' || requestedPlan === 'extended' ? requestedPlan : 'family';
   const selectedPlan = getPlan(planParam);
   const identifierParam = searchParams.get('identifier') || '';
   // Family members joining through an invite link go back to it (they don't need a plan of their own).

@@ -24,6 +24,7 @@ type Props = {
 export function SetupChecklist({ parent, familyName, contacts, saathiNumber, firstCallTime, onChanged, onToast, onOpenFamily }: Props) {
   const [showScript, setShowScript] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const [saving, setSaving] = useState<string | null>(null);
   const lang = noticeLangFor(parent.language);
   const script = introScript(lang, { parentName: parent.name, time: firstCallTime || parent.callTime, familyName: familyName.split(' ')[0] });
   const englishScript = lang === 'en' ? null : introScript('en', { parentName: parent.name, time: firstCallTime || parent.callTime, familyName: familyName.split(' ')[0] });
@@ -43,14 +44,41 @@ export function SetupChecklist({ parent, familyName, contacts, saathiNumber, fir
   if (doneCount === steps.length) return null;
 
   const mark = async (step: 'introduced' | 'number_saved', done = true) => {
-    const res = await fetch(`/api/parents/${parent.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'setup_step', step, done })
-    });
-    if (res.ok) onChanged();
-    else onToast('Could not save that. Please try again.', 'error');
+    if (saving) return;
+    setSaving(step);
+    try {
+      const res = await fetch(`/api/parents/${parent.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'setup_step', step, done })
+      });
+      if (res.ok) {
+        onChanged();
+        onToast(done ? 'Ticked off.' : 'Marked as not done yet.', 'success');
+      } else {
+        onToast('Could not save that. Please try again.', 'error');
+      }
+    } catch {
+      onToast('Could not save that. Please check your connection and try again.', 'error');
+    } finally {
+      setSaving(null);
+    }
   };
+
+  /** A tick you can press for the two steps only the family can confirm; the others tick themselves. */
+  const renderTick = (step: 'introduced' | 'number_saved', done: boolean, label: string) => (
+    <button
+      type="button"
+      className="tick tick-btn"
+      role="checkbox"
+      aria-checked={done}
+      aria-label={label}
+      disabled={saving === step}
+      onClick={() => mark(step, !done)}
+    >
+      {done && <Check size={14} strokeWidth={3} />}
+    </button>
+  );
 
   return (
     <section className="panel" aria-labelledby="setup-title" style={{ marginBottom: '20px' }}>
@@ -75,13 +103,13 @@ export function SetupChecklist({ parent, familyName, contacts, saathiNumber, fir
                   ? `Said yes${parent.parentConsentAt ? ` on ${new Date(parent.parentConsentAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}` : ''}.`
                   : consent === 'declined' || consent === 'withdrawn'
                     ? `${parent.name} said no, so calls are paused. Talk with them first; resuming lets Saathi ask again.`
-                    : `Saathi explains in two sentences what it does and that you will see the results, then asks if that's okay. No yes, no more calls.`}
+                    : `Not asked yet. On ${parent.name}'s next call${firstCallTime ? ` (first one at ${firstCallTime})` : ''} Saathi explains in two sentences what it does and that you will see the results, then asks if that's okay. This ticks by itself once ${parent.name} says yes; you can't tick it for them. No yes, no more calls.`}
               </span>
             </div>
           </li>
 
           <li className={steps[1].done ? 'done' : ''}>
-            <span className="tick">{steps[1].done && <Check size={14} strokeWidth={3} />}</span>
+            {renderTick('introduced', steps[1].done, `${parent.name} has been told about Saathi`)}
             <div style={{ flex: 1 }}>
               <strong>Tell {parent.name} about Saathi yourself</strong>
               <span>A WhatsApp voice note or message from you works best. Here is what to say, in {NOTICES[lang].label}:</span>
@@ -102,13 +130,15 @@ export function SetupChecklist({ parent, familyName, contacts, saathiNumber, fir
                 <a className="btn btn-quiet btn-sm" href={whatsappShareLink(`${NOTICES[lang].title}: ${noticeUrl}`, parent.phone)} target="_blank" rel="noreferrer">
                   <ExternalLink size={14} /> Share the short notice
                 </a>
-                {!steps[1].done && <button className="btn btn-primary btn-sm" onClick={() => mark('introduced')}>I&apos;ve told them</button>}
+                {steps[1].done
+                  ? <button className="btn btn-quiet btn-sm" disabled={saving === 'introduced'} onClick={() => mark('introduced', false)}>Undo</button>
+                  : <button className="btn btn-primary btn-sm" disabled={saving === 'introduced'} onClick={() => mark('introduced')}>I&apos;ve told them</button>}
               </div>
             </div>
           </li>
 
           <li className={steps[2].done ? 'done' : ''}>
-            <span className="tick">{steps[2].done && <Check size={14} strokeWidth={3} />}</span>
+            {renderTick('number_saved', steps[2].done, `Saathi's number is saved on ${parent.name}'s phone`)}
             <div>
               <strong>Save Saathi&apos;s number on {parent.name}&apos;s phone</strong>
               <span>
@@ -122,7 +152,9 @@ export function SetupChecklist({ parent, familyName, contacts, saathiNumber, fir
                     <Download size={14} /> Contact card
                   </a>
                 )}
-                {!steps[2].done && <button className="btn btn-primary btn-sm" onClick={() => mark('number_saved')}>It&apos;s saved</button>}
+                {steps[2].done
+                  ? <button className="btn btn-quiet btn-sm" disabled={saving === 'number_saved'} onClick={() => mark('number_saved', false)}>Undo</button>
+                  : <button className="btn btn-primary btn-sm" disabled={saving === 'number_saved'} onClick={() => mark('number_saved')}>It&apos;s saved</button>}
               </div>
             </div>
           </li>

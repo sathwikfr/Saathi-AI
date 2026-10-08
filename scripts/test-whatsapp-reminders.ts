@@ -8,12 +8,13 @@
  *         Nothing reaches a real phone. Every test row is deleted at the end.
  */
 import 'dotenv/config';
+import './lib/testDb';
 import { prisma } from '../src/lib/prisma';
 import { newId, createParent, setMedicinesForParent, newReminderStartCode, setCaretaker } from '../src/lib/db';
 import { WhatsAppConfig, buildTemplateRequest, renderTemplate, WA_PAYLOAD } from '../src/lib/whatsapp';
 import {
   runReminders, displayTime, firstName, prettyPhone, reminderMedicineText, reminderParams, listTimes, parseStartCode, cappedSlots, parseTypedAnswer,
-  parsePauseToday, tomorrowStartIst, tabletsPerDose, dosesPerDay, parseTopUp,
+  parsePauseToday, tomorrowStartIst, tabletsPerDose, dosesPerDay, parseTopUp, weeklyProgressText, isWeeklyTime, repliesFor,
   REMINDER_REPLIES, CARETAKER_TEXT, REMINDER_EMERGENCY_TITLE, REMINDER_MISSED_TITLE, REMINDER_UNWELL_TITLE, MAX_ASKS, CARETAKER_ALERTS_PER_DAY
 } from '../src/lib/reminders';
 import { processWhatsAppWebhook } from '../src/lib/whatsappInbound';
@@ -27,6 +28,8 @@ import { interpretCallResult, decideAlerts, ALERT_TITLES } from '../src/lib/call
 import { PARENT_REPLIES, PARENT_PAUSE_TITLE } from '../src/lib/whatsappInbound';
 import { SarvamConfig } from '../src/lib/sarvam';
 import { Medicine, ScheduledCallSlot } from '../src/lib/types';
+import { dueWhatsappAppointments, AppointmentRow } from '../src/lib/appointments';
+import { PHRASES, META_LANGUAGE, waLang, appointmentWords, fill } from '../src/lib/waTranslations';
 
 let passed = 0;
 let failed = 0;
@@ -101,10 +104,65 @@ function partA() {
   check('not a refill: "fever 102", "I took 2", two numbers, zero', [parseTopUp('fever 102', two), parseTopUp('I took 2', two), parseTopUp('Iron 30 Folic acid 20', two), parseTopUp('0', two)].every(x => x === null));
   check('running-low wording', REMINDER_REPLIES.runningLow([{ name: 'Iron', left: 6, days: 3 }]).startsWith('Iron is running low: 6 tablets left, about 3 days.') && REMINDER_REPLIES.runningLow([{ name: 'Iron', left: 0, days: 0 }]).startsWith('By my count your Iron tablets have run out.'));
 
+  console.log('\nA2e. Check-up reminders on WhatsApp');
+  const appt = (over: Partial<AppointmentRow> = {}): AppointmentRow => ({
+    id: 'a1', title: 'scan', kind: 'doctor', startsAt: ist(17, 10, 0), location: 'Apollo Clinic', notes: null, fasting: true,
+    remindedDayBefore: null, remindedSameDay: null, followedUpAt: null, cancelledAt: null, ...over
+  });
+  check('nothing before 6 PM the evening before', dueWhatsappAppointments([appt()], ist(16, 17, 59)).length === 0);
+  const eve = dueWhatsappAppointments([appt()], ist(16, 18, 0));
+  check('evening before: one line with time, place and empty stomach', eve.length === 1 && eve[0].which === 'day_before' && eve[0].text === 'Tomorrow at 10 AM: scan at Apollo Clinic. Needs an empty stomach.', eve);
+  check('not again once sent', dueWhatsappAppointments([appt({ remindedDayBefore: ist(16, 18, 5) })], ist(16, 20, 0)).length === 0);
+  check('nothing before 7 AM on the day', dueWhatsappAppointments([appt({ remindedDayBefore: ist(16, 18, 5) })], ist(17, 6, 59)).length === 0);
+  check('morning of: today at 10 AM', dueWhatsappAppointments([appt({ remindedDayBefore: ist(16, 18, 5) })], ist(17, 7, 0))[0]?.text.startsWith('Today at 10 AM: scan at Apollo Clinic.') === true);
+  check('never once it has started, or when cancelled', dueWhatsappAppointments([appt()], ist(17, 10, 30)).length === 0 && dueWhatsappAppointments([appt({ cancelledAt: new Date() })], ist(16, 19, 0)).length === 0);
+  check('notes stay on one line (Meta rule)', !/[\n\t]/.test(dueWhatsappAppointments([appt({ notes: 'bring\nold  reports' })], ist(16, 19, 0))[0].text));
+  const tpl = buildTemplateRequest('appointment', '+919876543210', ['Priya', 'Tomorrow at 10 AM: scan'], 'en') as unknown as { template: { name: string; components: Array<{ type: string }> } };
+  check('template aaptha_appointment_reminder, no buttons', tpl.template.name === 'aaptha_appointment_reminder' && !tpl.template.components.some(c => c.type === 'button'));
+
+  console.log('\nA2f. Weekly progress');
+  check('all taken: well done', weeklyProgressText(14, 14) === 'This week you confirmed all 14 medicine checks. Well done! 💪');
+  check('mostly: "13 of 14", still kind', weeklyProgressText(13, 14) === 'This week you confirmed 13 of 14 medicine checks. Well done! 💪');
+  check('fewer: no scolding, a fresh week', weeklyProgressText(6, 14) === 'This week you confirmed 6 of 14 medicine checks. A fresh week starts tomorrow.');
+  check('one line only (Meta rule)', !/[\n\t]/.test(weeklyProgressText(6, 14)));
+  check('only Sunday from 6 PM IST', isWeeklyTime(ist(11, 18, 0)) && !isWeeklyTime(ist(11, 17, 59)) && !isWeeklyTime(ist(12, 19, 0)) && !isWeeklyTime(ist(10, 19, 0)));
+
+  console.log('\nA2g. Messages in the person\'s language');
+  const langs = Object.keys(PHRASES) as Array<keyof typeof PHRASES>;
+  check('8 languages besides English', langs.length === 8 && langs.every(l => META_LANGUAGE[l] === l));
+  check('"Telugu" -> te, "Hindi" and "Hindi & English" -> hi, "English" -> en', waLang('Telugu') === 'te' && waLang('Hindi') === 'hi' && waLang('Hindi & English') === 'hi' && waLang('English') === 'en' && waLang(null) === 'hi');
+  const refKeys = Object.keys(PHRASES.hi).sort().join();
+  check('every language has every phrase, none empty', langs.every(l => Object.keys(PHRASES[l]).sort().join() === refKeys && Object.values(PHRASES[l]).every(v => typeof v === 'string' && v.trim().length > 0)));
+  const bad: string[] = [];
+  for (const l of langs) {
+    const R = repliesFor(l === 'hi' ? 'Hindi' : { te: 'Telugu', ta: 'Tamil', kn: 'Kannada', ml: 'Malayalam', bn: 'Bengali', mr: 'Marathi', gu: 'Gujarati' }[l]);
+    const all = [
+      R.started('Priya Rao', ['08:00 AM', '09:00 PM'], 'Ravi Kumar'), R.started('Priya Rao', ['08:00 AM'], null), R.restarted, R.stopped, R.taken('8:10 AM'),
+      R.courseDone, R.notYet('8:40 AM'), R.notYetLast('9:10 AM', 'Ravi Kumar'), R.notYetLast('9:10 AM', null), R.pausedToday('08:00 AM'), R.pausedToday(null),
+      R.alreadyTaken, R.runningLow([{ name: 'Iron', left: 6, days: 3 }, { name: 'Calcium', left: 0, days: 0 }]), R.toppedUp('Iron', 30),
+      R.emergency('Priya Rao', 'Ravi Kumar'), R.emergency('Priya Rao', null), R.unwell('Ravi Kumar'), R.unwell(null), weeklyProgressText(14, 14, l), weeklyProgressText(13, 14, l), weeklyProgressText(6, 14, l)
+    ];
+    if (all.some(t => /\{\w+\}/.test(t) || /undefined|null|NaN/.test(t))) bad.push(`${l}: leftover placeholder`);
+    if (!R.stopped.includes('START') || !R.restarted.includes('STOP') || !R.started('Priya', [], null).includes('STOP')) bad.push(`${l}: STOP/START missing`);
+    if (!R.emergency('Priya', null).includes('108') || !R.unwell(null).includes('108')) bad.push(`${l}: 108 missing`);
+    if (!R.started('Priya Rao', ['08:00 AM'], 'Ravi Kumar').includes('Priya') || R.started('Priya Rao', ['08:00 AM'], 'Ravi Kumar').includes('Rao')) bad.push(`${l}: first names`);
+    if (!R.runningLow([{ name: 'Iron', left: 6, days: 3 }]).includes('"Iron 30"')) bad.push(`${l}: top-up example`);
+    if (all.some(t => /[\n\t]/.test(weeklyProgressText(6, 14, l)) || t.length > 1000)) bad.push(`${l}: weekly one line / length`);
+    const p = PHRASES[l];
+    const vars = (t: string) => (t.match(/\{\{\d\}\}/g) || []).join('');
+    if (vars(p.tplReminder) !== '{{1}}{{2}}{{3}}' || vars(p.tplAppointment) !== '{{1}}{{2}}' || vars(p.tplWeekly) !== '{{1}}{{2}}') bad.push(`${l}: template variables`);
+    if ([p.tplReminder, p.tplAppointment, p.tplWeekly].some(t => /^\{\{/.test(t) || /\}\}$/.test(t.trim()))) bad.push(`${l}: template starts/ends with a variable`);
+    if (p.tplYes.length > 25 || p.tplNotYet.length > 25) bad.push(`${l}: button over 25 characters`);
+  }
+  check('every translation: no leftover placeholders, STOP/START and 108 kept, first names, Meta template rules, buttons ≤ 25', bad.length === 0, bad);
+  check('English stays the default; untranslated replies fall back to English', repliesFor('English') === REMINDER_REPLIES && repliesFor('Telugu').badCode === REMINDER_REPLIES.badCode && repliesFor('Telugu').taken('8:10 AM') !== REMINDER_REPLIES.taken('8:10 AM'));
+  check('check-up line in Telugu: day word, clock, title and place', dueWhatsappAppointments([appt()], ist(16, 18, 0), appointmentWords('te'))[0].text === `${PHRASES.te.tomorrow} 10 AM: scan, Apollo Clinic.${PHRASES.te.fasting}`, dueWhatsappAppointments([appt()], ist(16, 18, 0), appointmentWords('te')));
+  check('fill() leaves Meta placeholders alone', fill('Hi {{1}} {name}', { name: 'X' }) === 'Hi {{1}} X');
+
   console.log('\nA3. Plans');
   check('Remind (internal id essential): WhatsApp only, ₹149', PLANS.essential.name === 'Remind' && PLANS.essential.channel === 'whatsapp' && PLANS.essential.priceMonthly === 149 && PLANS.essential.callsPerDay === 0);
   check('calling plans keep 3 calls a day', [PLANS.solo, PLANS.family, PLANS.extended].every(p => p.channel === 'call' && p.callsPerDay === 3));
-  check('Ask: 15 / 30 / 50, none on Remind', PLANS.solo.askPerMonth === 15 && PLANS.family.askPerMonth === 30 && PLANS.extended.askPerMonth === 50 && PLANS.essential.askPerMonth === 0);
+  check('Ask: 10 / 20 / 30, none on Remind', PLANS.solo.askPerMonth === 10 && PLANS.family.askPerMonth === 20 && PLANS.extended.askPerMonth === 30 && PLANS.essential.askPerMonth === 0);
   check('WhatsApp people: 1 / 2 / 5', PLANS.solo.whatsappPeople === 1 && PLANS.family.whatsappPeople === 2 && PLANS.extended.whatsappPeople === 5);
   check('premium: Family and Extended only', !PLANS.solo.premium && !PLANS.essential.premium && PLANS.family.premium && PLANS.extended.premium);
   check('upgrade suggestion is never Remind', smallestPlanFor(1)?.id === 'solo' && smallestPlanFor(2)?.id === 'family');
@@ -159,7 +217,7 @@ function partA() {
 // ============================================================================
 // PART B — the Remind flow against throwaway rows
 // ============================================================================
-interface GraphRequest { url: string; body: { to: string; type: string; template?: { name: string; components: Array<{ type: string; parameters: Array<{ text?: string }> }> }; text?: { body: string } } }
+interface GraphRequest { url: string; body: { to: string; type: string; template?: { name: string; language?: { code: string }; components: Array<{ type: string; parameters: Array<{ text?: string }> }> }; text?: { body: string } } }
 
 function makeFakeGraph(stamp: number) {
   const requests: GraphRequest[] = [];
@@ -461,6 +519,87 @@ async function partB() {
     check('"I took 2" is not a refill', (await prisma.medicine.findFirst({ where: { parentId: person.id, name: 'Iron' } }))?.tabletsLeft === 30);
     await say(selfPhone, '40', ist(16, 15, 10));
     check('bare "40": the one counted medicine', (await prisma.medicine.findFirst({ where: { parentId: person.id, name: 'Iron' } }))?.tabletsLeft === 40);
+
+    console.log('\nB8e. Check-up reminders');
+    const scan = await prisma.appointment.create({ data: { id: newId('appt'), parentId: person.id, createdById: self.id, title: 'scan', kind: 'doctor', startsAt: ist(17, 10, 0), location: 'Apollo Clinic', fasting: true } });
+    const apptMsgs = (from: number) => graph.requests.slice(from).filter(q => q.body.template?.name === 'aaptha_appointment_reminder');
+    b = graph.requests.length;
+    r = await runReminders({ ...deps, now: ist(16, 17, 0), parentIds: scope });
+    check('before 6 PM: nothing', apptMsgs(b).length === 0 && r.appointments === 0, r);
+    r = await runReminders({ ...deps, now: ist(16, 18, 5), parentIds: scope });
+    check('evening before: one reminder to the person', r.appointments === 1 && apptMsgs(b).length === 1 && apptMsgs(b)[0].body.to === selfPhone.slice(1) && (apptMsgs(b)[0].body.template?.components[0].parameters[1].text || '').startsWith('Tomorrow at 10 AM: scan at Apollo Clinic.'), apptMsgs(b).map(q => q.body.template?.components[0].parameters));
+    r = await runReminders({ ...deps, now: ist(16, 18, 10), parentIds: scope });
+    check('not sent twice', r.appointments === 0 && apptMsgs(b).length === 1);
+    check('marked on the appointment', !!(await prisma.appointment.findUnique({ where: { id: scan.id } }))?.remindedDayBefore);
+    r = await runReminders({ ...deps, now: ist(17, 6, 30), parentIds: scope });
+    check('7 AM rule: nothing at 6:30', r.appointments === 0);
+    r = await runReminders({ ...deps, now: ist(17, 7, 5), parentIds: scope });
+    check('morning of: second and last reminder', r.appointments === 1 && apptMsgs(b).length === 2 && (apptMsgs(b)[1].body.template?.components[0].parameters[1].text || '').startsWith('Today at 10 AM'));
+    r = await runReminders({ ...deps, now: ist(17, 9, 0), parentIds: scope });
+    check('no "how did it go?" or any third message', r.appointments === 0 && apptMsgs(b).length === 2);
+    const cancelled = await prisma.appointment.create({ data: { id: newId('appt'), parentId: person.id, createdById: self.id, title: 'dentist', kind: 'doctor', startsAt: ist(18, 11, 0), cancelledAt: new Date() } });
+    r = await runReminders({ ...deps, now: ist(17, 19, 0), parentIds: scope });
+    check('a cancelled appointment is never reminded', r.appointments === 0 && !(await prisma.appointment.findUnique({ where: { id: cancelled.id } }))?.remindedDayBefore);
+
+    console.log('\nB8f. Weekly progress (opt-in)');
+    const weeklyMsgs = (from: number, to?: string) => graph.requests.slice(from).filter(q => (q.body.template?.name === 'aaptha_weekly_progress' || (q.body.template?.name === 'aaptha_caretaker_update' && (q.body.template.components[0].parameters[1].text || '').includes('this week'))) && (!to || q.body.to === to));
+    b = graph.requests.length;
+    r = await runReminders({ ...deps, now: ist(18, 18, 5), parentIds: scope });
+    check('off by default: nothing on Sunday evening', r.weekly === 0 && weeklyMsgs(b).length === 0, r);
+    await prisma.parentProfile.update({ where: { id: person.id }, data: { weeklyProgress: true } });
+    r = await runReminders({ ...deps, now: ist(17, 18, 30), parentIds: scope });
+    check('not on a Saturday', r.weekly === 0);
+    r = await runReminders({ ...deps, now: ist(18, 17, 30), parentIds: scope });
+    check('not before 6 PM on Sunday', r.weekly === 0);
+    const weekDates = Array.from({ length: 7 }, (_, i) => `2026-10-${String(18 - i).padStart(2, '0')}`);
+    const wk = await prisma.medicineReminder.findMany({ where: { parentId: person.id, reminderDate: { in: weekDates }, status: 'sent' }, select: { answer: true } });
+    const wkTaken = wk.filter(x => x.answer === 'taken').length;
+    r = await runReminders({ ...deps, now: ist(18, 18, 5), parentIds: scope });
+    const wm = weeklyMsgs(b, selfPhone.slice(1));
+    check('Sunday 6 PM: one message to the person, with this week\'s real numbers', r.weekly === 1 && wm.length === 1 && wm[0].body.template?.components[0].parameters[1].text === weeklyProgressText(wkTaken, wk.length), { wkTaken, total: wk.length, sent: wm.map(q => q.body.template?.components[0].parameters) });
+    check('caretaker not told (not switched on)', weeklyMsgs(b, caretakerPhone.slice(1)).length === 0);
+    r = await runReminders({ ...deps, now: ist(18, 18, 10), parentIds: scope });
+    check('once only', r.weekly === 0 && weeklyMsgs(b, selfPhone.slice(1)).length === 1);
+    await prisma.whatsAppMessage.deleteMany({ where: { parentId: person.id, kind: 'weekly_progress' } });
+    await prisma.parentProfile.update({ where: { id: person.id }, data: { weeklyProgressToCaretaker: true, caretakerOptOutAt: null } });
+    r = await runReminders({ ...deps, now: ist(18, 18, 15), parentIds: scope });
+    const cw = weeklyMsgs(b, caretakerPhone.slice(1));
+    check('caretaker switched on and opted in: gets one line', cw.length === 1 && (cw[0].body.template?.components[0].parameters[1].text || '') === `Priya confirmed ${wkTaken} of ${wk.length} medicine checks this week.`, cw.map(q => q.body.template?.components[0].parameters));
+    await prisma.parentProfile.update({ where: { id: person.id }, data: { weeklyProgress: false, weeklyProgressToCaretaker: false } });
+
+    console.log('\nB8g. Messages in the person\'s language');
+    await prisma.parentProfile.update({ where: { id: person.id }, data: { language: 'Telugu' } });
+    const RT = repliesFor('Telugu');
+    b = graph.requests.length;
+    await runReminders({ ...deps, now: ist(19, 8, 5), parentIds: scope });
+    const teAsk = graph.requests.slice(b).find(q => q.body.template?.name === 'aaptha_medicine_check');
+    check('medicine check goes out in Telugu (template translation te), same two buttons', teAsk?.body.template?.language?.code === 'te' && teAsk.body.template.components.filter(c => c.type === 'button').length === 2, teAsk?.body.template);
+    const rem19 = (await remAt(person.id, '2026-10-19', '08:00 AM'))!;
+    await tap(selfPhone, WA_PAYLOAD.taken, await askId(rem19.id, 1), ist(19, 8, 10));
+    check('the reply is in Telugu too', lastText() === RT.taken('8:10 AM') && lastText() !== REMINDER_REPLIES.taken('8:10 AM'), lastText());
+    await say(selfPhone, 'STOP', ist(19, 9, 0));
+    check('STOP: Telugu reply', lastText() === RT.stopped, lastText());
+    await say(selfPhone, 'start', ist(19, 9, 5));
+    check('START: Telugu reply', lastText() === RT.restarted, lastText());
+    await say(selfPhone, 'I think my water broke', ist(19, 9, 10));
+    check('warning words: Telugu reply keeps 108', graph.requests.slice(-3).some(q => q.body.text?.body === RT.emergency('Priya', 'Ravi Kumar')) && RT.emergency('Priya', null).includes('108'));
+    const teAppt = await prisma.appointment.create({ data: { id: newId('appt'), parentId: person.id, createdById: self.id, title: 'scan', kind: 'doctor', startsAt: ist(22, 10, 0), location: 'Apollo Clinic' } });
+    b = graph.requests.length;
+    await runReminders({ ...deps, now: ist(21, 18, 5), parentIds: scope });
+    const teAppts = graph.requests.slice(b).filter(q => q.body.template?.name === 'aaptha_appointment_reminder');
+    check('check-up reminder in Telugu', teAppts.length === 1 && teAppts[0].body.template?.language?.code === 'te' && (teAppts[0].body.template.components[0].parameters[1].text || '') === `${PHRASES.te.tomorrow} 10 AM: scan, Apollo Clinic.`, teAppts.map(q => q.body.template));
+    await prisma.appointment.update({ where: { id: teAppt.id }, data: { cancelledAt: new Date() } });
+
+    // Translation not approved by Meta yet: the English message goes out instead of nothing.
+    const rejectTelugu = (async (url: string, init: RequestInit) => {
+      const sent = JSON.parse(String(init.body));
+      if (sent.template?.language?.code === 'te') return new Response(JSON.stringify({ error: { message: 'Template name does not exist in the translation', code: 132001 } }), { status: 400 });
+      return graph.fetchImpl(url, init);
+    }) as unknown as typeof fetch;
+    b = graph.requests.length;
+    r = await runReminders({ ...deps, fetchImpl: rejectTelugu, now: ist(20, 8, 5), parentIds: scope });
+    check('translation not approved yet: the English check is sent instead', r.sent === 1 && r.failed === 0 && graph.requests.slice(b).some(q => q.body.template?.name === 'aaptha_medicine_check' && q.body.template.language?.code === 'en'), { r, t: graph.requests.slice(b).map(q => q.body.template?.name) });
+    await prisma.parentProfile.update({ where: { id: person.id }, data: { language: 'English' } });
 
     console.log('\nB9. Husband pays, wife gets the checks');
     const husband = await prisma.user.create({

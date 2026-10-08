@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { isLocalDevRequest } from '@/lib/devMode';
 import { getUserByPhone, isPhoneRegistered } from '@/lib/db';
 import { checkRateLimit, recordFailedAttempt, createAndStoreOtp } from '@/lib/security';
 import { normalizePhone } from '@/lib/phone';
@@ -8,8 +9,8 @@ import { normalizePhone } from '@/lib/phone';
  * never reach the user, so phone OTP is reported as unavailable instead of
  * pretending a code was sent.
  */
-function smsDeliveryAvailable(): boolean {
-  return process.env.NODE_ENV === 'development';
+async function smsDeliveryAvailable(): Promise<boolean> {
+  return isLocalDevRequest();
 }
 
 export async function POST(req: Request) {
@@ -29,7 +30,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: phoneResult.reason }, { status: 400 });
     }
 
-    if (!smsDeliveryAvailable()) {
+    if (!(await smsDeliveryAvailable())) {
       return NextResponse.json(
         {
           error: 'Mobile OTP sign-in is not available yet. Please use your email and password.',

@@ -40,3 +40,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# /brag launch videos (rendered frames, mp4s); the composition lives in src/app/dev/brag
+/brag-output*/

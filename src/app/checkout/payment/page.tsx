@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { CheckoutShell, PageTitle, SummaryRow } from '@/components/checkout/CheckoutUI';
-import { getPlan } from '@/lib/plans';
+import { getPlan, monthlyPrice, HEALTH_MONITOR, cleanAddons, DAILY_TOUCHES } from '@/lib/plans';
 import { PlanId } from '@/lib/types';
 import { useAuth } from '@/context/AuthContext';
 import { Lock, ShieldCheck, AlertTriangle, ArrowRight } from 'lucide-react';
@@ -50,6 +50,11 @@ function PaymentContent() {
   const searchParams = useSearchParams();
   const planParam = (searchParams.get('plan') as PlanId) || 'family';
   const plan = getPlan(planParam);
+  // Add-ons picked on the plan page (?monitor=1, ?touches=1).
+  const add = cleanAddons(plan.id, { healthMonitor: searchParams.get('monitor') === '1', dailyTouches: searchParams.get('touches') === '1' });
+  const monitor = add.healthMonitor;
+  const touches = add.dailyTouches;
+  const price = monthlyPrice(plan.id, add);
 
   const { user, loading: authLoading } = useAuth();
 
@@ -80,14 +85,14 @@ function PaymentContent() {
     }
     if (authLoading || !userId) return;
 
-    const key = `${userId}:${plan.id}`;
+    const key = `${userId}:${plan.id}:${monitor ? 'm' : ''}${touches ? 't' : ''}`;
     if (subscriptionRequest.current?.key !== key) {
       subscriptionRequest.current = {
         key,
         result: fetch('/api/razorpay/create-subscription', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ planId: plan.id })
+          body: JSON.stringify({ planId: plan.id, healthMonitor: monitor, dailyTouches: touches })
         }).then(async res => ({ ok: res.ok, data: (await res.json()) as CreateSubscriptionResponse }))
       };
     }
@@ -111,13 +116,13 @@ function PaymentContent() {
     return () => {
       cancelled = true;
     };
-  }, [plan.id, plan.priceMonthly, userId, authLoading, router]);
+  }, [plan.id, plan.priceMonthly, monitor, touches, userId, authLoading, router]);
 
   const verifyWithServer = async (resp: RazorpaySuccessResponse, brand: string) => {
     const res = await fetch('/api/razorpay/verify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...resp, planId: plan.id, paymentMethodBrand: brand })
+      body: JSON.stringify({ ...resp, planId: plan.id, healthMonitor: monitor, dailyTouches: touches, paymentMethodBrand: brand })
     });
     const verifyData = await res.json();
     if (!res.ok) {
@@ -142,7 +147,7 @@ function PaymentContent() {
       key: subscriptionData.keyId,
       subscription_id: subscriptionData.subscriptionId,
       name: 'Aaptha',
-      description: `${plan.name} — monthly subscription`,
+      description: `${plan.name}${monitor ? ` + ${HEALTH_MONITOR.name}` : ''}${touches ? ` + ${DAILY_TOUCHES.name}` : ''} — monthly subscription`,
       prefill: { name: user.name, email: user.email, contact: user.phone || '' },
       theme: { color: '#2563eb' },
       handler: async (resp: RazorpaySuccessResponse) => {
@@ -223,8 +228,8 @@ function PaymentContent() {
         title={plan.hasTrial ? 'Set up AutoPay for your trial' : 'Payment'}
         sub={
           plan.hasTrial
-            ? `Your first ₹${plan.priceMonthly} payment is on ${firstCharge}. To set up AutoPay, Razorpay takes a small amount now (usually ₹5) and refunds it.`
-            : `₹${plan.priceMonthly} will be charged today.`
+            ? `Your first ₹${price} payment is on ${firstCharge}. To set up AutoPay, Razorpay takes a small amount now (usually ₹5) and refunds it.`
+            : `₹${price} will be charged today.`
         }
       />
 
@@ -290,13 +295,13 @@ function PaymentContent() {
               <><span className="spinner" /> Preparing secure checkout…</>
             ) : (
               <>
-                {plan.hasTrial ? `Start ${plan.trialDays}-day free trial` : `Pay ₹${plan.priceMonthly}`} <ArrowRight size={18} className="arrow" />
+                {plan.hasTrial ? `Start ${plan.trialDays}-day free trial` : `Pay ₹${price}`} <ArrowRight size={18} className="arrow" />
               </>
             )}
           </button>
 
           <div style={{ textAlign: 'center', marginTop: '14px' }}>
-            <Link href={`/checkout/confirm?plan=${plan.id}`} className="link" style={{ fontSize: '0.88rem' }}>Change plan</Link>
+            <Link href={`/checkout/confirm?plan=${plan.id}${monitor ? '&monitor=1' : ''}${touches ? '&touches=1' : ''}`} className="link" style={{ fontSize: '0.88rem' }}>Change plan</Link>
           </div>
         </section>
 
@@ -306,17 +311,17 @@ function PaymentContent() {
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '12px', marginBottom: '14px' }}>
             <div>
-              <div style={{ fontWeight: 600, fontSize: '1.02rem' }}>{plan.name}</div>
+              <div style={{ fontWeight: 600, fontSize: '1.02rem' }}>{plan.name}{monitor ? ` + ${HEALTH_MONITOR.name}` : ''}{touches ? ` + ${DAILY_TOUCHES.name}` : ''}</div>
               <div style={{ fontSize: '0.84rem', color: 'var(--ink-muted)' }}>Monthly subscription</div>
             </div>
-            <div style={{ fontWeight: 600 }}>₹{plan.priceMonthly}<span style={{ color: 'var(--ink-muted)', fontWeight: 400, fontSize: '0.84rem' }}>/mo</span></div>
+            <div style={{ fontWeight: 600 }}>₹{price}<span style={{ color: 'var(--ink-muted)', fontWeight: 400, fontSize: '0.84rem' }}>/mo</span></div>
           </div>
 
           {plan.hasTrial && (
             <div className="summary" style={{ marginBottom: '16px' }}>
               <SummaryRow label="Free trial" value={`${plan.trialDays} days`} />
               <SummaryRow label="Due today" value="₹0" tone="green" strong />
-              <SummaryRow label={`First charge on ${firstCharge}`} value={`₹${plan.priceMonthly}`} />
+              <SummaryRow label={`First charge on ${firstCharge}`} value={`₹${price}`} />
             </div>
           )}
 

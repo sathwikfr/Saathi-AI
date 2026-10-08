@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server';
 import { AUTH_COOKIE_NAME, getSessionToken } from '@/lib/auth';
-import { revokeDBSession } from '@/lib/security';
+import { revokeDBSession, isCrossSiteRequest, CROSS_SITE_ERROR } from '@/lib/security';
 
-export async function POST() {
+export async function POST(req: Request) {
+  // Another site must not be able to sign someone out (login CSRF set-up).
+  if (isCrossSiteRequest(req.headers)) return NextResponse.json(CROSS_SITE_ERROR, { status: 403 });
   const token = await getSessionToken();
   if (token) {
     try {

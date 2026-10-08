@@ -3,7 +3,7 @@ import { requireUser } from '@/lib/access';
 import { cancelRazorpaySubscription, invoiceNumberForPayment, verifySubscriptionPayment } from '@/lib/razorpay';
 import { updateUserSubscription, getParentsForUser } from '@/lib/db';
 import { PlanId } from '@/lib/types';
-import { PLANS } from '@/lib/plans';
+import { PLANS, cleanAddons, monthlyPrice, carriedPeriod } from '@/lib/plans';
 import { formatEmailDate, sendSubscriptionActivatedEmail } from '@/lib/email';
 import { markEmailSent, sendOnce } from '@/lib/emailLog';
 
@@ -13,7 +13,7 @@ export async function POST(req: Request) {
   const { user } = auth;
 
   try {
-    const { razorpay_payment_id, razorpay_subscription_id, razorpay_signature, planId, paymentMethodBrand } = await req.json();
+    const { razorpay_payment_id, razorpay_subscription_id, razorpay_signature, planId, paymentMethodBrand, healthMonitor: wantsMonitor, dailyTouches: wantsTouches } = await req.json();
 
     if (!razorpay_payment_id || !razorpay_subscription_id) {
       return NextResponse.json({ error: 'Missing payment or subscription identifiers.' }, { status: 400 });
@@ -24,12 +24,18 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Invalid plan.' }, { status: 400 });
     }
 
+    const { healthMonitor, dailyTouches } = cleanAddons(planId as PlanId, { healthMonitor: wantsMonitor === true, dailyTouches: wantsTouches === true });
+    const price = monthlyPrice(planId as PlanId, healthMonitor, dailyTouches);
+    const planLabel = `${plan.name}${healthMonitor ? ' + Health Monitor' : ''}${dailyTouches ? ' + Daily Touches' : ''}`;
+
     const verification = await verifySubscriptionPayment({
       paymentId: String(razorpay_payment_id),
       subscriptionId: String(razorpay_subscription_id),
       signature: String(razorpay_signature || ''),
       userId: user.id,
-      planId: planId as PlanId
+      planId: planId as PlanId,
+      healthMonitor,
+      dailyTouches
     });
 
     if (!verification.ok) {
@@ -47,10 +53,12 @@ export async function POST(req: Request) {
 
     const previousSubscriptionId = user.subscription?.razorpaySubscriptionId;
     // Already activated (a double submit or a replay): don't restart the trial dates.
-    if (previousSubscriptionId === String(razorpay_subscription_id) && user.subscription?.planId === planId) {
+    if (previousSubscriptionId === String(razorpay_subscription_id) && user.subscription?.planId === planId && !!user.subscription?.healthMonitor === healthMonitor && !!user.subscription?.dailyTouches === dailyTouches) {
       return NextResponse.json({ success: true, message: 'Subscription is already active.', subscription: user.subscription });
     }
     const invoiceNumber = invoiceNumberForPayment(String(razorpay_payment_id));
+    // Paid days left on the old plan carry over: the new plan's first charge is on the day that period ends.
+    const carry = carriedPeriod(user.subscription) || undefined;
     const updatedSub = await updateUserSubscription(user.id, {
       planId: planId as PlanId,
       razorpaySubscriptionId: String(razorpay_subscription_id),
@@ -58,7 +66,10 @@ export async function POST(req: Request) {
       paymentMethodBrand: verification.isSandbox ? 'Sandbox (no charge)' : (paymentMethodBrand || 'Razorpay').toString().slice(0, 40),
       invoiceNumber,
       // Same rule as at checkout: only the first paid subscription gets the free trial.
-      noTrial: !!previousSubscriptionId
+      noTrial: !!previousSubscriptionId,
+      healthMonitor,
+      dailyTouches,
+      carry
     });
 
     // Switching from another paid plan: stop the old Razorpay subscription so the customer isn't
@@ -74,15 +85,16 @@ export async function POST(req: Request) {
     // Tell the customer their subscription is active. Awaited (not fire-and-forget) so a
     // serverless host can't cut the request off before the email is handed to Resend.
     const paymentMethod = verification.isSandbox ? 'Sandbox (no charge)' : 'Razorpay';
-    const hasTrial = plan.hasTrial && !previousSubscriptionId;
-    const firstChargeDate = formatEmailDate(new Date(Date.now() + (hasTrial ? plan.trialDays : 30) * 86400000));
+    const hasTrial = !carry && plan.hasTrial && !previousSubscriptionId;
+    // A trial or a carried-over period means nothing is charged today.
+    const firstChargeDate = formatEmailDate(carry ? carry.periodEnd : new Date(Date.now() + (hasTrial ? plan.trialDays : 30) * 86400000));
     await sendOnce({ userId: user.id, kind: 'subscription_activated', refKey: String(razorpay_subscription_id), failOpen: true }, () =>
       sendSubscriptionActivatedEmail({
         to: user.email,
         name: user.name,
-        planName: plan.name,
-        monthlyAmount: plan.priceMonthly,
-        paidToday: hasTrial ? 0 : plan.priceMonthly,
+        planName: planLabel,
+        monthlyAmount: price,
+        paidToday: hasTrial || carry ? 0 : price,
         invoiceNumber,
         paymentMethod,
         trialDays: hasTrial ? plan.trialDays : undefined,
@@ -91,7 +103,7 @@ export async function POST(req: Request) {
       })
     );
     // Without a trial this payment is charged right now; the webhook must not send a second receipt for it.
-    if (!hasTrial) {
+    if (!hasTrial && !carry) {
       await markEmailSent({ userId: user.id, kind: 'payment_receipt', refKey: String(razorpay_payment_id) });
     }
 
@@ -102,8 +114,8 @@ export async function POST(req: Request) {
       receiptDetails: {
         paymentId: razorpay_payment_id,
         subscriptionId: razorpay_subscription_id,
-        planName: plan.name,
-        amount: plan.priceMonthly,
+        planName: planLabel,
+        amount: price,
         timestamp: new Date().toISOString()
       }
     });

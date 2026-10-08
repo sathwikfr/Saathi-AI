@@ -3,6 +3,7 @@
 import React from 'react';
 import { AlertTriangle, CheckCircle2, Copy, Download, FileText, MessageCircle, Pause, Pencil, Pill, Sparkles, Trash2, UploadCloud, Users, ArrowRight } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
+import { ThinkingOrb } from '@/components/ui/ThinkingOrb';
 import { SlotPicker, FoodPicker } from '@/components/onboarding/WizardUI';
 import { ExtractedMedicineCandidate, FoodRelation, Medicine, MedicineTimingSlot, ParentProfile } from '@/lib/types';
 import { PhoneField } from '@/components/auth/AuthUI';
@@ -12,7 +13,7 @@ import { SAMPLE_PRESCRIPTIONS } from '@/lib/medicineExtractor';
 import { medicineKey } from '@/lib/callInterpretation';
 import { copyText, whatsappShareLink } from './helpers';
 
-function ModalTitle({ id, icon, title, sub }: { id: string; icon: React.ReactNode; title: React.ReactNode; sub?: React.ReactNode }) {
+export function ModalTitle({ id, icon, title, sub }: { id: string; icon: React.ReactNode; title: React.ReactNode; sub?: React.ReactNode }) {
   return (
     <div style={{ marginBottom: '22px', paddingRight: '32px' }}>
       <span className="icon-tile" style={{ marginBottom: '14px' }}>{icon}</span>
@@ -317,7 +318,7 @@ export function UploadReportModal(p: UploadProps) {
 
       {p.loading && (
         <div className="dropzone" style={{ borderStyle: 'solid', borderColor: 'var(--teal)', background: 'var(--teal-light)' }} role="status">
-          <span className="spinner" style={{ width: '28px', height: '28px', margin: '0 auto 14px', color: 'var(--teal)', display: 'block' }} />
+          <ThinkingOrb state="searching" size={64} label="Reading the prescription" style={{ display: 'flex', margin: '0 auto 14px', color: 'var(--teal)' }} />
           <div style={{ fontWeight: 600 }}>Reading the prescription…</div>
           <p style={{ fontSize: '0.86rem', color: 'var(--ink-muted)' }}>Finding medicine names, doses and timings</p>
         </div>

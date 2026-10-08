@@ -1,18 +1,26 @@
 import { NextResponse } from 'next/server';
 import { getUserByEmail, isPhoneRegistered, createUser } from '@/lib/db';
 import { hashPassword, AUTH_COOKIE_NAME } from '@/lib/auth';
-import { createDBSession } from '@/lib/security';
+import { createDBSession, clientIp, consumeRateLimit, isCrossSiteRequest, CROSS_SITE_ERROR } from '@/lib/security';
 import { normalizePhone } from '@/lib/phone';
 import { PLANS } from '@/lib/plans';
 import { PlanId } from '@/lib/types';
 
 export async function POST(req: Request) {
+  if (isCrossSiteRequest(req.headers)) return NextResponse.json(CROSS_SITE_ERROR, { status: 403 });
+  // Every signup sends an email and creates rows: cap scripted account creation per network.
+  if (!consumeRateLimit(`signup-ip:${clientIp(req)}`, 10, 60 * 60 * 1000).allowed) {
+    return NextResponse.json({ error: 'Too many new accounts from this network. Please try again later.', code: 'RATE_LIMITED' }, { status: 429 });
+  }
   try {
     const body = await req.json();
     const { name, email, phone, password, planId } = body;
 
     if (!name || typeof name !== 'string' || !name.trim()) {
       return NextResponse.json({ error: 'Please enter your full name.' }, { status: 400 });
+    }
+    if (name.trim().length > 100) {
+      return NextResponse.json({ error: 'Please enter a shorter name.' }, { status: 400 });
     }
 
     if (!email || typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
@@ -29,6 +37,10 @@ export async function POST(req: Request) {
 
     if (!password || typeof password !== 'string' || password.length < 8) {
       return NextResponse.json({ error: 'Password must be at least 8 characters long.' }, { status: 400 });
+    }
+    // bcrypt only reads the first 72 bytes; a longer limit would silently ignore the rest.
+    if (Buffer.byteLength(password, 'utf8') > 72) {
+      return NextResponse.json({ error: 'Password can be at most 72 characters.' }, { status: 400 });
     }
 
     if (await getUserByEmail(email)) {

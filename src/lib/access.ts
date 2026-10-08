@@ -1,12 +1,27 @@
 import { NextResponse } from 'next/server';
+import { headers } from 'next/headers';
 import { getSessionUser } from './auth';
+import { CROSS_SITE_ERROR, isCrossSiteRequest } from './security';
 import { getParentById } from './db';
 import { parentRoleFor, roleAllows, AccessNeed } from './familyAccess';
 import { ParentAccessRole, ParentProfile, User } from './types';
 
 type Denied = { ok: false; response: NextResponse };
 
+/** True when the current request was sent by another website's page (see isCrossSiteRequest). */
+async function crossSite(): Promise<boolean> {
+  try {
+    return isCrossSiteRequest(await headers());
+  } catch {
+    return false; // called outside a request (scripts/tests): nothing to check
+  }
+}
+
 export async function requireUser(): Promise<{ ok: true; user: User } | Denied> {
+  // Every signed-in API route comes through here, so this is the app-wide CSRF check.
+  if (await crossSite()) {
+    return { ok: false, response: NextResponse.json(CROSS_SITE_ERROR, { status: 403 }) };
+  }
   const user = await getSessionUser();
   if (!user) {
     return { ok: false, response: NextResponse.json({ error: 'Unauthorized. Please log in.' }, { status: 401 }) };

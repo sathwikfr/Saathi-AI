@@ -111,8 +111,10 @@ export interface OutboundCallInput {
   saySafetyLine?: boolean;
   /** One English sentence about the last call's concern, asked about once. */
   lastCallNote?: string | null;
-  /** Every few days: sleep, appetite, pain. */
-  askWellbeing?: boolean;
+  /** One wellbeing question today, in turn: sleep / appetite / pain (null = none). */
+  wellbeingTopic?: 'sleep' | 'appetite' | 'pain' | null;
+  /** "How are you feeling today?" (first answered call of the day). */
+  askFeeling?: boolean;
   /** Weekly: "do you have enough of X for the week?" */
   refillMedicines?: string[];
   /** Companion calls: what the family says they like talking about. */
@@ -121,7 +123,27 @@ export interface OutboundCallInput {
   specialDay?: string | null;
   /** Human support number Saathi can give when asked whether it is real. */
   supportPhone?: string | null;
+  // v1.1
+  /** "From Ravi: I'll call you on Sunday." (said once, then marked delivered) */
+  familyMessage?: string | null;
+  /** Doctor / lab reminder for today or tomorrow. */
+  appointmentNote?: string | null;
+  /** "How did the eye check-up go?" */
+  appointmentQuestion?: string | null;
+  /** Readings to ask for today: "bp", "sugar". */
+  askReadings?: string[];
+  /** One sentence on a very hot / cold / rainy day. */
+  weatherNote?: string | null;
+  /** Slower, clearer, repeats each question once. */
+  hearingMode?: boolean;
+  /** "Did Lakshmi come today?" */
+  helperQuestion?: string | null;
+  /** Couple call: the other parent on the same phone. */
+  partner?: { name: string; medicines: LinkedMedicineDetail[]; askReadings: string[] } | null;
 }
+
+const READING_WORDS: Record<string, string> = { bp: 'blood pressure (BP)', sugar: 'blood sugar' };
+const readingList = (kinds?: string[]) => (kinds || []).map(k => READING_WORDS[k] || k).join(', ') || 'none';
 
 const yesNo = (v: boolean | undefined) => (v ? 'yes' : 'no');
 
@@ -169,12 +191,26 @@ export function buildAgentVariables(input: OutboundCallInput): Record<string, st
     ask_consent: yesNo(input.askConsent),
     say_safety_line: yesNo(input.saySafetyLine),
     last_call_note: input.lastCallNote?.trim() || 'none',
-    ask_wellbeing: yesNo(input.askWellbeing),
+    // ask_wellbeing (all three at once) is replaced by wellbeing_topic; kept as "no" for agents with the old prompt.
+    ask_wellbeing: 'no',
+    wellbeing_topic: input.wellbeingTopic || 'none',
+    ask_feeling: yesNo(input.askFeeling),
     ask_refill: yesNo(!!input.refillMedicines?.length),
     refill_medicines: (input.refillMedicines || []).join(', ') || 'none',
     companion_topics: input.companionTopics?.trim() || 'none',
     special_day: input.specialDay?.trim() || 'none',
-    support_phone: input.supportPhone ? spokenPhone(input.supportPhone) : 'none'
+    support_phone: input.supportPhone ? spokenPhone(input.supportPhone) : 'none',
+    family_message: input.familyMessage?.trim() || 'none',
+    appointment_note: input.appointmentNote?.trim() || 'none',
+    appointment_question: input.appointmentQuestion?.trim() || 'none',
+    ask_readings: readingList(input.askReadings),
+    weather_note: input.weatherNote?.trim() || 'none',
+    hearing_mode: yesNo(input.hearingMode),
+    helper_question: input.helperQuestion?.trim() || 'none',
+    partner_name: input.partner?.name || 'none',
+    partner_has_medicines: yesNo(!!input.partner?.medicines.length),
+    partner_medicines_checklist: input.partner ? buildMedicineChecklist(input.partner.medicines) || 'none' : 'none',
+    partner_ask_readings: input.partner ? readingList(input.partner.askReadings) : 'none'
   };
 }
 

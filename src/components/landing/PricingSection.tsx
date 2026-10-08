@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { Check, Users, PhoneCall, Sparkles, BadgeIndianRupee, MessageCircle } from 'lucide-react';
 import { Reveal } from '@/components/Reveal';
 import { WordReveal } from '@/components/motion/WordReveal';
-import { PLANS, PAID_PLAN_IDS, FREE_TRIAL_DAYS } from '@/lib/plans';
+import { PLANS, PAID_PLAN_IDS, FREE_TRIAL_DAYS, HEALTH_MONITOR, healthMonitorPrice, DAILY_TOUCHES } from '@/lib/plans';
 import { PlanId } from '@/lib/types';
 import s from './home.module.css';
 import x from './pricing.module.css';
@@ -75,9 +75,10 @@ export function PricingSection({ planHref }: { planHref: (id: PlanId) => string 
                       <li><span className={x.factIcon}><MessageCircle size={15} /></span>WhatsApp updates for {plan.whatsappPeople} family member{plan.whatsappPeople === 1 ? '' : 's'}</li>
                       <li><span className={x.factIcon}><Sparkles size={15} /></span>{plan.askPerMonth} questions a month to Ask about your parent{many ? 's' : ''}</li>
                       {plan.premium
-                        ? <li><span className={x.factIcon}><Check size={15} /></span>BP and sugar, health trends, family messages, festivals, life stories</li>
+                        ? <li><span className={x.factIcon}><Check size={15} /></span>Timeline of the days, and a summary for the doctor</li>
                         : <li><span className={x.factIcon}><Check size={15} /></span>How they feel every day, and doctor visit reminders</li>}
                       {plan.id === 'extended' && <li><span className={x.factIcon}><Check size={15} /></span>Priority support</li>}
+                      <li><span className={x.factIcon}><Check size={15} /></span>Optional: {HEALTH_MONITOR.name} (BP, sugar, trends) +₹{healthMonitorPrice(plan.id)}, {DAILY_TOUCHES.name} +₹{DAILY_TOUCHES.priceMonthly}</li>
                     </>
                   )}
                 </ul>

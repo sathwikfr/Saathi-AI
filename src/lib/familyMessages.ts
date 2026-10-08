@@ -38,6 +38,8 @@ export interface AnsweredCallFacts {
   medicineResults: MedicineResult[];
   mood?: CallLog['mood'] | null;
   feedback?: string | null;
+  /** Readings, how an appointment went, whether the helper came. */
+  extra?: string[];
 }
 
 const STATUS_WORD: Record<MedicineResult['status'], string> = {
@@ -55,6 +57,7 @@ export function describeAnsweredCall(f: AnsweredCallFacts): string {
     parts.push(`Medicines: ${f.medicineResults.map(r => `${r.name} ${STATUS_WORD[r.status]}`).join(', ')}.`);
   }
   if (f.mood) parts.push(`Mood: ${f.mood}.`);
+  for (const e of f.extra || []) parts.push(`${e.replace(/\.$/, '')}.`);
   const said = (f.feedback || '').trim();
   if (said) parts.push(`They said: "${cleanParam(said, 200)}"`);
   return parts.join(' ');

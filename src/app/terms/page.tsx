@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { LegalPage, ContactLine } from '@/components/LegalPage';
-import { PLANS, FREE_TRIAL_DAYS } from '@/lib/plans';
+import { PLANS, FREE_TRIAL_DAYS, HEALTH_MONITOR, healthMonitorPrice, DAILY_TOUCHES } from '@/lib/plans';
 
 export const metadata: Metadata = {
   title: 'Terms of Service — Aaptha',
@@ -57,6 +57,12 @@ export default function TermsPage() {
           add a parent once AutoPay is set up. The first monthly payment is taken when the trial ends unless you cancel before then.
         </li>
         <li>
+          <b>{PLANS.essential.name}:</b> {inr(PLANS.essential.priceMonthly)} a month for WhatsApp medicine checks to {PLANS.essential.parentsIncluded} person
+          (up to {PLANS.essential.remindersPerDay} times a day, each asked up to 3 times, no calls), with a {PLANS.essential.trialDays}-day free trial.
+          When a dose isn&apos;t confirmed, the caretaker named on the account is told on WhatsApp (at most twice a day). The person and the caretaker
+          each start their messages by sending START from their own WhatsApp and can stop them at any time by replying STOP.
+        </li>
+        <li>
           <b>{PLANS.solo.name}:</b> {inr(PLANS.solo.priceMonthly)} a month for {PLANS.solo.parentsIncluded} parent
           and up to {PLANS.solo.callsPerDay} calls a day, with a {PLANS.solo.trialDays}-day free trial.
         </li>
@@ -67,6 +73,18 @@ export default function TermsPage() {
         <li>
           <b>{PLANS.extended.name}:</b> {inr(PLANS.extended.priceMonthly)} a month for up to {PLANS.extended.parentsIncluded} parents
           and up to {PLANS.extended.callsPerDay} calls a day each, with a {PLANS.extended.trialDays}-day free trial.
+        </li>
+        <li>
+          Family members who get WhatsApp updates: {PLANS.solo.whatsappPeople} on {PLANS.solo.name}, {PLANS.family.whatsappPeople} on {PLANS.family.name},
+          {' '}{PLANS.extended.whatsappPeople} on {PLANS.extended.name}; urgent alerts reach everyone in the family circle who turned WhatsApp on.
+          The timeline and one call for a couple sharing a phone are part of {PLANS.family.name} and {PLANS.extended.name}. On any calling plan
+          {' '}you can add {HEALTH_MONITOR.name} (BP and sugar by voice, charts and health trends, with a short extra call a day for the readings;
+          {' '}₹{healthMonitorPrice('solo')} a month on {PLANS.solo.name}, ₹{healthMonitorPrice('family')} on {PLANS.family.name}, ₹{healthMonitorPrice('extended')} on {PLANS.extended.name})
+          {' '}and {DAILY_TOUCHES.name} (festival and birthday wishes, weather notes and the helper check, ₹{DAILY_TOUCHES.priceMonthly} a month, only on calls that have room).
+        </li>
+        <li>
+          &quot;Ask about your parent&quot; is limited each month by plan ({PLANS.solo.askPerMonth} questions on {PLANS.solo.name},
+          {' '}{PLANS.family.askPerMonth} on {PLANS.family.name}, {PLANS.extended.askPerMonth} on {PLANS.extended.name}; not part of {PLANS.essential.name}).
         </li>
         <li>Prices are in Indian rupees per month. Taxes such as GST are charged where they apply and shown at checkout.</li>
         <li>Paid plans renew monthly through Razorpay AutoPay. You will not be charged during a free trial if you cancel before it ends.</li>

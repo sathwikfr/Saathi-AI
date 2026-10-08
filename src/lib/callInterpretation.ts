@@ -20,9 +20,20 @@
  *   sleep / appetite       good | poor | not_asked
  *   pain                   none | mild | severe | not_asked
  *   pain_where             where it hurts, "none"
+ *   bp_reading             "140/90" or "none" (only when asked)
+ *   sugar_reading          "150" or "none"; sugar_when: fasting | after_food | random | not_asked
+ *   appointment_update     how the doctor visit / test went, one English sentence, "none"
+ *   helper_visited         yes | no | not_asked
+ *   memory_title / memory_story   a memory the parent shared (3-6 English sentences), "none"
+ *   partner_*              couple calls: the same answers for the second parent
+ *                          (partner_all_medicines_taken, partner_medicines_taken, partner_medicines_missed,
+ *                          partner_medicines_later, partner_medicines_stopped, partner_mood,
+ *                          partner_health_concern, partner_emergency, partner_feedback,
+ *                          partner_bp_reading, partner_sugar_reading, partner_sugar_when)
  */
 import { LinkedMedicineDetail, CallLog, MedicineStatus } from './types';
-import { scanForEmergency, TranscriptTurn } from './safety';
+import { scanForEmergency, scanForSymptoms, TranscriptTurn } from './safety';
+import { BpReading, SugarReading, ReadingRanges, parseBp, parseSugar, checkBp, checkSugar, describeBp, describeSugar } from './readings';
 
 export type SarvamStatus = 'connected' | 'no_answer' | 'busy' | 'failed';
 export const SARVAM_STATUSES: SarvamStatus[] = ['connected', 'no_answer', 'busy', 'failed'];
@@ -72,6 +83,11 @@ export interface Interpretation {
   painWhere: string | null;
   /** Words the parent spoke (for the "shorter answers than usual" trend). */
   parentWords: number;
+  bp: BpReading | null;
+  sugar: SugarReading | null;
+  appointmentUpdate: string | null;
+  helperVisited: 'yes' | 'no' | null;
+  memory: { title: string; text: string } | null;
 }
 
 export interface AlertDecision {
@@ -92,6 +108,8 @@ export const ALERT_TITLES = {
   stoppedMedicine: 'Parent stopped taking a medicine',
   runningLow: 'Medicine running low',
   insightsCombined: 'Several changes this week',
+  reading: 'Reading outside the usual range',
+  helperMissed: "Helper didn't come today",
   escalationExhausted: 'Nobody has confirmed they are helping',
   wellnessCheck: 'Asked a neighbour to check'
 } as const;
@@ -121,7 +139,9 @@ export function parseTranscript(value: unknown): TranscriptTurn[] {
     const rec = item as Record<string, unknown>;
     const role = asText(rec.role).toLowerCase();
     const text = asText(rec.en_text) || asText(rec.text);
-    if (role && text) turns.push({ role, text });
+    const native = asText(rec.indic_text);
+    if (role && text) turns.push({ role, text, ...(native && native !== text ? { native } : {}) });
+    else if (role && native) turns.push({ role, text: native });
   }
   return turns;
 }
@@ -196,6 +216,15 @@ function normalisePain(value: string): PainLevel {
 
 const isYes = (value: unknown) => ['yes', 'true', '1'].includes(asText(value).toLowerCase());
 
+/** Couple calls: the partner's answers as an ordinary payload (partner_mood -> mood, …). */
+export function partnerPayload(payload: SarvamWebhookPayload): SarvamWebhookPayload {
+  const vars = agentVariables(payload);
+  const mapped: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(vars)) if (k.startsWith('partner_')) mapped[k.slice('partner_'.length)] = v;
+  // Things only the primary parent is asked about stay with them.
+  return { ...payload, final_agent_variables: mapped, output_agent_variables: undefined };
+}
+
 export interface InterpretOptions {
   /** Medicines Saathi asked the refill question about (the running-low answer is matched against these). */
   refillMedicines?: string[];
@@ -248,6 +277,12 @@ export function interpretCallResult(
   const stoppedReason = NO_CONCERN.has(stoppedReasonText.toLowerCase()) ? null : stoppedReasonText.slice(0, 200);
   const painWhereText = asText(vars.pain_where);
   const painWhere = NO_CONCERN.has(painWhereText.toLowerCase()) ? null : painWhereText.slice(0, 80);
+  const apptText = asText(vars.appointment_update);
+  const helper = asText(vars.helper_visited).toLowerCase();
+  const memoryText = asText(vars.memory_story);
+  const memory = NO_CONCERN.has(memoryText.toLowerCase()) || memoryText.length < 40
+    ? null
+    : { title: (asText(vars.memory_title) || 'A memory').slice(0, 80), text: memoryText.slice(0, 2000) };
 
   const taken = medicineResults.filter(r => r.status === 'taken').map(r => r.name);
   const missed = medicineResults.filter(r => r.status === 'missed').map(r => r.name);
@@ -301,13 +336,25 @@ export function interpretCallResult(
     appetite: normaliseWellbeing(asText(vars.appetite)),
     pain: normalisePain(asText(vars.pain)),
     painWhere,
-    parentWords: countParentWords(transcript)
+    parentWords: countParentWords(transcript),
+    bp: parseBp(asText(vars.bp_reading)),
+    sugar: parseSugar(asText(vars.sugar_reading), asText(vars.sugar_when)),
+    appointmentUpdate: NO_CONCERN.has(apptText.toLowerCase()) ? null : apptText.slice(0, 300),
+    helperVisited: helper === 'yes' ? 'yes' : helper === 'no' ? 'no' : null,
+    memory
   };
 }
 
 export interface DecideOptions {
   /** On a follow-up call, "later" again counts as not taken. */
   callType?: string;
+  /** The last scheduled call of the day: "later" counts as not taken too (there are no follow-up calls). */
+  finalCall?: boolean;
+  /** The family's / doctor's range for readings (safety limits always apply). */
+  ranges?: ReadingRanges;
+  helperName?: string | null;
+  /** Couple calls: the transcript scan belongs to the primary parent's alerts only (one escalation per call). */
+  skipScan?: boolean;
 }
 
 /**
@@ -317,7 +364,7 @@ export interface DecideOptions {
  */
 export function decideAlerts(interp: Interpretation, parentName: string, slotLabel: string, opts: DecideOptions = {}): AlertDecision[] {
   const alerts: AlertDecision[] = [];
-  const scan = scanForEmergency(interp.transcript);
+  const scan = opts.skipScan ? { hit: false, matches: [] as string[] } : scanForEmergency(interp.transcript);
 
   if (interp.emergencyFlag || scan.hit) {
     const heard = scan.hit ? ` (heard: "${scan.matches.slice(0, 3).join('", "')}")` : '';
@@ -345,12 +392,17 @@ export function decideAlerts(interp: Interpretation, parentName: string, slotLab
   }
 
   const severePain = interp.pain === 'severe';
-  if (interp.healthConcern || interp.mood === 'unwell' || severePain) {
+  // Backup to the agent's own judgement (2026-10-05): fever, headache, dizziness, … heard in the parent's words
+  // always tell the family the same day, on every plan.
+  const symptoms = opts.skipScan ? { hit: false, matches: [] as string[] } : scanForSymptoms(interp.transcript);
+  if (interp.healthConcern || interp.mood === 'unwell' || severePain || symptoms.hit) {
     const detail = interp.healthConcern
       ? `: "${interp.healthConcern}"`
       : severePain
         ? `: said the pain${interp.painWhere ? ` in their ${interp.painWhere}` : ''} is bad`
-        : '';
+        : symptoms.hit
+          ? ` (heard: "${symptoms.matches.slice(0, 3).join('", "')}")`
+          : '';
     alerts.push({
       level: 3,
       title: ALERT_TITLES.health,
@@ -368,8 +420,9 @@ export function decideAlerts(interp: Interpretation, parentName: string, slotLab
   }
 
   const followUp = opts.callType === 'followup';
+  const laterCounts = followUp || opts.finalCall === true;
   const missed = interp.medicineResults
-    .filter(r => r.status === 'missed' || (followUp && r.status === 'later'))
+    .filter(r => r.status === 'missed' || (laterCounts && r.status === 'later'))
     .map(r => r.name);
   if (missed.length > 0) {
     alerts.push({
@@ -377,7 +430,9 @@ export function decideAlerts(interp: Interpretation, parentName: string, slotLab
       title: ALERT_TITLES.missed,
       message: followUp
         ? `${parentName} still had not taken ${missed.join(', ')} when Saathi called back.`
-        : `${parentName} had not taken: ${missed.join(', ')} (${slotLabel} call).`
+        : opts.finalCall && interp.medicineResults.some(r => r.status === 'later' && missed.includes(r.name))
+          ? `${parentName} still had not taken ${missed.join(', ')} by the last call of the day (${slotLabel} call).`
+          : `${parentName} had not taken: ${missed.join(', ')} (${slotLabel} call).`
     });
   }
 
@@ -386,6 +441,31 @@ export function decideAlerts(interp: Interpretation, parentName: string, slotLab
       level: 2,
       title: ALERT_TITLES.runningLow,
       message: `${parentName} said they are running low on ${interp.runningLow.join(', ')}. Please arrange a refill before it runs out.`
+    });
+  }
+
+  const readingsOut: string[] = [];
+  if (interp.bp) {
+    const c = checkBp(interp.bp, opts.ranges || {});
+    if (c.outside) readingsOut.push(`${describeBp(interp.bp)} (${c.why})`);
+  }
+  if (interp.sugar) {
+    const c = checkSugar(interp.sugar, opts.ranges || {});
+    if (c.outside) readingsOut.push(`${describeSugar(interp.sugar)} (${c.why})`);
+  }
+  if (readingsOut.length) {
+    alerts.push({
+      level: 3,
+      title: ALERT_TITLES.reading,
+      message: `${parentName}'s reading today: ${readingsOut.join('; ')}. Please check in with ${parentName} and their doctor. Saathi did not comment on it.`
+    });
+  }
+
+  if (interp.helperVisited === 'no' && opts.helperName) {
+    alerts.push({
+      level: 2,
+      title: ALERT_TITLES.helperMissed,
+      message: `${parentName} said ${opts.helperName} didn't come today.`
     });
   }
 

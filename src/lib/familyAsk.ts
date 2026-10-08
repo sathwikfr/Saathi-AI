@@ -41,7 +41,11 @@ async function loadRecords(parentId: string, now: Date) {
       callLogs: { where: { createdAt: { gte: since } }, orderBy: { createdAt: 'desc' }, take: 300 },
       alerts: { where: { createdAt: { gte: since }, level: { gte: 1 } }, orderBy: { createdAt: 'desc' }, take: 60 },
       insights: { where: { createdAt: { gte: since } }, orderBy: { createdAt: 'desc' }, take: 30 },
-      documents: { where: { isDeleted: false }, orderBy: { createdAt: 'desc' }, take: 60 }
+      documents: { where: { isDeleted: false }, orderBy: { createdAt: 'desc' }, take: 60 },
+      readings: { where: { takenAt: { gte: since } }, orderBy: { takenAt: 'desc' }, take: 120 },
+      appointments: { where: { cancelledAt: null, startsAt: { gte: since } }, orderBy: { startsAt: 'asc' }, take: 40 },
+      messages: { where: { createdAt: { gte: since }, status: { not: 'cancelled' } }, orderBy: { createdAt: 'desc' }, take: 30 },
+      stories: { where: { hiddenAt: null }, orderBy: { createdAt: 'desc' }, take: 20 }
     }
   });
 }
@@ -102,6 +106,29 @@ export function formatRecords(p: ParentWithRecords, now: Date): string {
   if (p.insights.length) {
     lines.push('', 'PATTERNS NOTICED ACROSS CALLS');
     for (const i of p.insights) lines.push(`- ${day(i.createdAt)}: ${i.message}`);
+  }
+  if (p.readings.length) {
+    lines.push('', 'READINGS (BP / sugar, newest first; "family" = typed in by the family)');
+    for (const r of p.readings) {
+      const v = r.kind === 'bp' ? `BP ${r.systolic}/${r.diastolic}` : `sugar ${r.value}${r.context ? ` (${r.context.replace('_', ' ')})` : ''}`;
+      lines.push(`- ${day(r.takenAt)} ${clock(r.takenAt)}: ${v}${r.source === 'family' ? ' [family]' : ''}`);
+    }
+  }
+  if (p.appointments.length) {
+    lines.push('', 'APPOINTMENTS');
+    for (const a of p.appointments) {
+      lines.push(`- ${day(a.startsAt)} ${clock(a.startsAt)}: ${a.title}${a.location ? ` at ${a.location}` : ''}${a.fasting ? ' (empty stomach)' : ''}${a.outcomeText ? ` — afterwards they said: "${a.outcomeText}"` : ''}`);
+    }
+  }
+  if (p.messages.length) {
+    lines.push('', 'MESSAGES BETWEEN THE FAMILY AND THE PARENT (newest first)');
+    for (const m of p.messages) {
+      lines.push(`- ${day(m.createdAt)}: ${m.direction === 'to_parent' ? `${m.authorName} to ${p.name}` : `${p.name} to the family`}: "${m.text}"${m.direction === 'to_parent' ? ` [${m.status}]` : ''}`);
+    }
+  }
+  if (p.stories.length) {
+    lines.push('', 'MEMORIES THE PARENT SHARED');
+    for (const st of p.stories) lines.push(`- ${day(st.createdAt)}: ${st.title}: ${st.text}`);
   }
   if (p.documents.length) {
     lines.push('', 'HEALTH RECORD VAULT (titles and dates only; the files themselves are not included)');

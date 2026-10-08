@@ -5,6 +5,9 @@ import { extractMedicinesFromText, SAMPLE_PRESCRIPTIONS } from './medicineExtrac
 const MAX_UPLOAD_BYTES = 8 * 1024 * 1024; // 8 MB
 const ALLOWED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
 
+/** Prescription photos one person may have read per hour (each is a paid vision request). */
+export const EXTRACTIONS_PER_HOUR = 20;
+
 export interface IntakeResult {
   ok: true;
   fileName: string;

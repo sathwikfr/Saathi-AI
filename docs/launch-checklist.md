@@ -44,18 +44,23 @@ template texts are in `docs/whatsapp-setup.md`.
 2. Add every variable from `.env.local` to the Vercel environment. Set `NEXT_PUBLIC_APP_URL` to the real `https://` address.
 3. Point your domain at it. Never copy `.env` files into the repository.
 
-## 5. Scheduler (free option: GitHub Actions)
-The workflow `.github/workflows/dispatch-calls.yml` calls the dispatcher every 5 minutes. In GitHub → Settings → Secrets and variables → Actions add:
-- `APP_URL` = your `https://` address, no trailing slash
-- `CRON_SECRET` = the same value as `CRON_SECRET` in Vercel
+## 5. Scheduler (cron-job.org) + heartbeat
+Nothing is called and no WhatsApp reminder goes out unless `/api/cron/dispatch` is hit every 5 minutes. GitHub Actions schedules proved unreliable (13 runs in ~3 days), so use cron-job.org (free, true 5-minute interval):
+1. cron-job.org → Create cronjob. URL `https://<your-domain>/api/cron/dispatch`, every 5 minutes.
+2. Advanced → Request method **POST**, header `Authorization: Bearer <CRON_SECRET>` (the same value as in Vercel). Timeout: the maximum allowed.
+3. Notifications: on failure, and when the job is disabled after repeated failures.
+4. "Test run" → expect HTTP 200 and `"success": true`.
+5. `/admin` → the **Scheduler** tile shows "Just now" in green. It turns amber after 15 minutes without a run, or when a run had a failure, and shows how long the last run took. The route allows 60 s (`maxDuration`, safe on every Vercel plan); if runs get close to that, raise it (Fluid compute allows up to 300).
 
-GitHub runs can be a few minutes late and pause after 60 days without repository activity; the dispatcher tolerates this (each slot stays due for 90 minutes). cron-job.org or any scheduler that can send an HTTP request works too.
+Heartbeat (emails you when the runs **stop**, which cron-job.org itself can't tell you): healthchecks.io (free) → new check, period 5 minutes, grace 15 minutes → copy its ping URL into `CRON_HEARTBEAT_URL` in Vercel. Every run pings it; a run where any job failed pings `<url>/fail` (immediate email). Test: wait 20 minutes with the cron job paused, expect the "down" email.
+
+The GitHub workflow `.github/workflows/dispatch-calls.yml` can stay as a backup (it skips itself without the `APP_URL` / `CRON_SECRET` repo secrets; two schedulers running together are harmless because every call and reminder is claimed once).
 
 ## 6. Optional: Google sign-in
 Google Cloud Console → Credentials → OAuth client (Web) → add your domain as an authorised origin → set `GOOGLE_CLIENT_ID` and `NEXT_PUBLIC_GOOGLE_CLIENT_ID`. The button appears automatically.
 
 ## 7. Live test before real families (about 15 minutes, use your own phone)
-Follow `docs/sarvam-agent.md` §8: an answered call with a missed medicine, a "chest pain" call (expect a level-4 alert and a critical email), and an unanswered call (expect a retry 15 minutes later and a "couldn't reach" alert after the third miss).
+Follow `docs/sarvam-agent.md` §8: an answered call with a missed medicine, a "chest pain" call (expect a level-4 alert and a critical email), and an unanswered call (expect a retry 30 minutes later and a "couldn't reach" alert after the third miss).
 
 ## 8. Legal
 The Privacy Policy and Terms pages are written from how the product works. Have a lawyer read them once, especially the refund, liability and governing-law clauses, before you take payments.

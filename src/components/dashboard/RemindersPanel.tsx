@@ -446,6 +446,43 @@ export function ReminderSettings({ parent, role, start, canUseCalls, caretakerIs
       )}
 
       {manage && (
+        <section className="panel" aria-labelledby="rem-weekly-title">
+          <div className="toggle-row">
+            <div>
+              <strong id="rem-weekly-title">Weekly progress</strong>
+              <p>One short message on Sunday evening, like &ldquo;This week you confirmed 13 of 14 medicine checks.&rdquo; Off unless you turn it on.</p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={parent.weeklyProgress}
+              aria-label="Weekly progress"
+              className="switch"
+              disabled={saving}
+              onClick={() => run({ action: 'reminder_settings', weeklyProgress: !parent.weeklyProgress })}
+            />
+          </div>
+          {parent.weeklyProgress && parent.caretakerPhone && (
+            <div className="toggle-row" style={{ marginTop: '12px' }}>
+              <div>
+                <strong id="rem-weekly-care-title">Send it to {parent.caretakerName || 'the caretaker'} too</strong>
+                <p>Only if they have said yes on WhatsApp.</p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={parent.weeklyProgressToCaretaker}
+                aria-labelledby="rem-weekly-care-title"
+                className="switch"
+                disabled={saving}
+                onClick={() => run({ action: 'reminder_settings', weeklyProgressToCaretaker: !parent.weeklyProgressToCaretaker })}
+              />
+            </div>
+          )}
+        </section>
+      )}
+
+      {manage && (
         <section className="panel" aria-labelledby="rem-link-title">
           <div className="panel-head">
             <div>

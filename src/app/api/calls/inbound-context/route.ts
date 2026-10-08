@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { buildInboundContext } from '@/lib/callResults';
-import { requestSecret, safeEqual } from '@/lib/secrets';
+import { requestSecret, routeSecret, safeEqual } from '@/lib/secrets';
 
 /**
  * Sarvam "on-start" hook for call-backs: before Saathi speaks, it asks who is
@@ -24,7 +24,7 @@ function callerFrom(body: Record<string, unknown>, url: URL): string {
 export async function POST(req: Request) {
   const url = new URL(req.url);
   const secret = requestSecret(req, 'x-sarvam-secret') || url.searchParams.get('token');
-  if (!safeEqual(secret, process.env.SARVAM_WEBHOOK_SECRET)) {
+  if (!safeEqual(secret, routeSecret('SARVAM_INBOUND_CONTEXT_SECRET'))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
   const body = ((await req.json().catch(() => ({}))) || {}) as Record<string, unknown>;

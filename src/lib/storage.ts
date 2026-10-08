@@ -18,6 +18,21 @@ export const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
 export const ALLOWED_DOCUMENT_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
 export const SIGNED_URL_SECONDS = 300;
 
+/** The file's first bytes must match the type the browser claimed (a client can send any Content-Type). */
+export function looksLikeDeclaredType(bytes: Uint8Array, type: string): boolean {
+  const startsWith = (...sig: number[]) => sig.every((b, i) => bytes[i] === b);
+  const ascii = (from: number, text: string) => [...text].every((c, i) => bytes[from + i] === c.charCodeAt(0));
+  switch (type) {
+    case 'application/pdf': return ascii(0, '%PDF-');
+    case 'image/jpeg': return startsWith(0xff, 0xd8, 0xff);
+    case 'image/png': return startsWith(0x89, 0x50, 0x4e, 0x47);
+    case 'image/webp': return ascii(0, 'RIFF') && ascii(8, 'WEBP');
+    case 'image/heic':
+    case 'image/heif': return ascii(4, 'ftyp');
+    default: return false;
+  }
+}
+
 export function getStorageConfig(env: NodeJS.ProcessEnv = process.env): StorageConfig | null {
   const base = env.SUPABASE_URL?.trim().replace(/\/$/, '');
   const key = env.SUPABASE_SERVICE_ROLE_KEY?.trim();

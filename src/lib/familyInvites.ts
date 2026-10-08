@@ -7,12 +7,18 @@
  */
 import crypto from 'crypto';
 import { prisma } from './prisma';
-import { newId } from './db';
+import { newId, newReminderStartCode } from './db';
 import { normalizePhone } from './phone';
 import { sendFamilyInviteEmail } from './email';
 
 export type MemberRole = 'viewer' | 'co_manager';
 export const MAX_FAMILY_MEMBERS = 8;
+/** An unused invite link stops working after this: a link forwarded or leaked months later must not open a parent's health data. */
+export const INVITE_VALID_DAYS = 14;
+
+export function inviteExpired(invite: { invitedAt: Date }, now = new Date()): boolean {
+  return now.getTime() - invite.invitedAt.getTime() > INVITE_VALID_DAYS * 86400000;
+}
 
 function appUrl() {
   return (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').replace(/\/$/, '');
@@ -48,7 +54,8 @@ export async function createInvite(input: {
     phone = n.e164;
   }
 
-  const active = await prisma.caregiverInvite.findMany({ where: { parentId: input.parentId, status: { in: ['pending', 'accepted'] } } });
+  const active = (await prisma.caregiverInvite.findMany({ where: { parentId: input.parentId, status: { in: ['pending', 'accepted'] } } }))
+    .filter(a => a.status === 'accepted' || !inviteExpired(a));
   if (active.length >= MAX_FAMILY_MEMBERS) return { ok: false, error: `A parent can have up to ${MAX_FAMILY_MEMBERS} family members.` };
   if (email && active.some(a => a.email === email)) return { ok: false, error: `${email} is already invited.` };
 
@@ -90,7 +97,7 @@ export async function getInvitePreview(token: string) {
     where: { token },
     include: { parent: { select: { name: true, isDeleted: true, user: { select: { name: true } } } } }
   });
-  if (!invite || invite.status !== 'pending' || invite.parent.isDeleted) return null;
+  if (!invite || invite.status !== 'pending' || invite.parent.isDeleted || inviteExpired(invite)) return null;
   return { name: invite.name, role: invite.role as MemberRole, parentName: invite.parent.name, inviterName: invite.parent.user.name };
 }
 
@@ -101,6 +108,9 @@ export async function acceptInvite(
   const invite = await prisma.caregiverInvite.findUnique({ where: { token }, include: { parent: true } });
   if (!invite || invite.status !== 'pending' || invite.parent.isDeleted) {
     return { ok: false, status: 404, error: 'This invite link has already been used or was cancelled. Ask for a new one.' };
+  }
+  if (inviteExpired(invite)) {
+    return { ok: false, status: 410, error: `This invite link has expired (links work for ${INVITE_VALID_DAYS} days). Ask for a new one.` };
   }
   if (invite.parent.userId === user.id) {
     return { ok: false, status: 400, error: 'You already look after this parent.' };
@@ -119,11 +129,30 @@ export async function acceptInvite(
   return { ok: true, parentId: invite.parentId };
 }
 
+/**
+ * A co-manager could see the emergency-card link and the unused WhatsApp START links, so when one leaves or is
+ * removed those are replaced: the old links stop working (the family re-shares the new card if they want).
+ */
+async function rotateManagerSecrets(parentId: string): Promise<void> {
+  const p = await prisma.parentProfile.findUnique({ where: { id: parentId }, select: { cardToken: true, caretakerPhone: true } });
+  if (!p) return;
+  await prisma.parentProfile.update({
+    where: { id: parentId },
+    data: {
+      reminderStartCode: newReminderStartCode(),
+      ...(p.caretakerPhone ? { caretakerStartCode: newReminderStartCode() } : {}),
+      ...(p.cardToken ? { cardToken: crypto.randomBytes(18).toString('base64url') } : {})
+    }
+  });
+}
+
 export async function revokeMember(parentId: string, inviteId: string): Promise<boolean> {
+  const before = await prisma.caregiverInvite.findFirst({ where: { id: inviteId, parentId, status: { in: ['pending', 'accepted'] } }, select: { role: true, status: true } });
   const res = await prisma.caregiverInvite.updateMany({
     where: { id: inviteId, parentId, status: { in: ['pending', 'accepted'] } },
     data: { status: 'revoked', token: null, revokedAt: new Date() }
   });
+  if (res.count === 1 && before?.status === 'accepted' && before.role === 'co_manager') await rotateManagerSecrets(parentId);
   return res.count === 1;
 }
 
@@ -134,9 +163,11 @@ export async function setMemberRole(parentId: string, inviteId: string, role: Me
 
 /** A member stops looking after a parent themselves. */
 export async function leaveParent(parentId: string, userId: string): Promise<boolean> {
+  const wasManager = !!(await prisma.caregiverInvite.findFirst({ where: { parentId, userId, status: 'accepted', role: 'co_manager' }, select: { id: true } }));
   const res = await prisma.caregiverInvite.updateMany({
     where: { parentId, userId, status: 'accepted' },
     data: { status: 'revoked', revokedAt: new Date() }
   });
+  if (res.count > 0 && wasManager) await rotateManagerSecrets(parentId);
   return res.count > 0;
 }

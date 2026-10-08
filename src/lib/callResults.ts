@@ -19,23 +19,36 @@ import {
   interpretCallResult,
   decideAlerts,
   parseTranscript,
+  partnerPayload,
+  Interpretation,
   ALERT_TITLES
 } from './callInterpretation';
+import { parseRanges } from './readings';
+import { Prisma } from '@prisma/client';
 import { raiseAlert, raiseUnreachableAlert, recordAlert, escalateEmergencies, RaiseAlertResult, RecordAlertResult, AlertDeps } from './alerts';
 import { notifyFamily } from './familyNotify';
 import { describeAnsweredCall } from './familyMessages';
-import { readSnapshot, CallSnapshot, NON_RETRY_SLOTS } from './callPlanning';
+import { readSnapshot, CallSnapshot, CallExtras, PartnerSnapshot, NON_RETRY_SLOTS } from './callPlanning';
 import { findAlertAttempt, processAlertCallResult, startEscalation } from './escalation';
 import { runInsightsForParent } from './insights';
 import { buildAgentVariables, OutboundCallInput } from './sarvam';
 import { slotMedicines } from './callDispatch';
 import { LinkedMedicineDetail } from './types';
 
-export const MAX_CALL_ATTEMPTS = 3;
-export const RETRY_DELAY_MINUTES = 15;
+/** First try + one retry (decided 2026-10-04): a missed call is tried once more, then the family is told. */
+export const MAX_CALL_ATTEMPTS = 2;
+export const RETRY_DELAY_MINUTES = 30; // was 15; decided 2026-10-08
 /** "Later" / "not yet": Saathi calls back this many minutes after the call. */
 export const FOLLOW_UP_DELAY_MINUTES = 40;
-export const MAX_FOLLOW_UPS_PER_DAY = 2;
+/**
+ * Extra "you said later" calls: off since 2026-10-08 (3 calls a day only). A "later" tablet is asked again on the next
+ * scheduled call, and still "later" on the last call of the day counts as not taken (alert). The follow-up code stays,
+ * so an exception can switch it on again (env FOLLOW_UP_CALLS_PER_DAY, 1-3).
+ */
+export const maxFollowUpsPerDay = (): number => {
+  const n = Number(process.env.FOLLOW_UP_CALLS_PER_DAY);
+  return Number.isFinite(n) && n > 0 ? Math.min(Math.floor(n), 3) : 0;
+};
 
 /** Marker set when a call was given up on because no result ever arrived. */
 export const RESULT_NOT_RECEIVED = 'result_not_received';
@@ -73,9 +86,139 @@ type ParentRow = NonNullable<Awaited<ReturnType<typeof prisma.parentProfile.find
  * Everything that follows an answered call: the record, the parent's consent and
  * "stop calling me", follow-ups, alerts, one family message, escalation and trends.
  */
+/** Readings, the parent's message back, and a shared memory: kept for the family. */
+async function saveFromCall(parentId: string, callLogId: string, interp: Interpretation, now: Date, kind: 'self' | 'partner') {
+  const rows: Prisma.HealthReadingCreateManyInput[] = [];
+  if (interp.bp) rows.push({ id: newId('rdg'), parentId, callLogId, kind: 'bp', systolic: interp.bp.systolic, diastolic: interp.bp.diastolic, takenAt: now, source: 'call' });
+  if (interp.sugar) rows.push({ id: newId('rdg'), parentId, callLogId, kind: 'sugar', value: interp.sugar.value, context: interp.sugar.context, takenAt: now, source: 'call' });
+  if (rows.length) await prisma.healthReading.createMany({ data: rows });
+  if (interp.feedback) {
+    const parent = await prisma.parentProfile.findUnique({ where: { id: parentId }, select: { name: true } });
+    await prisma.familyMessage.create({
+      data: { id: newId('msg'), parentId, authorName: parent?.name || 'Your parent', direction: 'from_parent', text: interp.feedback, status: 'received', callLogId, deliveredAt: now }
+    });
+  }
+  // Life stories were retired on 2026-10-08 (the weekly chat that fed them isn't offered): nothing new is saved.
+}
+
+/** Family messages read out, appointment reminders given and "how did it go?" answered on this call. */
+async function markFamilyAsksDone(callLogId: string, asked: CallExtras | undefined, interp: Interpretation, now: Date) {
+  if (!asked) return;
+  if (asked.familyMessageIds?.length) {
+    await prisma.familyMessage.updateMany({
+      where: { id: { in: asked.familyMessageIds }, status: 'pending' },
+      data: { status: 'delivered', deliveredAt: now, callLogId }
+    });
+  }
+  for (const r of asked.appointmentReminded || []) {
+    await prisma.appointment.updateMany({ where: { id: r.id }, data: r.which === 'day_before' ? { remindedDayBefore: now } : { remindedSameDay: now } });
+  }
+  if (asked.appointmentFollowUpId && (interp.appointmentUpdate || interp.transcript.some(t => t.role === 'user'))) {
+    await prisma.appointment.updateMany({
+      where: { id: asked.appointmentFollowUpId, followedUpAt: null },
+      data: { followedUpAt: now, outcomeText: interp.appointmentUpdate }
+    });
+  }
+}
+
+function extraFacts(interp: Interpretation): string[] {
+  const out: string[] = [];
+  if (interp.bp) out.push(`BP ${interp.bp.systolic}/${interp.bp.diastolic}`);
+  if (interp.sugar) out.push(`Sugar ${Math.round(interp.sugar.value)}${interp.sugar.context === 'fasting' ? ' (fasting)' : interp.sugar.context === 'after_food' ? ' (after food)' : ''}`);
+  if (interp.appointmentUpdate) out.push(`About the appointment: ${interp.appointmentUpdate}`);
+  if (interp.helperVisited) out.push(interp.helperVisited === 'yes' ? 'Helper came today' : "Helper didn't come today");
+  return out;
+}
+
+/**
+ * Couple calls: the second parent gets their own call log (linked to the first), results,
+ * readings, alerts and family update. The emergency scan stays with the first parent's alerts
+ * (one escalation per call); the partner's own "emergency" answer still raises theirs.
+ */
+async function applyPartner(
+  primaryLog: CallLogRow,
+  part: PartnerSnapshot,
+  interp: Interpretation,
+  opts: { now: Date; deps: AlertDeps; duration: number; status: 'answered' | 'unanswered' | 'busy' | 'failed'; summary?: string }
+) {
+  const partner = await prisma.parentProfile.findUnique({ where: { id: part.parentId } });
+  if (!partner || partner.isDeleted) return;
+  const answered = opts.status === 'answered';
+  const data = {
+    parentId: partner.id,
+    slot: primaryLog.slot === 'followup' ? 'followup' : part.slot,
+    callDate: primaryLog.callDate,
+    attemptNumber: primaryLog.attemptNumber,
+    createdAt: opts.now,
+    scheduledTime: primaryLog.scheduledTime,
+    status: opts.status,
+    durationSeconds: answered ? opts.duration : 0,
+    actualAnswerTime: answered ? formatIstClock(opts.now) : null,
+    medicationConfirmed: answered && interp.medicationConfirmed,
+    mood: answered ? interp.mood : 'neutral',
+    summary: opts.summary || (answered ? interp.summary : `${partner.name} was not reached (shared call).`),
+    notes: answered ? interp.feedback : null,
+    processedAt: opts.now,
+    endedAt: opts.now,
+    pairedCallLogId: primaryLog.id,
+    resultJson: JSON.stringify({
+      medicines: part.medicines,
+      callType: 'couple',
+      medicineResults: answered ? interp.medicineResults : [],
+      healthConcern: answered ? interp.healthConcern : null,
+      emergencyFlag: answered && interp.emergencyFlag,
+      bp: interp.bp,
+      sugar: interp.sugar
+    })
+  };
+  let partnerLog;
+  try {
+    partnerLog = await prisma.callLog.create({ data: { id: newId('call'), ...data, slotId: primaryLog.slot === 'followup' ? null : part.slotId } });
+  } catch (err) {
+    // The partner already has a log for that slot today (e.g. called separately earlier): keep this one unslotted.
+    if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002')) throw err;
+    partnerLog = await prisma.callLog.create({ data: { id: newId('call'), ...data, slotId: null } });
+  }
+  await prisma.callLog.update({ where: { id: primaryLog.id }, data: { pairedCallLogId: partnerLog.id } });
+  if (!answered) return;
+
+  await saveFromCall(partner.id, partnerLog.id, interp, opts.now, 'partner');
+  const recorded: RecordAlertResult[] = [];
+  for (const decision of decideAlerts({ ...interp, consent: 'not_asked' }, partner.name, part.slot || 'check-in', {
+    callType: primaryLog.slot === 'followup' ? 'followup' : 'reminder',
+    ranges: parseRanges(partner.readingRanges),
+    skipScan: true
+  })) {
+    recorded.push(await recordAlert({ parentId: partner.id, callLogId: partnerLog.id, ...decision }));
+  }
+  await notifyFamily(
+    {
+      parentId: partner.id,
+      callLogId: partnerLog.id,
+      alerts: recorded.flatMap(r => (r.alert ? [r.alert] : [])),
+      update: describeAnsweredCall({
+        slotLabel: `${part.slot || 'check-in'} (shared call)`,
+        answeredAt: formatIstClock(opts.now),
+        medicineResults: interp.medicineResults,
+        mood: interp.mood,
+        feedback: interp.feedback,
+        extra: extraFacts(interp)
+      })
+    },
+    opts.deps
+  );
+  await escalateEmergencies(partner.id, recorded, interp.healthConcern || interp.summary, opts.deps);
+  try {
+    await runInsightsForParent(partner.id, { now: opts.now, deps: opts.deps });
+  } catch (err) {
+    console.error('[calls] Insight check failed:', err);
+  }
+}
+
 async function applyAnsweredCall(
   log: CallLogRow,
   parent: ParentRow,
+  payload: SarvamWebhookPayload,
   interp: ReturnType<typeof interpretCallResult>,
   snapshot: CallSnapshot,
   opts: { now: Date; deps: AlertDeps; duration: number; interactionId: string | null }
@@ -84,10 +227,13 @@ async function applyAnsweredCall(
   const callType = snapshot.callType || (log.slot === 'callback' ? 'callback' : 'reminder');
   const slotLabel = callType === 'companion' ? 'weekly chat' : callType === 'followup' ? 'follow-up' : log.slot || 'check-in';
   const asked = snapshot.asked;
+  const partnerInterp = snapshot.partner
+    ? interpretCallResult(partnerPayload(payload), snapshot.partner.medicines, snapshot.partner.name)
+    : null;
 
   // One follow-up about "later" medicines, a couple of times a day at most.
   let followUpAt: Date | null = null;
-  const hasLater = interp.medicineResults.some(r => r.status === 'later');
+  const hasLater = interp.medicineResults.some(r => r.status === 'later') || !!partnerInterp?.medicineResults.some(r => r.status === 'later');
   const parentStopping = interp.stopCalls || (asked?.askConsent && interp.consent === 'no');
   if (hasLater && callType !== 'followup' && !parentStopping && !parent.isPaused) {
     const today = istDateString(now);
@@ -97,7 +243,7 @@ async function applyAnsweredCall(
     ]);
     // Never past 10 PM IST.
     const at = new Date(now.getTime() + FOLLOW_UP_DELAY_MINUTES * 60000);
-    if (placed + pending < MAX_FOLLOW_UPS_PER_DAY && istMinutesOfDay(at) <= 22 * 60 && istDateString(at) === today) followUpAt = at;
+    if (placed + pending < maxFollowUpsPerDay() && istMinutesOfDay(at) <= 22 * 60 && istDateString(at) === today) followUpAt = at;
   }
 
   await prisma.callLog.update({
@@ -130,7 +276,12 @@ async function applyAnsweredCall(
         runningLow: interp.runningLow,
         stoppedReason: interp.stoppedReason,
         consent: asked?.askConsent ? interp.consent : null,
-        stopCalls: interp.stopCalls
+        stopCalls: interp.stopCalls,
+        bp: interp.bp,
+        sugar: interp.sugar,
+        appointmentUpdate: interp.appointmentUpdate,
+        helperVisited: interp.helperVisited,
+        ...(partnerInterp ? { partnerMedicineResults: partnerInterp.medicineResults } : {})
       })
     }
   });
@@ -156,13 +307,22 @@ async function applyAnsweredCall(
   }
   // What was asked this time is not due again for a while (only once the parent actually answered).
   if (asked?.saySafetyLine) parentData.lastSafetyLineAt = now;
-  if (asked?.askWellbeing) parentData.lastWellbeingAt = now;
+  if (asked?.askWellbeing || asked?.wellbeingTopic) parentData.lastWellbeingAt = now;
   if (asked?.refillMedicines?.length) parentData.lastRefillCheckAt = now;
   if (callType === 'companion') parentData.lastCompanionAt = now;
+  if (asked?.weatherNote) parentData.lastWeatherNoteAt = now;
   if (Object.keys(parentData).length) await prisma.parentProfile.update({ where: { id: parent.id }, data: parentData });
 
+  await saveFromCall(parent.id, log.id, interp, now, 'self');
+  await markFamilyAsksDone(log.id, asked, interp, now);
+
   const recorded: RecordAlertResult[] = [];
-  for (const decision of decideAlerts(asked?.askConsent ? interp : { ...interp, consent: 'not_asked' }, parent.name, slotLabel, { callType })) {
+  for (const decision of decideAlerts(asked?.askConsent ? interp : { ...interp, consent: 'not_asked' }, parent.name, slotLabel, {
+    callType,
+    finalCall: snapshot.finalCall === true,
+    ranges: parseRanges(parent.readingRanges),
+    helperName: asked?.helperQuestion ? asked.helperName ?? parent.helperName : null
+  })) {
     recorded.push(await recordAlert({ parentId: parent.id, callLogId: log.id, ...decision }));
   }
   // One message to the family about the whole call.
@@ -176,13 +336,18 @@ async function applyAnsweredCall(
         answeredAt: formatIstClock(now),
         medicineResults: interp.medicineResults,
         mood: interp.mood,
-        feedback: interp.feedback
+        feedback: interp.feedback,
+        extra: extraFacts(interp)
       })
     },
     deps
   );
   // Level 4: phone the people who can act (the WhatsApp above already went to the family).
   await escalateEmergencies(parent.id, recorded, interp.healthConcern || interp.summary, deps);
+
+  if (snapshot.partner && partnerInterp) {
+    await applyPartner(log, snapshot.partner, partnerInterp, { now, deps, duration: opts.duration, status: 'answered' });
+  }
 
   // Trends across calls never block the webhook.
   try {
@@ -200,9 +365,35 @@ async function applyAnsweredCall(
   };
 }
 
+/**
+ * The result is claimed (processedAt) before it is applied so two deliveries never apply it twice. If applying it
+ * then fails halfway (database error, timeout), the claim is released before the error goes up: Sarvam's retry
+ * must be able to run the alert steps again, otherwise a real emergency call would be marked "done" with no alert.
+ * Everything the retry repeats is idempotent (alerts are unique per call and title, one message per call).
+ */
 export async function processSarvamWebhook(
   payload: SarvamWebhookPayload,
   opts: { now?: Date; deps?: AlertDeps } = {}
+): Promise<WebhookOutcome> {
+  const claim: { logId: string | null } = { logId: null };
+  try {
+    return await processSarvamWebhookInner(payload, opts, claim);
+  } catch (err) {
+    if (claim.logId) {
+      try {
+        await prisma.callLog.updateMany({ where: { id: claim.logId }, data: { processedAt: null } });
+      } catch (releaseErr) {
+        console.error('[calls] Could not release the result claim after a failure:', releaseErr);
+      }
+    }
+    throw err;
+  }
+}
+
+async function processSarvamWebhookInner(
+  payload: SarvamWebhookPayload,
+  opts: { now?: Date; deps?: AlertDeps },
+  claim: { logId: string | null }
 ): Promise<WebhookOutcome> {
   const now = opts.now || new Date();
   const deps = opts.deps || {};
@@ -237,6 +428,7 @@ export async function processSarvamWebhook(
     data: { processedAt: now, providerAttemptId: attemptId }
   });
   if (claimed.count !== 1) return { status: 'duplicate', callLogId: log.id };
+  claim.logId = log.id;
 
   const parent = await prisma.parentProfile.findUnique({ where: { id: log.parentId } });
   if (!parent) return { status: 'invalid', reason: 'parent not found' };
@@ -262,7 +454,7 @@ export async function processSarvamWebhook(
   const silentPickup = !!connectedInterp?.noResponse;
 
   if (status === 'connected' && connectedInterp && !silentPickup) {
-    return applyAnsweredCall(log, parent, connectedInterp, snapshot, { now, deps, duration, interactionId });
+    return applyAnsweredCall(log, parent, payload, connectedInterp, snapshot, { now, deps, duration, interactionId });
   }
 
   // ------------------------------------------------------------------ failed
@@ -279,6 +471,11 @@ export async function processSarvamWebhook(
         summary: `The ${slotLabel} call could not be placed${failureReason ? ` (${failureReason})` : ''}.`
       }
     });
+    if (snapshot.partner) {
+      await applyPartner(log, snapshot.partner, interpretCallResult({}, snapshot.partner.medicines, snapshot.partner.name), {
+        now, deps, duration: 0, status: 'failed', summary: `The shared call could not be placed${failureReason ? ` (${failureReason})` : ''}.`
+      });
+    }
     if (callType !== 'companion') {
       alertResults.push(await raiseUnreachableAlert(
         { id: log.id, parentId: parent.id, attemptNumber: log.attemptNumber, slot: log.slot },
@@ -313,6 +510,13 @@ export async function processSarvamWebhook(
         : `${parent.name} did not pick up the ${slotLabel} call (${finalStatus === 'busy' ? 'line busy' : 'no answer'}).${retryAt ? ' We will try again shortly.' : ''}`
     }
   });
+
+  if (snapshot.partner) {
+    await applyPartner(log, snapshot.partner, interpretCallResult({}, snapshot.partner.medicines, snapshot.partner.name), {
+      now, deps, duration: 0, status: finalStatus,
+      summary: `${snapshot.partner.name} did not pick up the shared ${slotLabel} call.${retryAt ? ' We will try again shortly.' : ''}`
+    });
+  }
 
   if (!retryAt) {
     if (callType === 'followup') {
@@ -434,7 +638,7 @@ export async function buildInboundContext(callerPhone: string, now: Date = new D
       askConsent: parent.parentConsent !== 'given',
       saySafetyLine: false,
       lastCallNote: null,
-      askWellbeing: false,
+      wellbeingTopic: null,
       refillMedicines: [],
       specialDay: null
     }
@@ -531,7 +735,7 @@ export async function processInboundCall(
   const snapshot = readSnapshot(log.resultJson);
   const interp = interpretCallResult(payload, snapshot.medicines, parent.name);
   const duration = typeof payload.duration === 'number' && payload.duration > 0 ? Math.round(payload.duration) : 0;
-  return applyAnsweredCall(log, parent, interp, { ...snapshot, callType: 'callback' }, {
+  return applyAnsweredCall(log, parent, payload, interp, { ...snapshot, callType: 'callback' }, {
     now,
     deps: opts.deps || {},
     duration,

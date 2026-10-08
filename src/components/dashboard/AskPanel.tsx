@@ -2,6 +2,7 @@
 
 import React, { useRef, useState } from 'react';
 import { MessageSquareText, Send } from 'lucide-react';
+import { ThinkingOrb } from '@/components/ui/ThinkingOrb';
 
 type Turn = { role: 'user' | 'assistant'; content: string };
 
@@ -61,7 +62,7 @@ export function AskPanel({ parentId, parentName }: { parentId: string; parentNam
           {turns.map((t, i) => (
             <div key={i} className={`ask-bubble ${t.role === 'user' ? 'me' : 'ai'}`}>{t.content}</div>
           ))}
-          {busy && <div className="ask-bubble ai" aria-label="Thinking"><span className="spinner" /></div>}
+          {busy && <div className="ask-bubble ai ask-thinking"><ThinkingOrb state="composing" size={32} label="Writing an answer" style={{ color: 'var(--teal)' }} /><span>Going through {first}&apos;s calls…</span></div>}
         </div>
       )}
 

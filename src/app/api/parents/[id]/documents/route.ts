@@ -3,10 +3,16 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { newId } from '@/lib/db';
 import { requireParentAccess } from '@/lib/access';
-import { getStorageConfig, uploadObject, storageKeyFor, MAX_DOCUMENT_BYTES, ALLOWED_DOCUMENT_TYPES } from '@/lib/storage';
+import { getStorageConfig, uploadObject, storageKeyFor, looksLikeDeclaredType, MAX_DOCUMENT_BYTES, ALLOWED_DOCUMENT_TYPES } from '@/lib/storage';
 import { HealthDocument } from '@/lib/types';
+import { consumeRateLimit } from '@/lib/security';
 
 type Ctx = { params: Promise<{ id: string }> };
+
+/** Per person: stops one account from filling the storage bucket (and the bill) for everyone. */
+const VAULT_MAX_FILES = 300;
+const VAULT_MAX_BYTES = 500 * 1024 * 1024;
+const VAULT_UPLOADS_PER_HOUR = 20;
 
 const KINDS: HealthDocument['kind'][] = ['prescription', 'lab_report', 'scan', 'bill', 'discharge', 'insurance', 'other'];
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -66,9 +72,24 @@ export async function POST(req: Request, { params }: Ctx) {
     return NextResponse.json({ error: 'Dates must be YYYY-MM-DD.' }, { status: 400 });
   }
 
+  // Quotas: the files stay in storage even after "delete" (they are only hidden), so this counts every row.
+  if (!consumeRateLimit(`vault:${access.user.id}`, VAULT_UPLOADS_PER_HOUR, 3600000).allowed) {
+    return NextResponse.json({ error: 'That is a lot of uploads in an hour. Please try again later.' }, { status: 429 });
+  }
+  const used = await prisma.healthDocument.aggregate({ where: { parentId: id }, _count: { _all: true }, _sum: { sizeBytes: true } });
+  if ((used._count._all ?? 0) >= VAULT_MAX_FILES || (used._sum.sizeBytes ?? 0) + file.size > VAULT_MAX_BYTES) {
+    return NextResponse.json(
+      { error: `The records vault is full (up to ${VAULT_MAX_FILES} files or ${Math.round(VAULT_MAX_BYTES / 1048576)} MB per person). Please contact support to add more space.`, code: 'VAULT_FULL' },
+      { status: 413 }
+    );
+  }
+  const bytes = Buffer.from(await file.arrayBuffer());
+  if (!looksLikeDeclaredType(bytes, file.type)) {
+    return NextResponse.json({ error: 'That file does not look like a real PDF or photo. Please choose another.' }, { status: 415 });
+  }
   const key = storageKeyFor(id, file.name, crypto.randomBytes(8).toString('hex'));
   try {
-    await uploadObject(cfg, key, Buffer.from(await file.arrayBuffer()), file.type);
+    await uploadObject(cfg, key, bytes, file.type);
   } catch (err) {
     console.error('[vault] Upload failed:', err instanceof Error ? err.message : err);
     return NextResponse.json({ error: 'The file could not be saved. Please try again.' }, { status: 502 });

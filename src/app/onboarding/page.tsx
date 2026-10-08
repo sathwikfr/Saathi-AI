@@ -32,14 +32,19 @@ import {
   CalendarClock,
   ShieldAlert,
   MessageCircle,
-  Download
+  Download,
+  Copy,
+  User as UserIcon,
+  Users
 } from 'lucide-react';
-import { WizardShell, StepHeader, SlotPicker, FoodPicker, foodLabel } from '@/components/onboarding/WizardUI';
+import { WizardShell, StepHeader, SlotPicker, FoodPicker, foodLabel, WHATSAPP_STEPS } from '@/components/onboarding/WizardUI';
 import { PhoneField } from '@/components/auth/AuthUI';
+import { ThinkingOrb } from '@/components/ui/ThinkingOrb';
 import { SAMPLE_PRESCRIPTIONS } from '@/lib/medicineExtractor';
 import {
   generateProposedSchedule,
   formatScheduleSummary,
+  formatReminderSummary,
   DEFAULT_SLOT_TIMES,
   SLOT_DISPLAY_NAMES,
   getSelectableCallTimes
@@ -53,6 +58,16 @@ function OnboardingContent() {
   const { user } = useAuth();
 
   const currentPlan = getEffectivePlan(user?.subscription, user?.createdAt);
+  // Remind: WhatsApp medicine reminders (no calls) for someone who carries their phone, often the account holder.
+  const waMode = currentPlan.channel === 'whatsapp';
+  const [forSelf, setForSelf] = useState<boolean | null>(null);
+  const [courseEndsOn, setCourseEndsOn] = useState('');
+  const [reminderStart, setReminderStart] = useState<{ whatsappReady: boolean; link: string | null; caretakerLink?: string | null } | null>(null);
+  const [linkCopied, setLinkCopied] = useState(false);
+  // Remind: who is told when a dose isn't confirmed after 3 asks. 'me' = the account holder (for someone else).
+  const [caretakerWho, setCaretakerWho] = useState<'me' | 'other' | 'none'>('me');
+  const [caretakerName, setCaretakerName] = useState('');
+  const [caretakerPhone, setCaretakerPhone] = useState('');
 
   // Room on the plan for another parent, checked up front so nobody fills in every step only to be stopped at the end.
   const [parentLimit, setParentLimit] = useState<{
@@ -90,6 +105,8 @@ function OnboardingContent() {
   const [relationship, setRelationship] = useState('Mother');
   const [phone, setPhone] = useState('');
   const [language, setLanguage] = useState('Hindi & English');
+  /** Remind plan: the language of the WhatsApp messages to the person. */
+  const [waLanguage, setWaLanguage] = useState('English');
   const [timezone, setTimezone] = useState('Asia/Kolkata (IST)');
 
   // Step 2: Medicines State
@@ -112,6 +129,8 @@ function OnboardingContent() {
     foodRelation?: FoodRelation;
     frequency: Medicine['frequency'];
     purpose?: string;
+    /** Remind plan: tablets in hand right now (optional), as typed. */
+    tabletsLeft?: string;
   }>>([
     { name: '', dosage: '1 tablet after breakfast', timeOfDay: 'morning', timingSlots: ['morning'], foodRelation: 'after_food', frequency: 'daily' }
   ]);
@@ -130,6 +149,23 @@ function OnboardingContent() {
 
   // Step 5: Consent
   const [consentConfirmed, setConsentConfirmed] = useState(false);
+
+  /** WhatsApp mode, step 1: reminders for me (filled from my account) or for someone else. */
+  const chooseWho = (self: boolean) => {
+    setForSelf(self);
+    // A caretaker is optional. For yourself it starts as "just me"; for someone else it is you by default.
+    setCaretakerWho(self ? 'none' : 'me');
+    if (self) {
+      setName((user?.name || '').split(' ')[0] || '');
+      // The India-only phone field takes the 10-digit number; +91 is shown beside it.
+      setPhone(user?.phone?.startsWith('+91') ? user.phone.slice(3) : '');
+      setRelationship('Self');
+    } else {
+      setName('');
+      setPhone('');
+      setRelationship('Wife');
+    }
+  };
 
   // Step 6: Confirmation & Test Call State
   const [createdParentId, setCreatedParentId] = useState<string>('');
@@ -457,7 +493,7 @@ function OnboardingContent() {
     setErrorMsg('');
     if (step === 1) {
       if (!name.trim()) {
-        setErrorMsg('Please enter parent name');
+        setErrorMsg(waMode ? 'Please enter a name' : 'Please enter parent name');
         return;
       }
       if (!phone || phone.replace(/\D/g, '').length < 10) {
@@ -473,10 +509,15 @@ function OnboardingContent() {
         return;
       }
       if (callSchedule.filter(s => s.isActive).length === 0) {
-        setErrorMsg('Please configure at least one call time for your parent.');
+        setErrorMsg(waMode ? 'Please add at least one reminder time.' : 'Please configure at least one call time for your parent.');
         return;
       }
-      setStep(4);
+      if (waMode && courseEndsOn && courseEndsOn < new Date().toISOString().slice(0, 10)) {
+        setErrorMsg('The course end date is in the past.');
+        return;
+      }
+      // WhatsApp reminders have no emergency calls, so no emergency plan step.
+      setStep(waMode ? 5 : 4);
     } else if (step === 4) {
       if (!emergencyContacts[0]?.name || !emergencyContacts[0]?.phone) {
         setErrorMsg('At least one primary emergency contact is required');
@@ -492,8 +533,20 @@ function OnboardingContent() {
 
   // Final Submit Handler
   const handleFinalSubmit = async () => {
-    if (!consentConfirmed) {
-      setErrorMsg('Parent awareness and consent is mandatory to initiate calls');
+    // Remind: the caretaker (optional for yourself). "Me" = the account holder.
+    const caretaker = !waMode || caretakerWho === 'none'
+      ? null
+      : caretakerWho === 'me'
+        ? { name: user?.name || 'Me', phone: user?.phone || '' }
+        : { name: caretakerName.trim(), phone: caretakerPhone.trim() };
+    if (caretaker && (!caretaker.name || !caretaker.phone)) {
+      setErrorMsg(caretakerWho === 'me' ? 'Add a phone number to your account first, or choose someone else as caretaker.' : "Please add the caretaker's name and WhatsApp number, or choose no caretaker.");
+      return;
+    }
+
+    // Someone setting up their own reminders consents by sending START; for someone else, the family confirms first.
+    if (!consentConfirmed && !(waMode && forSelf)) {
+      setErrorMsg(waMode ? `Please confirm you have told ${name} about the reminders.` : 'Parent awareness and consent is mandatory to initiate calls');
       return;
     }
 
@@ -502,7 +555,13 @@ function OnboardingContent() {
     setErrorUpgradeHref(null);
 
     try {
-      const validMeds = hasMedicines ? medicines.filter(m => m.name.trim() !== '') : [];
+      const validMeds = (hasMedicines ? medicines.filter(m => m.name.trim() !== '') : [])
+        .map(m => (waMode && courseEndsOn ? { ...m, endsOn: courseEndsOn } : m))
+        .map(m => {
+          const { tabletsLeft, ...rest } = m as typeof m & { tabletsLeft?: string };
+          const n = waMode && tabletsLeft && tabletsLeft.trim() !== '' ? Number(tabletsLeft) : null;
+          return n !== null && Number.isInteger(n) && n >= 0 && n <= 999 ? { ...rest, tabletsLeft: n } : rest;
+        });
       const activeSchedule = callSchedule.filter(s => s.isActive);
 
       const res = await fetch('/api/parents', {
@@ -510,16 +569,18 @@ function OnboardingContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name,
-          relationship,
+          relationship: waMode && forSelf ? 'Self' : relationship,
           phone,
-          language,
+          // WhatsApp reminders are in English for now.
+          language: waMode ? waLanguage : language,
           timezone,
           callTime: activeSchedule[0]?.time || callTime,
           callSchedule: activeSchedule,
           consentGiven: true,
           medicines: validMeds,
-          emergencyContacts,
-          details: { address: address.trim() || null, livesAlone }
+          emergencyContacts: waMode ? [] : emergencyContacts,
+          caretaker,
+          details: waMode ? undefined : { address: address.trim() || null, livesAlone }
         })
       });
 
@@ -538,7 +599,10 @@ function OnboardingContent() {
       // Saathi's fixed calling number, for the contact card on the last step.
       fetch(`/api/parents/${data.parent.id}`)
         .then(r => (r.ok ? r.json() : null))
-        .then(d => setSaathiNumber(d?.saathiNumber || null))
+        .then(d => {
+          setSaathiNumber(d?.saathiNumber || null);
+          setReminderStart(d?.reminderStart || null);
+        })
         .catch(() => undefined);
     } catch {
       setErrorMsg('Network error. Please try again.');
@@ -622,7 +686,7 @@ function OnboardingContent() {
   }
 
   return (
-    <WizardShell step={step}>
+    <WizardShell step={waMode ? (step >= 5 ? step - 1 : step) : step} steps={waMode ? WHATSAPP_STEPS : undefined}>
       {errorMsg && (
         <div className="alert-box error" role="alert">
           <AlertCircle size={18} />
@@ -638,8 +702,75 @@ function OnboardingContent() {
         </div>
       )}
 
+      {/* STEP 1 (Remind): WHO GETS THE REMINDERS */}
+      {step === 1 && waMode && (
+        <div className="animate-fade-in">
+          <StepHeader eyebrow="Step 1 · Who" title="Who are the WhatsApp reminders for?">
+            At each medicine time we ask on WhatsApp &ldquo;did you take it?&rdquo; with Yes and Not yet buttons, up to 3 times. If you like, a caretaker is told when a dose isn&apos;t confirmed. No calls, and no spam.
+          </StepHeader>
+
+          <div className="choice-grid" style={{ marginBottom: forSelf === null ? 0 : '20px' }}>
+            <button type="button" className={`choice-card ${forSelf === true ? 'recommended' : ''}`} aria-pressed={forSelf === true} onClick={() => chooseWho(true)}>
+              <span className="icon-tile"><UserIcon size={22} /></span>
+              <strong>For me</strong>
+              <p>I manage my own medicines and keep forgetting when I&apos;m busy.</p>
+            </button>
+            <button type="button" className={`choice-card ${forSelf === false ? 'recommended' : ''}`} aria-pressed={forSelf === false} onClick={() => chooseWho(false)}>
+              <span className="icon-tile gold"><Users size={22} /></span>
+              <strong>For someone in my family</strong>
+              <p>e.g. my wife during pregnancy, or my son or daughter at college.</p>
+            </button>
+          </div>
+
+          {forSelf !== null && (
+            <>
+              <div className="form-row">
+                <div className="form-group">
+                  <label className="form-label" htmlFor="wa-name">{forSelf ? 'What should the reminders call you?' : 'Their name'}</label>
+                  <input id="wa-name" type="text" className="form-input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Priya" autoFocus />
+                </div>
+                {!forSelf && (
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="wa-rel">They are your…</label>
+                    <select id="wa-rel" className="form-input" value={relationship} onChange={(e) => setRelationship(e.target.value)}>
+                      {['Wife', 'Husband', 'Daughter', 'Son', 'Mother', 'Father', 'Sister', 'Brother', 'Other family'].map(r => <option key={r} value={r}>{r}</option>)}
+                    </select>
+                  </div>
+                )}
+              </div>
+              <div className="form-group">
+                <label className="form-label" htmlFor="wa-phone">{forSelf ? 'Your WhatsApp number' : 'Their WhatsApp number'}</label>
+                <PhoneField id="wa-phone" value={phone} onChange={setPhone} indiaOnly />
+                <span className="form-hint">
+                  {forSelf
+                    ? 'Reminders only start once you send START from this WhatsApp, in the last step.'
+                    : `Reminders only start once ${name || 'they'} send START from their own WhatsApp. We'll give you a link to send them.`}
+                </span>
+              </div>
+              <div className="form-group">
+                <label className="form-label" htmlFor="wa-language">Language of the messages</label>
+                <select id="wa-language" className="form-input" value={waLanguage} onChange={(e) => setWaLanguage(e.target.value)}>
+                  {['English', 'Hindi', 'Telugu', 'Tamil', 'Kannada', 'Malayalam', 'Bengali', 'Marathi', 'Gujarati'].map(l => <option key={l} value={l}>{l}</option>)}
+                </select>
+                <span className="form-hint">
+                  {waLanguage === 'English'
+                    ? 'The medicine checks, check-up reminders and replies come in this language.'
+                    : 'The medicine checks and replies come in this language. Messages to a caretaker stay in English.'}
+                </span>
+              </div>
+            </>
+          )}
+
+          <div className="wizard-nav">
+            <button onClick={handleNextStep} disabled={forSelf === null} className="btn btn-primary btn-lg">
+              Continue <ArrowRight size={18} className="arrow" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* STEP 1: PARENT INFO */}
-      {step === 1 && (
+      {step === 1 && !waMode && (
         <div className="animate-fade-in">
           <StepHeader eyebrow="Step 1 · About your parent" title="Who should Saathi call?">
             Saathi will greet them by name and speak in the language they&apos;re most comfortable with.
@@ -712,9 +843,15 @@ function OnboardingContent() {
       {/* STEP 2: MEDICINES */}
       {step === 2 && (
         <div className="animate-fade-in">
-          <StepHeader eyebrow="Step 2 · Medicines" title={<>Does {name || 'your parent'} take daily medicines?</>}>
-            Saathi will gently ask about each one at the right time of day.
-          </StepHeader>
+          {waMode ? (
+            <StepHeader eyebrow="Step 2 · Medicines" title={forSelf ? 'Which medicines do you take?' : <>Which medicines does {name || 'they'} take?</>}>
+              Each one gets a WhatsApp reminder at the right time of day.
+            </StepHeader>
+          ) : (
+            <StepHeader eyebrow="Step 2 · Medicines" title={<>Does {name || 'your parent'} take daily medicines?</>}>
+              Saathi will gently ask about each one at the right time of day.
+            </StepHeader>
+          )}
 
           {/* YES / NO */}
           {hasMedicines === null && (
@@ -728,12 +865,12 @@ function OnboardingContent() {
                 }}
               >
                 <span className="icon-tile"><Pill size={22} /></span>
-                <strong>Yes, add their medicines</strong>
-                <p>BP, diabetes, thyroid, vitamins and so on.</p>
+                <strong>{waMode ? 'Add the medicines' : 'Yes, add their medicines'}</strong>
+                <p>{waMode ? 'Snap the prescription or type them in: tablets, syrups, vitamins.' : 'BP, diabetes, thyroid, vitamins and so on.'}</p>
                 <span className="choice-cta">Add medicines <ArrowRight size={15} /></span>
               </button>
 
-              <button
+              {!waMode && <button
                 type="button"
                 className="choice-card"
                 onClick={() => {
@@ -745,7 +882,7 @@ function OnboardingContent() {
                 <strong>No medicines right now</strong>
                 <p>Just a daily call to check in on how they&apos;re feeling.</p>
                 <span className="choice-cta" style={{ color: 'var(--ink-muted)' }}>Skip for now <ArrowRight size={15} /></span>
-              </button>
+              </button>}
             </div>
           )}
 
@@ -782,9 +919,7 @@ function OnboardingContent() {
             <div>
               {uploadLoading && (
                 <div className="dropzone" style={{ borderStyle: 'solid', borderColor: 'var(--teal)', background: 'var(--teal-light)' }} role="status">
-                  <span className="icon-tile" style={{ width: '56px', height: '56px', borderRadius: '50%', margin: '0 auto 16px', background: 'var(--panel-elevated)' }}>
-                    <span className="spinner" style={{ width: '24px', height: '24px' }} />
-                  </span>
+                  <ThinkingOrb state="searching" size={64} label="Reading the prescription" style={{ display: 'flex', margin: '0 auto 16px', color: 'var(--teal)' }} />
                   <div style={{ fontWeight: 600, fontSize: '1.05rem', marginBottom: '4px' }}>Reading the prescription…</div>
                   <p style={{ fontSize: '0.88rem', color: 'var(--ink-muted)' }}>{uploadProgressText}</p>
                 </div>
@@ -1051,18 +1186,39 @@ function OnboardingContent() {
                         <span className="mini-label">With food?</span>
                         <FoodPicker value={med.foodRelation} onChange={(v) => updateManualMedicineFoodRelation(idx, v)} />
                       </div>
-                      <div className="form-group" style={{ gridColumn: '1 / -1' }}>
-                        <label className="mini-label" htmlFor={`med-why-${idx}`}>Why it matters, in your words (optional)</label>
-                        <input
-                          id={`med-why-${idx}`}
-                          type="text"
-                          placeholder="e.g. keeps your BP steady"
-                          value={med.purpose || ''}
-                          onChange={(e) => updateMedicineField(idx, 'purpose', e.target.value)}
-                          className="form-input"
-                          maxLength={160}
-                        />
-                      </div>
+                      {waMode && (
+                        <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                          <label className="mini-label" htmlFor={`med-left-${idx}`}>Tablets you have now (optional)</label>
+                          <input
+                            id={`med-left-${idx}`}
+                            type="number"
+                            inputMode="numeric"
+                            min={0}
+                            max={999}
+                            placeholder="e.g. 30"
+                            value={med.tabletsLeft || ''}
+                            onChange={(e) => updateMedicineField(idx, 'tabletsLeft', e.target.value)}
+                            className="form-input"
+                            style={{ maxWidth: '140px' }}
+                          />
+                          <p style={{ fontSize: '0.82rem', color: 'var(--ink-muted)', margin: '4px 0 0' }}>We count down on each Yes and tell you when about 3 days are left. Leave it empty to skip.</p>
+                        </div>
+                      )}
+                      {/* Saathi says the reason on a call; WhatsApp reminders don't use it. */}
+                      {!waMode && (
+                        <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                          <label className="mini-label" htmlFor={`med-why-${idx}`}>Why it matters, in your words (optional)</label>
+                          <input
+                            id={`med-why-${idx}`}
+                            type="text"
+                            placeholder="e.g. keeps your BP steady"
+                            value={med.purpose || ''}
+                            onChange={(e) => updateMedicineField(idx, 'purpose', e.target.value)}
+                            className="form-input"
+                            maxLength={160}
+                          />
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -1088,11 +1244,17 @@ function OnboardingContent() {
       {/* STEP 3: CALL SCHEDULE */}
       {step === 3 && (
         <div className="animate-fade-in">
-          <StepHeader eyebrow="Step 3 · Call times" title={<>When should Saathi call {name || 'them'}?</>}>
-            {hasMedicines && medicines.filter(m => m.name.trim()).length > 0
-              ? 'We timed each call around their medicines. Change any time or wording below.'
-              : 'We suggested one daily check-in call. Change the time or add another below.'}
-          </StepHeader>
+          {waMode ? (
+            <StepHeader eyebrow="Step 3 · Reminder times" title="When should the reminders come?">
+              We timed each reminder around the medicines. Change any time below. {currentPlan.name} sends up to {currentPlan.remindersPerDay} reminder times a day.
+            </StepHeader>
+          ) : (
+            <StepHeader eyebrow="Step 3 · Call times" title={<>When should Saathi call {name || 'them'}?</>}>
+              {hasMedicines && medicines.filter(m => m.name.trim()).length > 0
+                ? 'We timed each call around their medicines. Change any time or wording below.'
+                : 'We suggested one daily check-in call. Change the time or add another below.'}
+            </StepHeader>
+          )}
 
           {unspecifiedMeds.length > 0 && (
             <div className="notice amber" style={{ display: 'block' }}>
@@ -1126,7 +1288,7 @@ function OnboardingContent() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
                       <span className="tone-tile">{slotIcon(slot.slot)}</span>
                       <div>
-                        <div style={{ fontWeight: 600 }}>{SLOT_DISPLAY_NAMES[slot.slot] || 'Check-in call'}</div>
+                        <div style={{ fontWeight: 600 }}>{waMode ? (SLOT_DISPLAY_NAMES[slot.slot] || 'Reminder').replace(/ Call$/, ' reminder').replace('Check-in', 'reminder') : SLOT_DISPLAY_NAMES[slot.slot] || 'Check-in call'}</div>
                         {isDuplicateTime && (
                           <div style={{ fontSize: '0.78rem', color: 'var(--amber)', display: 'flex', alignItems: 'center', gap: '4px' }}>
                             <AlertTriangle size={12} /> Same time as another call
@@ -1157,7 +1319,7 @@ function OnboardingContent() {
                       </select>
                     </div>
                     <div className="form-group">
-                      <label className="mini-label" htmlFor={`slot-label-${idx}`}>What&apos;s this call for?</label>
+                      <label className="mini-label" htmlFor={`slot-label-${idx}`}>{waMode ? 'Label (only you see it)' : <>What&apos;s this call for?</>}</label>
                       <input
                         id={`slot-label-${idx}`}
                         type="text"
@@ -1183,7 +1345,7 @@ function OnboardingContent() {
                             ))}
                       </div>
 
-                      {slot.linkedMedicines && slot.linkedMedicines.length > 0 && (
+                      {!waMode && slot.linkedMedicines && slot.linkedMedicines.length > 0 && (
                         <div style={{ background: 'var(--paper)', borderRadius: 'var(--r-sm)', padding: '12px 14px' }}>
                           <div style={{ fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-subtle)', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                             <Volume2 size={13} /> Saathi will ask
@@ -1203,13 +1365,42 @@ function OnboardingContent() {
           </div>
 
           <button type="button" onClick={addCustomCallSlot} className="add-row" style={{ marginBottom: '16px' }}>
-            <Plus size={16} /> Add another check-in call
+            <Plus size={16} /> {waMode ? 'Add another reminder time' : 'Add another check-in call'}
           </button>
+
+          {waMode && (
+            <div className="form-group">
+              <label className="form-label" htmlFor="course-end">How long is the course?</label>
+              <div className="segmented" role="radiogroup" aria-label="Course length" style={{ marginBottom: '8px' }}>
+                <button type="button" role="radio" aria-checked={!courseEndsOn} className={!courseEndsOn ? 'active' : ''} onClick={() => setCourseEndsOn('')}>No end date</button>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={!!courseEndsOn}
+                  className={courseEndsOn ? 'active' : ''}
+                  onClick={() => setCourseEndsOn(courseEndsOn || new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10))}
+                >
+                  Until a date
+                </button>
+              </div>
+              {courseEndsOn && (
+                <input id="course-end" type="date" className="form-input" style={{ maxWidth: '220px' }} min={new Date().toISOString().slice(0, 10)} value={courseEndsOn} onChange={(e) => setCourseEndsOn(e.target.value)} />
+              )}
+              <span className="form-hint">Reminders stop by themselves after the last day. You can set a different date per medicine later.</span>
+            </div>
+          )}
+
+          {waMode && callSchedule.filter(s => s.isActive).length > currentPlan.remindersPerDay && (
+            <div className="notice amber" role="status">
+              <AlertTriangle size={18} />
+              <span>{currentPlan.name} sends up to {currentPlan.remindersPerDay} reminder times a day; only the earliest {currentPlan.remindersPerDay} will be sent.</span>
+            </div>
+          )}
 
           <div className="notice teal" style={{ alignItems: 'center', marginBottom: 0 }}>
             <CalendarClock size={20} />
             <div>
-              <strong style={{ marginBottom: 0 }}>{formatScheduleSummary(callSchedule)}</strong>
+              <strong style={{ marginBottom: 0 }}>{waMode ? formatReminderSummary(callSchedule) : formatScheduleSummary(callSchedule)}</strong>
               <span style={{ fontSize: '0.84rem' }}>You can change these times any time from the dashboard.</span>
             </div>
           </div>
@@ -1363,8 +1554,98 @@ function OnboardingContent() {
         </div>
       )}
 
+      {/* STEP 5 (Remind): READY */}
+      {step === 5 && waMode && (
+        <div className="animate-fade-in">
+          <StepHeader eyebrow="Step 4 · Start" title={forSelf ? 'Almost done' : <>Have you told {name} about the medicine checks?</>}>
+            {forSelf
+              ? 'Next you send START to our WhatsApp number from your phone. That turns your checks on, and you can reply STOP any time.'
+              : `${name} turns the checks on by sending START from their own WhatsApp, and can reply STOP any time. You see whether each dose was taken.`}
+          </StepHeader>
+
+          <div className="card-flat" style={{ background: 'var(--paper)', marginBottom: '20px', padding: '20px 22px' }}>
+            <div style={{ fontSize: '0.78rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--gold)', marginBottom: '8px' }}>
+              What the check looks like
+            </div>
+            <p className="quote" style={{ fontSize: '1rem' }}>
+              Hi {name || 'Priya'}, did you take your {callSchedule.filter(s => s.isActive)[0]?.time.replace(/^0/, '') || '8:00 AM'} medicine: {medicines.filter(m => m.name.trim()).slice(0, 2).map(m => m.name).join(', ') || 'your medicines'}?
+            </p>
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '10px' }}>
+              <span className="badge badge-neutral">Yes, taken</span>
+              <span className="badge badge-neutral">Not yet</span>
+            </div>
+            <p style={{ fontSize: '0.82rem', color: 'var(--ink-muted)', margin: '10px 0 0' }}>
+              &ldquo;Not yet&rdquo; or no reply: asked again every 30 minutes, up to 3 times.
+              {caretakerWho !== 'none' ? ` Still no yes: ${caretakerWho === 'me' ? (user?.name || 'you').split(' ')[0] : caretakerName.trim().split(' ')[0] || 'your caretaker'} gets a WhatsApp to call.` : ' Still no yes: it shows as not confirmed on the dashboard.'}
+            </p>
+          </div>
+
+          <fieldset className="pref-block" style={{ marginBottom: '20px' }}>
+            <legend>{forSelf ? 'Should anyone else be told if you miss a dose? (optional)' : "Who should we tell if a dose isn't confirmed?"}</legend>
+            <p className="form-hint">A caretaker gets a WhatsApp to call {forSelf ? 'you' : name} only when needed: a dose not confirmed after 3 reminders (at most twice a day), or something urgent. They start it by sending START from their own WhatsApp.</p>
+            <div className="segmented" role="radiogroup" aria-label="Caretaker" style={{ margin: '10px 0' }}>
+              {forSelf && (
+                <button type="button" role="radio" aria-checked={caretakerWho === 'none'} className={caretakerWho === 'none' ? 'active' : ''} onClick={() => setCaretakerWho('none')}>No, just remind me</button>
+              )}
+              {!forSelf && (
+                <button type="button" role="radio" aria-checked={caretakerWho === 'me'} className={caretakerWho === 'me' ? 'active' : ''} onClick={() => setCaretakerWho('me')}>Me</button>
+              )}
+              <button type="button" role="radio" aria-checked={caretakerWho === 'other'} className={caretakerWho === 'other' ? 'active' : ''} onClick={() => setCaretakerWho('other')}>{forSelf ? 'Yes, add someone' : 'Someone else'}</button>
+              {!forSelf && (
+                <button type="button" role="radio" aria-checked={caretakerWho === 'none'} className={caretakerWho === 'none' ? 'active' : ''} onClick={() => setCaretakerWho('none')}>Nobody</button>
+              )}
+            </div>
+            {caretakerWho === 'other' && (
+              <div className="form-row">
+                <div className="form-group">
+                  <label className="mini-label" htmlFor="care-name">Their name</label>
+                  <input id="care-name" className="form-input" value={caretakerName} onChange={(e) => setCaretakerName(e.target.value)} placeholder={forSelf ? 'e.g. Ravi (husband)' : 'e.g. Amma'} maxLength={80} />
+                </div>
+                <div className="form-group">
+                  <label className="mini-label" htmlFor="care-phone">Their WhatsApp number</label>
+                  <PhoneField id="care-phone" value={caretakerPhone} onChange={setCaretakerPhone} />
+                </div>
+              </div>
+            )}
+          </fieldset>
+
+          {!forSelf && (
+            <label
+              className="checkbox-group"
+              style={{
+                margin: 0,
+                padding: '18px',
+                borderRadius: 'var(--r-md)',
+                border: `1.5px solid ${consentConfirmed ? 'var(--teal)' : 'var(--line)'}`,
+                background: consentConfirmed ? 'var(--teal-light)' : 'var(--panel-elevated)',
+                transition: 'all 200ms ease'
+              }}
+            >
+              <input type="checkbox" className="sr-only" checked={consentConfirmed} onChange={(e) => setConsentConfirmed(e.target.checked)} />
+              <span className={`checkbox-custom ${consentConfirmed ? 'checked' : ''}`} aria-hidden="true">
+                {consentConfirmed && <Check size={14} strokeWidth={3} />}
+              </span>
+              <span>
+                <strong style={{ color: 'var(--ink)', display: 'block', marginBottom: '2px', fontSize: '0.95rem' }}>
+                  I have told {name} about the medicine checks, and that I will see which doses were taken.
+                </strong>
+              </span>
+            </label>
+          )}
+
+          <div className="wizard-nav">
+            <button onClick={() => setStep(3)} className="btn btn-ghost">
+              <ArrowLeft size={16} /> Back
+            </button>
+            <button onClick={handleFinalSubmit} disabled={submitting || (!forSelf && !consentConfirmed)} className="btn btn-primary btn-lg">
+              {submitting ? <><span className="spinner" /> Setting things up…</> : <>Finish setup <ArrowRight size={18} className="arrow" /></>}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* STEP 5: CONSENT */}
-      {step === 5 && (
+      {step === 5 && !waMode && (
         <div className="animate-fade-in">
           <StepHeader eyebrow="Step 5 · Consent" title={<>Have you told {name} about the calls?</>}>
             Saathi only calls people who know to expect it. On the first call Saathi also asks {name} directly, in their language, and calls only continue if they say yes.
@@ -1418,8 +1699,115 @@ function OnboardingContent() {
         </div>
       )}
 
+      {/* STEP 6 (Remind): START ON WHATSAPP */}
+      {step === 6 && waMode && (
+        <div style={{ textAlign: 'center' }} className="animate-fade-in">
+          <div className="success-burst">
+            <CheckCircle2 size={38} />
+          </div>
+          <h1 style={{ fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', letterSpacing: '-0.03em', marginBottom: '10px' }}>
+            {forSelf ? 'One last step: send START' : `Now send ${name} the start link`}
+          </h1>
+          <p style={{ fontSize: '1.02rem', color: 'var(--ink-muted)', marginBottom: '24px', maxWidth: '48ch', marginInline: 'auto' }}>
+            <strong style={{ color: 'var(--ink)' }}>{formatReminderSummary(callSchedule.filter(s => s.isActive))}</strong>.
+            {' '}They begin as soon as {forSelf ? 'you send' : `${name} sends`} START on WhatsApp.
+          </p>
+
+          <div className="card-flat" style={{ textAlign: 'left', marginBottom: '24px', padding: '20px' }}>
+            {reminderStart?.link ? (
+              (() => {
+                const shareText = `Hi ${name}, I've set up medicine checks for you on WhatsApp. Tap this link and press send to start them: ${reminderStart.link}`;
+                const digits = phone.replace(/\D/g, '');
+                const waTo = digits.length === 10 ? `91${digits}` : digits;
+                return (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px' }}>
+                      <span className="icon-tile"><MessageCircle size={20} /></span>
+                      <div>
+                        <div style={{ fontWeight: 600 }}>{forSelf ? 'Open WhatsApp and press send' : `Send ${name} this link`}</div>
+                        <div style={{ fontSize: '0.84rem', color: 'var(--ink-muted)' }}>
+                          {forSelf
+                            ? 'On your phone, the link opens WhatsApp with START and your code typed in. On a computer, it opens WhatsApp Web.'
+                            : `When ${name} taps it, WhatsApp opens with START and the code typed in; they just press send.`}
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      {forSelf ? (
+                        <a className="btn btn-primary btn-sm" href={reminderStart.link} target="_blank" rel="noreferrer">
+                          <MessageCircle size={14} /> Open WhatsApp and send START
+                        </a>
+                      ) : (
+                        <a className="btn btn-primary btn-sm" href={`https://wa.me/${waTo}?text=${encodeURIComponent(shareText)}`} target="_blank" rel="noreferrer">
+                          <MessageCircle size={14} /> Send {name} the link on WhatsApp
+                        </a>
+                      )}
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        onClick={async () => {
+                          try {
+                            await navigator.clipboard.writeText(forSelf ? reminderStart.link! : shareText);
+                            setLinkCopied(true);
+                          } catch {
+                            setLinkCopied(false);
+                          }
+                        }}
+                      >
+                        <Copy size={14} /> {linkCopied ? 'Copied' : 'Copy link'}
+                      </button>
+                    </div>
+                  </>
+                );
+              })()
+            ) : (
+              <div className="alert-box warning" style={{ margin: 0 }} role="status">
+                <AlertTriangle size={18} />
+                <span>WhatsApp reminders are still being switched on for Aaptha. The start link will appear on your dashboard as soon as they are live; nothing is sent until then.</span>
+              </div>
+            )}
+          </div>
+
+          {caretakerWho !== 'none' && reminderStart?.caretakerLink && (
+            <div className="card-flat" style={{ textAlign: 'left', marginBottom: '24px', padding: '20px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px' }}>
+                <span className="icon-tile gold"><Users size={20} /></span>
+                <div>
+                  <div style={{ fontWeight: 600 }}>{caretakerWho === 'me' ? 'Now start your caretaker updates' : `Send ${caretakerName.split(' ')[0] || 'your caretaker'} their own link`}</div>
+                  <div style={{ fontSize: '0.84rem', color: 'var(--ink-muted)' }}>
+                    {caretakerWho === 'me'
+                      ? `So you get a WhatsApp if ${name} doesn't confirm a dose. Open it on your phone and press send.`
+                      : `So they get a WhatsApp if ${forSelf ? 'you don\'t' : `${name} doesn't`} confirm a dose. They tap it and press send.`}
+                  </div>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                {caretakerWho === 'me' ? (
+                  <a className="btn btn-primary btn-sm" href={reminderStart.caretakerLink} target="_blank" rel="noreferrer">
+                    <MessageCircle size={14} /> Open WhatsApp and send START
+                  </a>
+                ) : (
+                  <a
+                    className="btn btn-primary btn-sm"
+                    href={`https://wa.me/${caretakerPhone.replace(/\D/g, '')}?text=${encodeURIComponent(`Hi ${caretakerName.split(' ')[0]}, please tap this link and press send, so you get a WhatsApp if ${forSelf ? 'I don\'t' : `${name} doesn't`} confirm a medicine dose: ${reminderStart.caretakerLink}`)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <MessageCircle size={14} /> Send {caretakerName.split(' ')[0] || 'them'} the link
+                  </a>
+                )}
+              </div>
+            </div>
+          )}
+
+          <Link href="/dashboard" className="btn btn-primary btn-lg btn-block">
+            Go to your dashboard <ArrowRight size={18} className="arrow" />
+          </Link>
+        </div>
+      )}
+
       {/* STEP 6: DONE */}
-      {step === 6 && (
+      {step === 6 && !waMode && (
         <div style={{ textAlign: 'center' }} className="animate-fade-in">
           <div className="success-burst">
             <CheckCircle2 size={38} />

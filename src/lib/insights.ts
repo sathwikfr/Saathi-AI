@@ -5,6 +5,7 @@
  * the dashboard and in the digests only, so quiet weeks stay quiet.
  */
 import { Prisma } from '@prisma/client';
+import { ownerHasHealthMonitor } from './planAccess';
 import { prisma } from './prisma';
 import { newId } from './db';
 import { CallFact, detectInsights, combinedNudge, isoWeekKey, BASELINE_DAYS } from './insightRules';
@@ -58,8 +59,10 @@ export async function loadCallFacts(parentId: string, now: Date): Promise<CallFa
 /** Runs the rules for one parent; returns the insights that are new this time. */
 export async function runInsightsForParent(parentId: string, opts: { now?: Date; deps?: AlertDeps } = {}) {
   const now = opts.now || new Date();
-  const parent = await prisma.parentProfile.findUnique({ where: { id: parentId }, select: { id: true, name: true, isDeleted: true } });
+  const parent = await prisma.parentProfile.findUnique({ where: { id: parentId }, select: { id: true, name: true, isDeleted: true, userId: true } });
   if (!parent || parent.isDeleted) return [];
+  // Health trends ("health twin") are part of the Health Monitor add-on.
+  if (!(await ownerHasHealthMonitor(parent.userId, now))) return [];
 
   const all = detectInsights(await loadCallFacts(parentId, now), parent.name, now);
   // Cheap check first so the routine "already noticed this week" case doesn't hit the unique index (and log an error).

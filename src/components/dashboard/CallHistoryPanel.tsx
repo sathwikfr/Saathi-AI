@@ -1,14 +1,20 @@
 'use client';
 
 import React from 'react';
-import { CheckCircle2, PhoneMissed, PhoneOff, Clock, History, Download, Loader } from 'lucide-react';
+import { CheckCircle2, PhoneMissed, PhoneOff, Clock, History, Download } from 'lucide-react';
+import { ThinkingOrb } from '@/components/ui/ThinkingOrb';
 import { CallLog } from '@/lib/types';
 import { formatCallTime, formatDuration, moodLabel } from './helpers';
+
+/** Saathi is on the call right now. */
+function LiveCall() {
+  return <ThinkingOrb state="listening" size={32} label="Call in progress" />;
+}
 
 function statusView(status: CallLog['status']) {
   if (status === 'answered') return { label: 'Answered', badge: 'badge-green', orb: 'good', Icon: CheckCircle2 };
   if (status === 'busy') return { label: 'Busy', badge: 'badge-amber', orb: 'warn', Icon: PhoneOff };
-  if (status === 'placed') return { label: 'In progress', badge: 'badge-teal', orb: '', Icon: Loader };
+  if (status === 'placed') return { label: 'In progress', badge: 'badge-teal', orb: 'live', Icon: LiveCall };
   if (status === 'scheduled') return { label: 'Scheduled', badge: 'badge-neutral', orb: '', Icon: Clock };
   if (status === 'failed') return { label: 'Couldn’t connect', badge: 'badge-red', orb: 'warn', Icon: PhoneOff };
   return { label: 'Not answered', badge: 'badge-amber', orb: 'warn', Icon: PhoneMissed };

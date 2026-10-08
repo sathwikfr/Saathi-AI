@@ -8,13 +8,14 @@ type Ctx = { params: Promise<{ id: string; alertId: string }> };
 const OUTCOMES = ['fine', 'doctor_visit', 'hospital', 'other'] as const;
 
 /**
- * Anyone in the family circle (viewers too: in an emergency whoever can act should be able to say so):
+ * Owner and co-managers only (since 2026-10-05): "I'm on it" stops the emergency calls and closing an alert hides it,
+ * so a view-only member must not be able to do either. They can still see the alert and call the parent themselves.
  *   { action: 'on_it' }                                   "I'm on it": stops the escalation calls, tells the others
  *   { action: 'outcome', outcome, note? }                 what happened afterwards; closes the alert
  */
 export async function POST(req: Request, { params }: Ctx) {
   const { id, alertId } = await params;
-  const access = await requireParentAccess(id, 'view');
+  const access = await requireParentAccess(id, 'manage');
   if (!access.ok) return access.response;
 
   const body = await req.json().catch(() => ({}));

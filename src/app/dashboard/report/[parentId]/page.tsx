@@ -16,7 +16,10 @@ type Report = {
   alerts: AlertRecord[];
   insights: HealthInsight[];
   doctor: { name: string | null; phone: string | null };
+  readings?: { kind: 'bp' | 'sugar'; systolic: number | null; diastolic: number | null; value: number | null; context: string | null; takenAt: string; source: string }[];
 };
+
+const avg = (xs: number[]) => Math.round(xs.reduce((a, b) => a + b, 0) / xs.length);
 
 const fmt = (iso: string) => new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 const short = (iso: string) => new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
@@ -70,7 +73,14 @@ export default function DoctorReportPage() {
     const sleepAsked = answered.filter(c => c.details?.sleep).length;
     const appetitePoor = answered.filter(c => c.details?.appetite === 'poor').length;
     const appetiteAsked = answered.filter(c => c.details?.appetite).length;
-    return { done, answered, perMed, concerns, moods, sleepPoor, sleepAsked, appetitePoor, appetiteAsked };
+    const bp = (data.readings || []).filter(r => r.kind === 'bp' && r.systolic && r.diastolic);
+    const sugarBy = (ctx: string) => (data.readings || []).filter(r => r.kind === 'sugar' && r.value && r.context === ctx);
+    const sugarRows = [
+      { label: 'Fasting', rows: sugarBy('fasting') },
+      { label: 'After food', rows: sugarBy('after_food') },
+      { label: 'Other times', rows: (data.readings || []).filter(r => r.kind === 'sugar' && r.value && r.context !== 'fasting' && r.context !== 'after_food') }
+    ].filter(g => g.rows.length);
+    return { done, answered, perMed, concerns, moods, sleepPoor, sleepAsked, appetitePoor, appetiteAsked, bp, sugarRows };
   }, [data]);
 
   if (error) return <main className="wrap" style={{ padding: '48px 16px' }}><p>{error}</p><Link href="/dashboard">Back to the dashboard</Link></main>;
@@ -123,6 +133,50 @@ export default function DoctorReportPage() {
             </tbody>
           </table>
         </div>
+
+        {(view.bp.length > 0 || view.sugarRows.length > 0) && (
+          <>
+            <h2 style={{ fontSize: '1.1rem', marginTop: '22px' }}>Home readings</h2>
+            <p style={{ fontSize: '0.86rem', color: 'var(--ink-muted)' }}>Read out by {p.name} on calls or typed in by the family from a home machine. Not checked by a clinician.</p>
+            <div className="table-wrap" style={{ marginTop: '8px' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+                <thead>
+                  <tr style={{ textAlign: 'left' }}>
+                    <th style={{ padding: '8px' }}>Reading</th>
+                    <th style={{ padding: '8px' }}>Count</th>
+                    <th style={{ padding: '8px' }}>Average</th>
+                    <th style={{ padding: '8px' }}>Range</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {view.bp.length > 0 && (
+                    <tr style={{ borderTop: '1px solid var(--line-subtle)' }}>
+                      <td style={{ padding: '8px' }}><b>Blood pressure</b> (mmHg)</td>
+                      <td style={{ padding: '8px' }}>{view.bp.length}</td>
+                      <td style={{ padding: '8px' }}>{avg(view.bp.map(r => r.systolic!))}/{avg(view.bp.map(r => r.diastolic!))}</td>
+                      <td style={{ padding: '8px' }}>
+                        {Math.min(...view.bp.map(r => r.systolic!))}–{Math.max(...view.bp.map(r => r.systolic!))} / {Math.min(...view.bp.map(r => r.diastolic!))}–{Math.max(...view.bp.map(r => r.diastolic!))}
+                      </td>
+                    </tr>
+                  )}
+                  {view.sugarRows.map(g => (
+                    <tr key={g.label} style={{ borderTop: '1px solid var(--line-subtle)' }}>
+                      <td style={{ padding: '8px' }}><b>Sugar, {g.label.toLowerCase()}</b> (mg/dL)</td>
+                      <td style={{ padding: '8px' }}>{g.rows.length}</td>
+                      <td style={{ padding: '8px' }}>{avg(g.rows.map(r => r.value!))}</td>
+                      <td style={{ padding: '8px' }}>{Math.round(Math.min(...g.rows.map(r => r.value!)))}–{Math.round(Math.max(...g.rows.map(r => r.value!)))}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {view.bp.length > 0 && (
+              <p style={{ fontSize: '0.86rem', marginTop: '8px' }}>
+                Latest BP: {view.bp.slice(-6).reverse().map(r => `${r.systolic}/${r.diastolic} (${short(r.takenAt)})`).join(', ')}
+              </p>
+            )}
+          </>
+        )}
 
         <h2 style={{ fontSize: '1.1rem', marginTop: '22px' }}>What {p.name} mentioned</h2>
         {view.concerns.length === 0 ? <p>No health worries mentioned on the calls.</p> : (

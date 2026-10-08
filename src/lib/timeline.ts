@@ -109,6 +109,15 @@ export function describeDay(name: string, calls: CallLog[], alerts: AlertRecord[
   }
   const said = [...new Set(answered.map(c => c.notes).filter((x): x is string => !!x))];
   for (const s of said.slice(0, 2)) parts.push(`Wanted you to know: "${s.replace(/\.$/, '')}".`);
+  const readings = answered.flatMap(c => [
+    c.details?.bp ? `BP ${c.details.bp.systolic}/${c.details.bp.diastolic}` : null,
+    c.details?.sugar ? `sugar ${Math.round(c.details.sugar.value)}` : null
+  ]).filter((x): x is string => !!x);
+  for (const r of readings) chips.push({ tone: 'info', text: r.charAt(0).toUpperCase() + r.slice(1) });
+  if (readings.length) parts.push(`Readings: ${readings.join(', ')}.`);
+  const appt = answered.map(c => c.details?.appointmentUpdate).find(Boolean);
+  if (appt) parts.push(`About the appointment: ${appt.replace(/\.$/, '')}.`);
+  if (answered.some(c => c.details?.helperVisited === 'no')) chips.push({ tone: 'warn', text: "Helper didn't come" });
   const low = [...new Set(answered.flatMap(c => c.details?.runningLow || []))];
   if (low.length) {
     chips.push({ tone: 'warn', text: `Running low: ${low.join(', ')}` });

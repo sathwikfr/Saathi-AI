@@ -3,13 +3,13 @@
  * "Ask about Amma" (lib/familyAsk.ts) and the scam check (lib/scamCheck.ts).
  * Never used in the calling pipeline (that is Sarvam; CLAUDE.md rule 7).
  *
- * Off until ANTHROPIC_API_KEY is set. Model: claude-opus-5-5 unless ANTHROPIC_MODEL
+ * Off until ANTHROPIC_API_KEY is set. Model: claude-sonnet-5-5 (~half the price of Opus, enough for summarising records; see plans.ts) unless ANTHROPIC_MODEL
  * says otherwise. Requests opt into server-side refusal fallbacks ("default"), so a
  * safety-classifier decline is retried on Anthropic's recommended model instead of failing.
  */
 import Anthropic from '@anthropic-ai/sdk';
 
-export const DEFAULT_CLAUDE_MODEL = 'claude-opus-5-5';
+export const DEFAULT_CLAUDE_MODEL = 'claude-sonnet-5-5';
 /** Server-side fallback on a refusal; "default" lets Anthropic pick the model by refusal category. */
 export const FALLBACK_BETA = 'server-side-fallback-2026-07-01';
 

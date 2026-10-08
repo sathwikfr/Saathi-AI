@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { Navbar } from '@/components/Navbar';
 import { requireAdminPage } from '@/lib/admin';
 import { getAdminStats, AdminCustomer, PlanBucket } from '@/lib/adminStats';
-import { Users, UserCheck, PhoneCall, PhoneIncoming, IndianRupee, HeartHandshake, ShieldCheck } from 'lucide-react';
+import { Users, UserCheck, PhoneCall, PhoneIncoming, IndianRupee, HeartHandshake, ShieldCheck, Clock } from 'lucide-react';
 
 export const metadata: Metadata = {
   title: 'Admin',
@@ -12,6 +12,7 @@ export const metadata: Metadata = {
 const BUCKET_LABEL: Record<PlanBucket, string> = {
   free_active: 'Free trial (running)',
   free_ended: 'Free trial (ended)',
+  essential: 'Remind',
   solo: 'Solo Care',
   family: 'Family Care',
   extended: 'Extended Family'
@@ -41,6 +42,9 @@ const fmtDate = (iso: string) =>
 const fmtDateTime = (iso: string) =>
   new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: IST });
 const inr = (n: number) => `₹${n.toLocaleString('en-IN')}`;
+
+/** The scheduler should run every 5 minutes; three missed runs in a row = nothing is going out. */
+const CRON_STALE_MINUTES = 15;
 
 const CALL_STATUS_ROWS: Array<[string, string]> = [
   ['answered', 'Answered'],
@@ -78,6 +82,8 @@ export default async function AdminPage() {
   const s = await getAdminStats();
   const maxDay = Math.max(1, ...s.calls.days.map((d) => d.total));
   const paidCustomers = s.plans.payingActive;
+  const cronAgeMin = s.cron ? Math.floor((Date.parse(s.generatedAt) - Date.parse(s.cron.lastRunAt)) / 60000) : null;
+  const cronHealthy = s.cron !== null && s.cron.ok && cronAgeMin !== null && cronAgeMin <= CRON_STALE_MINUTES;
 
   return (
     <>
@@ -94,6 +100,21 @@ export default async function AdminPage() {
         </div>
 
         <div className="stat-grid admin">
+          <div className="stat" style={cronHealthy ? undefined : { borderColor: 'var(--amber-border)', background: 'var(--amber-soft)' }}>
+            <span className="panel-label"><Clock size={13} /> Scheduler</span>
+            <div className="stat-value" style={{ color: cronHealthy ? 'var(--green)' : 'var(--amber)' }}>
+              {cronAgeMin === null ? 'Never' : cronAgeMin < 1 ? 'Just now' : `${cronAgeMin} min ago`}
+            </div>
+            <p>
+              {!s.cron
+                ? 'No run recorded. Calls and reminders only go out when cron-job.org calls /api/cron/dispatch.'
+                : !s.cron.ok
+                  ? `Last run had a failure: ${s.cron.failed}. Check the Vercel logs.`
+                  : cronHealthy
+                    ? `Last run ${fmtDateTime(s.cron.lastRunAt)} IST · took ${(s.cron.durationMs / 1000).toFixed(1)} s`
+                    : `No run for over ${CRON_STALE_MINUTES} min: calls and reminders are NOT going out.`}
+            </p>
+          </div>
           <div className="stat">
             <span className="panel-label"><Users size={13} /> Customers</span>
             <div className="stat-value">{s.customers.total}</div>
@@ -126,6 +147,15 @@ export default async function AdminPage() {
             </div>
             <p>{s.calls.answered30} answered, last 30 days</p>
             <div className="meter" aria-hidden="true"><i style={{ width: `${s.calls.answerRatePct ?? 0}%`, background: 'var(--green)' }} /></div>
+          </div>
+          <div className="stat">
+            <span className="panel-label"><PhoneCall size={13} /> Call length</span>
+            <div className="stat-value">{s.calls.length.avgBilledMinutes === null ? '—' : `${s.calls.length.avgBilledMinutes} min`}</div>
+            <p>
+              {s.calls.length.calls === 0
+                ? 'No timed calls yet. Aim: under 60 s (1 billed minute).'
+                : `billed per call · avg ${s.calls.length.avgSeconds} s · ${s.calls.length.over60Pct}% run over 60 s · ≈ ₹${s.calls.length.estMonthlyCostPerParent} a parent a month in calls`}
+            </p>
           </div>
         </div>
 

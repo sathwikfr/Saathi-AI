@@ -5,12 +5,25 @@ import { MessageCircleHeart, Pause, Pencil, Play, ShieldCheck, Trash2 } from 'lu
 import { ParentProfile, ParentAccessRole } from '@/lib/types';
 import { formatScheduleSummary, getSelectableCallTimes } from '@/lib/scheduleGenerator';
 import { CallStats, formatPhone, canManage } from './helpers';
+import { SaathiPreferences } from './SaathiPreferences';
+import { HealthMonitorCard } from './HealthMonitorCard';
 
 type Props = {
   parent: ParentProfile;
   role: ParentAccessRole;
   stats: CallStats;
   companionAllowed: boolean;
+  /** Family / Extended features unlocked (the owner's plan). */
+  premium: boolean;
+  /** The owner's plan, what the add-ons cost on it, and which add-ons are on. */
+  planId: string;
+  monitorPrice: number;
+  touchesPrice: number;
+  healthMonitor: boolean;
+  dailyTouches: boolean;
+  /** The time of the short readings call, if one is set. */
+  vitalsCall: string | null;
+  callTogetherCandidates: { id: string; name: string }[];
   onPause: () => void;
   onResume: () => void;
   onDelete: () => void;
@@ -72,7 +85,7 @@ function CompanionSettings({ parent, companionAllowed, onChanged, onToast }: Pic
         <div className="toggle-row" style={{ paddingTop: 0 }}>
           <div>
             <strong>Turn on the weekly chat</strong>
-            <p>{companionAllowed ? 'Included in your plan.' : 'Available on paid plans.'} Saathi still listens for anything worrying and tells you.</p>
+            <p>{companionAllowed ? 'Included in your plan.' : 'Coming soon as an add-on.'} Saathi still listens for anything worrying and tells you.</p>
           </div>
           <button type="button" role="switch" aria-checked={enabled} aria-label="Weekly chat call" className="switch" disabled={!companionAllowed} onClick={() => setEnabled(v => !v)} />
         </div>
@@ -114,7 +127,7 @@ function CompanionSettings({ parent, companionAllowed, onChanged, onToast }: Pic
   );
 }
 
-export function SettingsPanel({ parent, role, stats, companionAllowed, onPause, onResume, onDelete, onEdit, onChanged, onToast }: Props) {
+export function SettingsPanel({ parent, role, stats, companionAllowed, premium, planId, monitorPrice, touchesPrice, healthMonitor, dailyTouches, vitalsCall, callTogetherCandidates, onPause, onResume, onDelete, onEdit, onChanged, onToast }: Props) {
   const manage = canManage(role);
   return (
     <div style={{ display: 'grid', gap: '20px' }}>
@@ -169,6 +182,14 @@ export function SettingsPanel({ parent, role, stats, companionAllowed, onPause, 
           {parent.name} can say &ldquo;stop calling me&rdquo; on any call: calls pause at once and you are told.
         </p>
       </section>
+
+      {manage && (
+        <SaathiPreferences parent={parent} isOwner={role === 'owner'} premium={premium} touches={dailyTouches} planId={planId} touchesPrice={touchesPrice} callTogetherCandidates={callTogetherCandidates} onChanged={onChanged} onToast={onToast} />
+      )}
+
+      {manage && (
+        <HealthMonitorCard parent={parent} enabled={healthMonitor} vitalsCall={vitalsCall} planId={planId} price={monitorPrice} isOwner={role === 'owner'} onChanged={onChanged} onToast={onToast} />
+      )}
 
       {manage && <CompanionSettings parent={parent} companionAllowed={companionAllowed} onChanged={onChanged} onToast={onToast} />}
 

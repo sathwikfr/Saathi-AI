@@ -38,13 +38,15 @@ export async function familyRecipients(parentId: string) {
     where: { id: parentId },
     include: {
       user: { include: { notificationPreferences: true } },
-      caregivers: { where: { status: 'accepted', userId: { not: null } } }
+      caregivers: { where: { status: 'accepted', userId: { not: null } }, orderBy: [{ acceptedAt: 'asc' }, { invitedAt: 'asc' }] }
     }
   });
   if (!parent) return null;
   const memberIds = parent.caregivers.map(c => c.userId!).filter(id => id !== parent.userId);
-  const members = memberIds.length
+  const found = memberIds.length
     ? await prisma.user.findMany({ where: { id: { in: memberIds } }, include: { notificationPreferences: true } })
     : [];
+  // In the order they joined: the plan's WhatsApp allowance goes to the owner first, then the earliest members.
+  const members = memberIds.map(id => found.find(u => u.id === id)).filter((u): u is (typeof found)[number] => !!u);
   return { parent, owner: parent.user, members };
 }

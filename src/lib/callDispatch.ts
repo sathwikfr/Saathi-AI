@@ -13,11 +13,16 @@
  *
  * Besides the scheduled slots it places: retries, one follow-up about medicines
  * the parent said they'd take "later", and the weekly companion call.
+ *
+ * Couple calls: when two parents of one account share a phone and both have said
+ * yes, the parent with the smaller id is called and asked about both; the other
+ * parent's matching slots (same time of day) are not called separately.
  */
 import { Prisma } from '@prisma/client';
 import { prisma } from './prisma';
 import { newId } from './db';
-import { getEffectivePlan } from './plans';
+import { getEffectivePlan, reminderChannelFor, healthMonitorAvailable } from './plans';
+import { ownerHasHealthMonitor, ownerHasDailyTouches } from './planAccess';
 import { normalizePhone } from './phone';
 import { generateMedicineCheckinQuestion } from './scheduleGenerator';
 import { istDateString, istMinutesOfDay, isSlotDue, parseClockTime } from './ist';
@@ -25,9 +30,14 @@ import {
   SarvamConfig, getSarvamConfig, createOutboundCall, SarvamApiError, OutboundCallInput, CallType, isProviderAccountProblem, logProviderProblem
 } from './sarvam';
 import { LinkedMedicineDetail, PlanId } from './types';
-import { MAX_CALL_ATTEMPTS, RETRY_DELAY_MINUTES, RESULT_NOT_RECEIVED } from './callResults';
+import { MAX_CALL_ATTEMPTS, RETRY_DELAY_MINUTES, RESULT_NOT_RECEIVED, maxFollowUpsPerDay } from './callResults';
 import { raiseUnreachableAlert, AlertDeps } from './alerts';
-import { CallExtras, NO_EXTRAS, CallSnapshot, planCallExtras, readSnapshot, NON_RETRY_SLOTS } from './callPlanning';
+import {
+  CallExtras, NO_EXTRAS, CallSnapshot, PartnerSnapshot, FamilyAsks, planCallExtras, readSnapshot, NON_RETRY_SLOTS,
+  HealthCarry, SlotLoad, healthCarryFor, MIN_SAMPLES_FOR_TYPICAL, HEALTH_BUNDLE_SECONDS, FEELING_SECONDS, CALL_BASE_SECONDS, PER_MEDICINE_SECONDS, slotSeconds
+} from './callPlanning';
+import { todayForecast, weatherNote } from './weather';
+import { getHolidays, Holiday, parseSpecialDays, specialDayFor } from './festivals';
 import { parentRoleFor, roleAllows } from './familyAccess';
 
 /** A slot stays "due" for this long after its scheduled time (covers cron gaps and outages). */
@@ -44,6 +54,11 @@ export interface DispatchDeps {
   alertDeps?: AlertDeps;
   /** Restrict the run to these parents (used by tests so they never touch real data). */
   parentIds?: string[];
+  /** Tests: the weather service and the holiday list (default: the real ones, only used when set up). */
+  weatherFetch?: typeof fetch;
+  holidays?: Holiday[];
+  /** Tests: pretend every call is this many seconds long before the daily touches (default: the real estimate). */
+  baseSecondsOverride?: number;
 }
 
 export interface DispatchSummary {
@@ -107,17 +122,24 @@ export function slotMedicines(slot: SlotRow, inactiveNames: Set<string>, purpose
     .map(m => (purposes.get(m.name) ? { ...m, purpose: purposes.get(m.name) } : m));
 }
 
-type MedicineRow = { name: string; isActive: boolean; purpose: string | null };
+type MedicineRow = { name: string; isActive: boolean; purpose: string | null; endsOn?: string | null };
 
-function medicineMaps(medicines: MedicineRow[]) {
-  const inactiveNames = new Set(medicines.filter(m => !m.isActive).map(m => m.name));
-  const purposes = new Map(medicines.filter(m => m.isActive && m.purpose?.trim()).map(m => [m.name, m.purpose!.trim()]));
-  const activeNames = medicines.filter(m => m.isActive).map(m => m.name);
+/** Switched on and not past its course end date (`today` is IST YYYY-MM-DD). */
+export function medicineIsCurrent(m: { isActive: boolean; endsOn?: string | null }, today: string): boolean {
+  return m.isActive && (!m.endsOn || m.endsOn >= today);
+}
+
+export function medicineMaps(medicines: MedicineRow[], today: string) {
+  const current = medicines.filter(m => medicineIsCurrent(m, today));
+  const inactiveNames = new Set(medicines.filter(m => !medicineIsCurrent(m, today)).map(m => m.name));
+  const purposes = new Map(current.filter(m => m.purpose?.trim()).map(m => [m.name, m.purpose!.trim()]));
+  const activeNames = current.map(m => m.name);
   return { inactiveNames, purposes, activeNames };
 }
 
 interface ParentForCall {
   id: string;
+  userId: string;
   name: string;
   phone: string;
   language: string;
@@ -128,6 +150,15 @@ interface ParentForCall {
   lastRefillCheckAt: Date | null;
   birthDate: string | null;
   companionTopics?: string | null;
+  readingsToAsk: string[];
+  latitude: number | null;
+  longitude: number | null;
+  lastWeatherNoteAt: Date | null;
+  festivals: string[];
+  specialDaysJson: string | null;
+  hearingMode: boolean;
+  helperName: string | null;
+  helperDays: number[];
   user: { name: string };
 }
 
@@ -214,11 +245,22 @@ async function placeClaimedCall(
     askConsent: extras.askConsent,
     saySafetyLine: extras.saySafetyLine,
     lastCallNote: extras.lastCallNote,
-    askWellbeing: extras.askWellbeing,
+    wellbeingTopic: extras.wellbeingTopic ?? null,
+    askFeeling: extras.askFeeling,
     refillMedicines: extras.refillMedicines,
     specialDay: extras.specialDay,
     companionTopics: snapshot.callType === 'companion' ? parent.companionTopics || null : null,
-    supportPhone: supportPhone()
+    supportPhone: supportPhone(),
+    familyMessage: extras.familyMessage,
+    appointmentNote: extras.appointmentNote,
+    appointmentQuestion: extras.appointmentQuestion,
+    askReadings: extras.askReadings,
+    weatherNote: extras.weatherNote,
+    hearingMode: extras.hearingMode,
+    helperQuestion: extras.helperQuestion,
+    partner: snapshot.partner
+      ? { name: snapshot.partner.name, medicines: snapshot.partner.medicines, askReadings: snapshot.partner.askReadings }
+      : null
   };
 
   try {
@@ -303,8 +345,188 @@ async function recentCallFacts(parentId: string, today: string, now: Date) {
   return { lastAnswered, answeredToday: answeredToday > 0 };
 }
 
-async function extrasFor(parent: ParentForCall, callType: CallType, activeNames: string[], now: Date): Promise<CallExtras> {
-  const facts = await recentCallFacts(parent.id, istDateString(now), now);
+const istDayStart = (now: Date) => new Date(Date.parse(`${istDateString(now)}T00:00:00+05:30`));
+
+/** A call with no tablets: the short readings call of the Health Monitor add-on. */
+export function isVitalsSlot(s: { slot: string; linkedMedicineNames: string[] }): boolean {
+  return s.slot === 'wellness' && (s.linkedMedicineNames || []).length === 0;
+}
+
+/** The most calls a day on any calling plan (Solo / Family / Extended): enough to plan where the health bundle goes. */
+const HEALTH_PLAN_SLOTS = 3;
+
+/** Has "How are you feeling today?" already been asked on an answered call today? */
+async function feelingAskedToday(parentId: string, today: string): Promise<boolean> {
+  const rows = await prisma.callLog.findMany({ where: { parentId, status: 'answered', callDate: today }, select: { resultJson: true } });
+  return rows.some(r => !!readSnapshot(r.resultJson).asked?.askFeeling);
+}
+
+/**
+ * How heavy each of today's calls is: the tablets asked about, or (once there are a few real calls for the slot) its own
+ * average length with the health questions taken out, so a chatty parent's calls count as longer.
+ */
+async function healthLoads(
+  parentId: string,
+  slots: Array<Parameters<typeof slotMedicines>[0] & { id: string; time: string }>,
+  inactiveNames: Set<string>,
+  purposes: Map<string, string>,
+  now: Date
+): Promise<SlotLoad[]> {
+  const ids = slots.map(s => s.id);
+  const rows = ids.length
+    ? await prisma.callLog.findMany({
+        where: { parentId, slotId: { in: ids }, status: 'answered', durationSeconds: { gt: 0 }, createdAt: { gte: new Date(now.getTime() - 14 * 86400000) } },
+        select: { slotId: true, durationSeconds: true, resultJson: true },
+        take: 100
+      })
+    : [];
+  const samples = new Map<string, number[]>();
+  for (const r of rows) {
+    if (!r.slotId) continue;
+    const asked = readSnapshot(r.resultJson).asked;
+    const bundle = asked?.askFeeling ? (asked.wellbeingTopic ? HEALTH_BUNDLE_SECONDS : FEELING_SECONDS) : 0;
+    samples.set(r.slotId, [...(samples.get(r.slotId) || []), Math.max(10, r.durationSeconds - bundle)]);
+  }
+  return slots.map(s => {
+    const own = samples.get(s.id) || [];
+    return {
+      id: s.id,
+      minutes: parseClockTime(s.time) as number,
+      medicines: slotMedicines(s, inactiveNames, purposes).length,
+      typicalSeconds: own.length >= MIN_SAMPLES_FOR_TYPICAL ? Math.round(own.reduce((a, b) => a + b, 0) / own.length) : null
+    };
+  });
+}
+
+/** Tablets the parent said "later" about on an earlier answered call today and hasn't confirmed since (no extra calls: they're asked again on the next one). */
+async function laterToday(parentId: string, today: string): Promise<LinkedMedicineDetail[]> {
+  const rows = await prisma.callLog.findMany({ where: { parentId, status: 'answered', callDate: today }, orderBy: { createdAt: 'asc' }, select: { resultJson: true } });
+  const key = (name: string) => name.trim().toLowerCase();
+  const state = new Map<string, { status: string; detail: LinkedMedicineDetail }>();
+  for (const r of rows) {
+    let parsed: { medicines?: LinkedMedicineDetail[]; medicineResults?: Array<{ name: string; status: string }> } = {};
+    try {
+      parsed = JSON.parse(r.resultJson || '{}');
+    } catch {
+      continue;
+    }
+    const details = new Map((Array.isArray(parsed.medicines) ? parsed.medicines : []).map(m => [key(m.name), m]));
+    for (const res of Array.isArray(parsed.medicineResults) ? parsed.medicineResults : []) {
+      state.set(key(res.name), { status: res.status, detail: details.get(key(res.name)) || ({ name: res.name } as LinkedMedicineDetail) });
+    }
+  }
+  return [...state.values()].filter(v => v.status === 'later').map(v => v.detail);
+}
+
+/** Kinds of reading already recorded today (from a call or typed in by the family). */
+async function readingsTakenToday(parentId: string, now: Date): Promise<string[]> {
+  const rows = await prisma.healthReading.findMany({ where: { parentId, takenAt: { gte: istDayStart(now) } }, select: { kind: true } });
+  return [...new Set(rows.map(r => r.kind))];
+}
+
+const nearbyAppointments = (parentId: string, now: Date) =>
+  prisma.appointment.findMany({
+    where: { parentId, cancelledAt: null, startsAt: { gte: new Date(now.getTime() - 4 * 86400000), lte: new Date(now.getTime() + 2 * 86400000) } }
+  });
+
+/** "birthday" -> "birthday of Appa", "fasting day (Ekadashi)" -> "fasting day (Ekadashi) for Appa". */
+export function partnerSpecialDay(day: string | null, partnerName: string): string | null {
+  if (!day) return null;
+  const who = partnerName.split(' ')[0];
+  if (day === 'birthday') return `birthday of ${who}`;
+  if (day.startsWith('fasting day')) return `${day} for ${who}`;
+  return `${day} (${who})`;
+}
+
+/** What each reading asked for costs in call time (seconds): the question, the number, repeating it back. */
+const READING_SECONDS = 12;
+
+/**
+ * What the household set up for this parent, by what the account bought (2026-10-08): appointment reminders on every
+ * plan; BP / sugar with Health Monitor; festivals, birthdays, weather and the helper check with Daily Touches; hearing-
+ * friendly mode always (it is accessibility). Family messages were removed. On a couple call the second parent's
+ * appointments ride along, labelled with their name, and household things come from either parent.
+ */
+async function familyAsksFor(
+  parent: ParentForCall,
+  callType: CallType,
+  now: Date,
+  deps: DispatchDeps,
+  lastCallOfDay: boolean,
+  partner: ParentForCall | undefined,
+  access: { monitor: boolean; touches: boolean; readingsHere: boolean; baseSeconds?: number }
+): Promise<FamilyAsks> {
+  const today = istDateString(now);
+  const [appointments, taken, todaysAnswered, partnerAppointments] = await Promise.all([
+    nearbyAppointments(parent.id, now),
+    access.monitor ? readingsTakenToday(parent.id, now) : Promise.resolve([] as string[]),
+    access.touches ? prisma.callLog.findMany({ where: { parentId: parent.id, callDate: today, status: 'answered' }, select: { resultJson: true } }) : Promise.resolve([]),
+    partner ? nearbyAppointments(partner.id, now) : Promise.resolve([])
+  ]);
+  const who = partner?.name.split(' ')[0] || '';
+
+  let note: string | null = null;
+  let specialDay: string | null = null;
+  let helper: { name: string | null; days: number[] } = { name: null, days: [] };
+  let helperAskedToday = false;
+
+  if (access.touches) {
+    helperAskedToday = todaysAnswered.some(c => !!readSnapshot(c.resultJson).asked?.helperQuestion);
+    // Weather: the household's town (either parent's), once a day.
+    const place = parent.latitude != null && parent.longitude != null ? parent : partner?.latitude != null && partner.longitude != null ? partner : null;
+    const notedToday = [parent.lastWeatherNoteAt, partner?.lastWeatherNoteAt].some(d => d && istDateString(d) === today);
+    if (callType !== 'followup' && place && !notedToday) {
+      note = weatherNote(await todayForecast(place.latitude!, place.longitude!, now, deps.weatherFetch));
+    }
+
+    // Festivals: either parent's ticks count for the household. Only fetch the calendar when someone celebrates something.
+    const festivals = [...new Set([...parent.festivals, ...(partner?.festivals || [])])];
+    const holidays = festivals.length ? deps.holidays ?? (await getHolidays()) : [];
+    const ownDay = specialDayFor({ birthDate: parent.birthDate, festivals, specialDays: parseSpecialDays(parent.specialDaysJson), holidays }, now);
+    const partnerDay = partner && !ownDay
+      ? partnerSpecialDay(specialDayFor({ birthDate: partner.birthDate, festivals: [], specialDays: parseSpecialDays(partner.specialDaysJson), holidays }, now), partner.name)
+      : null;
+    specialDay = ownDay || partnerDay;
+
+    helper = parent.helperName || !partner?.helperName
+      ? { name: parent.helperName, days: parent.helperDays }
+      : { name: partner.helperName, days: partner.helperDays };
+  }
+
+  return {
+    messages: [],
+    appointments: [...appointments, ...partnerAppointments.map(a => ({ ...a, who }))],
+    readingsToAsk: access.monitor ? parent.readingsToAsk : [],
+    readingsTakenToday: taken,
+    readingsHere: access.readingsHere,
+    weatherNote: note,
+    helper: { ...helper, askedToday: helperAskedToday, lastCallOfDay },
+    hearingMode: parent.hearingMode || !!partner?.hearingMode,
+    specialDay,
+    baseSeconds: access.baseSeconds
+  };
+}
+
+async function extrasFor(
+  parent: ParentForCall,
+  callType: CallType,
+  activeNames: string[],
+  now: Date,
+  deps: DispatchDeps = {},
+  lastCallOfDay = false,
+  partner?: ParentForCall,
+  /** Which part of the health bundle this call carries (see callPlanning.healthCarryFor); unset = the old "first answered call" rule. */
+  carry?: HealthCarry,
+  /** Health Monitor: whether THIS call is where readings are asked (false when a separate readings call exists). */
+  readingsHere = true,
+  /** Estimated seconds of this call before the daily touches; the touches only go where the call keeps its room. */
+  baseSeconds?: number
+): Promise<CallExtras> {
+  const [monitor, touches] = await Promise.all([ownerHasHealthMonitor(parent.userId, now), ownerHasDailyTouches(parent.userId, now)]);
+  const [facts, family] = await Promise.all([
+    recentCallFacts(parent.id, istDateString(now), now),
+    familyAsksFor(parent, callType, now, deps, lastCallOfDay, partner, { monitor, touches, readingsHere, baseSeconds })
+  ]);
   return planCallExtras({
     callType,
     rhythm: {
@@ -312,13 +534,58 @@ async function extrasFor(parent: ParentForCall, callType: CallType, activeNames:
       lastSafetyLineAt: parent.lastSafetyLineAt,
       lastWellbeingAt: parent.lastWellbeingAt,
       lastRefillCheckAt: parent.lastRefillCheckAt,
-      birthDate: parent.birthDate
+      birthDate: touches ? parent.birthDate : null
     },
     lastAnswered: facts.lastAnswered,
     activeMedicineNames: activeNames,
     answeredToday: facts.answeredToday,
-    now
+    now,
+    family,
+    healthCarry: carry
   });
+}
+
+type LoadedParent = Prisma.ParentProfileGetPayload<{
+  include: { callSchedule: true; medicines: true; user: { include: { subscription: true } } };
+}>;
+
+/**
+ * Couple calls: both parents of one account on the same phone, linked both ways, both said yes,
+ * neither paused. Returns the partner and whether `p` is the one who gets the call.
+ */
+export function coupleOf<T extends { id: string; userId: string; phone: string; callTogetherWithId: string | null; isPaused: boolean; isDeleted: boolean; parentConsent: string | null }>(
+  p: T,
+  byId: Map<string, T>
+): { partner: T; primary: boolean } | null {
+  const q = p.callTogetherWithId ? byId.get(p.callTogetherWithId) : undefined;
+  if (!q || q.callTogetherWithId !== p.id || q.userId !== p.userId || q.isDeleted || p.isDeleted) return null;
+  const a = normalizePhone(p.phone);
+  const b = normalizePhone(q.phone);
+  if (!a.ok || !b.ok || a.e164 !== b.e164) return null;
+  if (p.isPaused || q.isPaused || p.parentConsent !== 'given' || q.parentConsent !== 'given') return null;
+  return { partner: q, primary: p.id < q.id };
+}
+
+/** The second parent of a couple call, as the dispatcher needs them (for retries and follow-ups, which only kept the id). */
+async function loadPartnerForCall(id: string): Promise<ParentForCall | undefined> {
+  const p = await prisma.parentProfile.findUnique({ where: { id }, include: { user: true } });
+  return p && !p.isDeleted ? p : undefined;
+}
+
+/** The partner's part of a couple call for one time of day (same slot type), or null if they have nothing then. */
+async function partnerPart(partner: LoadedParent, slotType: string, now: Date, readings: { monitor: boolean; here: boolean } = { monitor: false, here: true }): Promise<PartnerSnapshot | null> {
+  const slot = partner.callSchedule.find(s => s.isActive && s.slot === slotType);
+  if (!slot) return null;
+  const { inactiveNames, purposes } = medicineMaps(partner.medicines, istDateString(now));
+  const taken = readings.monitor && readings.here ? await readingsTakenToday(partner.id, now) : [];
+  return {
+    parentId: partner.id,
+    name: partner.name,
+    slotId: slot.id,
+    slot: slot.slot,
+    medicines: slotMedicines(slot, inactiveNames, purposes),
+    askReadings: readings.monitor && readings.here ? partner.readingsToAsk.filter(k => !taken.includes(k)) : []
+  };
 }
 
 /** Parents who said no, or asked Saathi to stop, are not called until the family resumes calls. */
@@ -342,22 +609,49 @@ export async function runDispatch(deps: DispatchDeps = {}): Promise<DispatchSumm
 
   // 1. Close calls whose result never arrived.
   const scope = deps.parentIds ? { in: deps.parentIds } : undefined;
-  const stale = await prisma.callLog.updateMany({
+  const staleBefore = new Date(now.getTime() - STALE_PLACED_MINUTES * 60000);
+  const staleRows = await prisma.callLog.findMany({
     where: {
       ...(scope ? { parentId: scope } : {}),
-      status: 'placed',
       processedAt: null,
-      startedAt: { lt: new Date(now.getTime() - STALE_PLACED_MINUTES * 60000) }
+      OR: [
+        { status: 'placed', startedAt: { lt: staleBefore } },
+        // Claimed but never handed to Sarvam (the run was cut off between the two): it would block the slot all day.
+        { status: 'scheduled', createdAt: { lt: staleBefore } }
+      ]
     },
-    data: {
-      status: 'failed',
-      failureReason: RESULT_NOT_RECEIVED,
-      processedAt: now,
-      endedAt: now,
-      summary: 'No result was received from the calling service for this call.'
-    }
+    select: { id: true, parentId: true, attemptNumber: true, slot: true, status: true, createdAt: true },
+    take: 200
   });
-  summary.staleClosed = stale.count;
+  let staleClosed = 0;
+  for (const row of staleRows) {
+    const closed = await prisma.callLog.updateMany({
+      where: { id: row.id, processedAt: null, status: row.status },
+      data: {
+        status: 'failed',
+        failureReason: row.status === 'placed' ? RESULT_NOT_RECEIVED : 'not_placed',
+        processedAt: now,
+        endedAt: now,
+        summary: row.status === 'placed'
+          ? 'No result was received from the calling service for this call.'
+          : 'This call was never handed to the calling service.'
+      }
+    });
+    if (closed.count !== 1) continue;
+    staleClosed += 1;
+    // A scheduled check-in that silently vanished must not look like "all fine": tell the family (test and manual calls excepted).
+    // Only for recent ones: old leftovers (from before this check existed) are closed quietly, never reported as news.
+    const recent = now.getTime() - row.createdAt.getTime() < 12 * 3600000;
+    if (recent && row.slot && !NON_RETRY_SLOTS.includes(row.slot)) {
+      try {
+        const p = await prisma.parentProfile.findUnique({ where: { id: row.parentId }, select: { name: true } });
+        await raiseUnreachableAlert(row, p?.name || 'your parent', 'failed', 'we did not get the call result from our calling service', deps.alertDeps);
+      } catch (err) {
+        console.error(`[calls] Could not raise the lost-call alert for ${row.id}:`, err);
+      }
+    }
+  }
+  summary.staleClosed = staleClosed;
 
   // 2. Scheduled slots that are due (and the weekly companion call).
   const parents = await prisma.parentProfile.findMany({
@@ -368,6 +662,8 @@ export async function runDispatch(deps: DispatchDeps = {}): Promise<DispatchSumm
       user: { include: { subscription: true } }
     }
   });
+
+  const byId = new Map(parents.map(p => [p.id, p]));
 
   for (const parent of parents) {
     summary.parentsChecked += 1;
@@ -396,29 +692,75 @@ export async function runDispatch(deps: DispatchDeps = {}): Promise<DispatchSumm
         now
       );
       if (plan.expired) continue; // free trial over: no calls until a plan is chosen
+      // WhatsApp-only reminders (Remind, or switched to WhatsApp): never called (lib/reminders.ts sends those).
+      if (reminderChannelFor(plan, parent) === 'whatsapp') continue;
 
       const slots = [...parent.callSchedule]
         .filter(s => parseClockTime(s.time) !== null)
         .sort((a, b) => (parseClockTime(a.time) as number) - (parseClockTime(b.time) as number));
-      if (slots.length > plan.callsPerDay) summary.cappedByPlan += slots.length - plan.callsPerDay;
+      // Health Monitor (Solo add-on): ONE short call with no tablets (a "wellness" slot) is for BP / sugar and sits outside
+      // the 3-call cap, so the medicine calls stay under a minute.
+      const hasMonitor = !!sub?.healthMonitor && healthMonitorAvailable(plan.id);
+      const vitalsSlot = hasMonitor ? slots.find(isVitalsSlot) : undefined;
+      const medSlots = vitalsSlot ? slots.filter(s => s.id !== vitalsSlot.id) : slots;
+      if (medSlots.length > plan.callsPerDay) summary.cappedByPlan += medSlots.length - plan.callsPerDay;
 
-      const { inactiveNames, purposes, activeNames } = medicineMaps(parent.medicines);
+      const { inactiveNames, purposes, activeNames } = medicineMaps(parent.medicines, today);
       const createdToday = istDateString(parent.createdAt) === today;
       const createdMinutes = istMinutesOfDay(parent.createdAt);
       const forCall: ParentForCall = { ...parent, phone: phone.e164 };
       // Extras (wellbeing, refill, …) go on the first call placed in this run only.
       let extrasUsed = false;
+      const medCapped = medSlots.slice(0, plan.callsPerDay);
+      const capped = vitalsSlot
+        ? [...medCapped, vitalsSlot].sort((a, b) => (parseClockTime(a.time) as number) - (parseClockTime(b.time) as number))
+        : medCapped;
+      // One call for a couple sharing a phone: Family / Extended only.
+      const couple = plan.premium ? coupleOf(parent, byId) : null;
+      // The other parent's call covers these times of day.
+      const coveredByPartner = couple && !couple.primary
+        ? new Set(couple.partner.callSchedule.filter(s => s.isActive).map(s => s.slot))
+        : new Set<string>();
 
-      for (const slot of slots.slice(0, plan.callsPerDay)) {
+      // Where today's health questions go (decided once per parent, only when a call is actually due).
+      let loads: SlotLoad[] | null = null;
+      let feelingAsked = false;
+
+      for (const slot of capped) {
         if (!isSlotDue(slot.time, now, DUE_WINDOW_MINUTES)) continue;
         // A newly added parent is first called the next day, not about a slot that already passed.
         if (createdToday && (parseClockTime(slot.time) as number) <= createdMinutes) continue;
+        if (coveredByPartner.has(slot.slot)) continue;
 
-        const medicines = slotMedicines(slot, inactiveNames, purposes);
+        if (!loads) {
+          loads = await healthLoads(parent.id, medCapped, inactiveNames, purposes, now);
+          feelingAsked = await feelingAskedToday(parent.id, today);
+        }
+        const own = slotMedicines(slot, inactiveNames, purposes);
+        // "Later" earlier today: asked again here (there are no extra follow-up calls).
+        const carried = (await laterToday(parent.id, today)).filter(m => !inactiveNames.has(m.name) && !own.some(o => o.name.trim().toLowerCase() === m.name.trim().toLowerCase()));
+        const medicines = [...own, ...carried];
+        const lastCallOfDay = slot.id === medCapped[medCapped.length - 1]?.id;
+        const carry = healthCarryFor({ loads, slotId: slot.id, feelingAskedToday: feelingAsked, nowMinutes: istMinutesOfDay(now) });
+        const readingsHere = !vitalsSlot || slot.id === vitalsSlot.id;
+        const partner = couple?.primary ? await partnerPart(couple.partner, slot.slot, now, { monitor: hasMonitor, here: readingsHere }) : null;
+        // About how long this call runs before the daily touches: tablets (own, carried "later", the partner's) + the health questions.
+        const load = loads.find(l => l.id === slot.id);
+        const baseSeconds =
+          (load ? slotSeconds(load) : readingsHere && vitalsSlot ? CALL_BASE_SECONDS + READING_SECONDS * forCall.readingsToAsk.length : CALL_BASE_SECONDS) +
+          PER_MEDICINE_SECONDS * (carried.length + (partner?.medicines.length || 0)) +
+          (carry === 'full' ? HEALTH_BUNDLE_SECONDS : carry === 'feeling' ? FEELING_SECONDS : 0);
         const extras = extrasUsed
           ? { ...NO_EXTRAS, askConsent: forCall.parentConsent !== 'given' }
-          : await extrasFor(forCall, 'reminder', activeNames, now);
-        const snapshot: CallSnapshot = { medicines, callType: 'reminder', asked: extras };
+          : await extrasFor(forCall, 'reminder', activeNames, now, deps, lastCallOfDay, couple?.primary ? couple.partner : undefined, carry, readingsHere, deps.baseSecondsOverride ?? baseSeconds);
+        const snapshot: CallSnapshot = {
+          medicines,
+          callType: 'reminder',
+          asked: extras,
+          ...(lastCallOfDay && maxFollowUpsPerDay() === 0 ? { finalCall: true } : {}),
+          ...(carried.length ? { carriedLater: carried.map(m => m.name) } : {}),
+          ...(partner ? { partner } : {})
+        };
         const log = await claimAttempt({
           parentId: parent.id,
           slotId: slot.id,
@@ -437,10 +779,10 @@ export async function runDispatch(deps: DispatchDeps = {}): Promise<DispatchSumm
         if (outcome === 'placed') summary.placed += 1;
       }
 
-      // Weekly companion call: opted in, paid plan (trial included), its day and time.
+      // Weekly companion call: opted in, plan includes it (plan.weeklyChat), its day and time.
       if (
         parent.companionEnabled &&
-        plan.id !== 'free' &&
+        plan.weeklyChat &&
         parent.companionDay === istWeekday(now) &&
         parent.companionTime &&
         isSlotDue(parent.companionTime, now, DUE_WINDOW_MINUTES) &&
@@ -448,7 +790,7 @@ export async function runDispatch(deps: DispatchDeps = {}): Promise<DispatchSumm
       ) {
         const extras = extrasUsed
           ? { ...NO_EXTRAS, askConsent: forCall.parentConsent !== 'given' }
-          : await extrasFor(forCall, 'companion', activeNames, now);
+          : await extrasFor(forCall, 'companion', activeNames, now, deps);
         const snapshot: CallSnapshot = { medicines: [], callType: 'companion', asked: extras };
         const log = await claimAttempt({
           parentId: parent.id,
@@ -494,17 +836,49 @@ export async function runDispatch(deps: DispatchDeps = {}): Promise<DispatchSumm
 
       const parent = await prisma.parentProfile.findUnique({
         where: { id: prev.parentId },
-        include: { callSchedule: true, medicines: true, user: true }
+        include: { callSchedule: true, medicines: true, user: { include: { subscription: true } } }
       });
       if (!parent || parent.isDeleted || parent.isPaused || consentBlocksCalls(parent.parentConsent)) continue;
+      // Switched to WhatsApp reminders since the first attempt: no more calls.
+      if (parent.reminderChannel === 'whatsapp') continue;
       const phone = normalizePhone(parent.phone);
       if (!phone.ok) continue;
 
       const slot = parent.callSchedule.find(s => s.id === prev.slotId && s.isActive);
-      const { inactiveNames, purposes, activeNames } = medicineMaps(parent.medicines);
-      const medicines = slot ? slotMedicines(slot, inactiveNames, purposes) : [];
+      const { inactiveNames, purposes, activeNames } = medicineMaps(parent.medicines, today);
+      const own = slot ? slotMedicines(slot, inactiveNames, purposes) : [];
+      const carried = (await laterToday(parent.id, today)).filter(m => !inactiveNames.has(m.name) && !own.some(o => o.name.trim().toLowerCase() === m.name.trim().toLowerCase()));
+      const medicines = [...own, ...carried];
       const forCall: ParentForCall = { ...parent, phone: phone.e164 };
-      const snapshot: CallSnapshot = { medicines, callType: 'reminder', asked: await extrasFor(forCall, 'reminder', activeNames, now) };
+      // A couple call is retried as a couple call.
+      const partner = readSnapshot(prev.resultJson).partner;
+      const retryVitals = parent.user.subscription?.healthMonitor ? parent.callSchedule.find(s => s.isActive && isVitalsSlot(s)) : undefined;
+      const todaysSlots = [...parent.callSchedule]
+        .filter(s => s.isActive && parseClockTime(s.time) !== null && s.id !== retryVitals?.id)
+        .sort((a, b) => (parseClockTime(a.time) as number) - (parseClockTime(b.time) as number))
+        .slice(0, HEALTH_PLAN_SLOTS);
+      const retryLoads = await healthLoads(parent.id, todaysSlots, inactiveNames, purposes, now);
+      const retryCarry = healthCarryFor({
+        loads: retryLoads,
+        slotId: prev.slotId,
+        feelingAskedToday: await feelingAskedToday(parent.id, today),
+        nowMinutes: istMinutesOfDay(now)
+      });
+      const retryReadingsHere = !retryVitals || prev.slotId === retryVitals.id;
+      const retryLoad = retryLoads.find(l => l.id === prev.slotId);
+      const retryBase =
+        (retryLoad ? slotSeconds(retryLoad) : retryReadingsHere && retryVitals ? CALL_BASE_SECONDS + READING_SECONDS * parent.readingsToAsk.length : CALL_BASE_SECONDS) +
+        PER_MEDICINE_SECONDS * carried.length +
+        (retryCarry === 'full' ? HEALTH_BUNDLE_SECONDS : retryCarry === 'feeling' ? FEELING_SECONDS : 0);
+      const finalCall = maxFollowUpsPerDay() === 0 && !!prev.slotId && todaysSlots[todaysSlots.length - 1]?.id === prev.slotId;
+      const snapshot: CallSnapshot = {
+        medicines,
+        callType: 'reminder',
+        asked: await extrasFor(forCall, 'reminder', activeNames, now, deps, false, partner ? await loadPartnerForCall(partner.parentId) : undefined, retryCarry, retryReadingsHere, retryBase),
+        ...(finalCall ? { finalCall: true } : {}),
+        ...(carried.length ? { carriedLater: carried.map(m => m.name) } : {}),
+        ...(partner ? { partner } : {})
+      };
 
       const log = await claimAttempt({
         parentId: parent.id,
@@ -541,26 +915,34 @@ export async function runDispatch(deps: DispatchDeps = {}): Promise<DispatchSumm
 
       const parent = await prisma.parentProfile.findUnique({ where: { id: prev.parentId }, include: { user: true } });
       if (!parent || parent.isDeleted || parent.isPaused || consentBlocksCalls(parent.parentConsent)) continue;
+      if (parent.reminderChannel === 'whatsapp') continue;
       const phone = normalizePhone(parent.phone);
       if (!phone.ok) continue;
 
       const original = readSnapshot(prev.resultJson);
-      let laterNames: string[] = [];
-      try {
-        const results = JSON.parse(prev.resultJson || '{}')?.medicineResults;
-        if (Array.isArray(results)) laterNames = results.filter((r: { status?: string }) => r.status === 'later').map((r: { name: string }) => r.name);
-      } catch {
-        laterNames = [];
-      }
+      const later = (key: 'medicineResults' | 'partnerMedicineResults'): string[] => {
+        try {
+          const results = JSON.parse(prev.resultJson || '{}')?.[key];
+          return Array.isArray(results) ? results.filter((r: { status?: string }) => r.status === 'later').map((r: { name: string }) => r.name) : [];
+        } catch {
+          return [];
+        }
+      };
+      const laterNames = later('medicineResults');
+      const partnerLater = later('partnerMedicineResults');
       const medicines = original.medicines.filter(m => laterNames.includes(m.name));
-      if (medicines.length === 0) continue;
+      const partner = original.partner
+        ? { ...original.partner, medicines: original.partner.medicines.filter(m => partnerLater.includes(m.name)), askReadings: [] }
+        : null;
+      if (medicines.length === 0 && !partner?.medicines.length) continue;
 
       const forCall: ParentForCall = { ...parent, phone: phone.e164 };
       const snapshot: CallSnapshot = {
         medicines,
         callType: 'followup',
-        asked: await extrasFor(forCall, 'followup', [], now),
-        followUpOf: prev.id
+        asked: await extrasFor(forCall, 'followup', [], now, deps, false, original.partner ? await loadPartnerForCall(original.partner.parentId) : undefined),
+        followUpOf: prev.id,
+        ...(partner?.medicines.length ? { partner } : {})
       };
       const log = await claimAttempt({
         parentId: parent.id,
@@ -626,6 +1008,14 @@ export async function placeManualCall(
   if (plan.expired) {
     return { ok: false, status: 402, code: 'TRIAL_ENDED', error: 'Your free trial has ended. Choose a plan to place calls again.' };
   }
+  if (reminderChannelFor(plan, parent) === 'whatsapp') {
+    return {
+      ok: false,
+      status: 409,
+      code: 'WHATSAPP_ONLY',
+      error: `${parent.name} gets medicine reminders on WhatsApp, not calls.${plan.channel === 'whatsapp' ? ' Calls come with the Solo, Family and Extended plans.' : ' Switch them to calls in Settings first.'}`
+    };
+  }
   if (!parent.consentGiven) {
     return { ok: false, status: 409, code: 'NO_CONSENT', error: 'Parent consent is required before calls can be placed.' };
   }
@@ -674,10 +1064,10 @@ export async function placeManualCall(
     slots.find(s => s.linkedMedicineNames.length > 0) ||
     slots[0];
 
-  const { inactiveNames, purposes, activeNames } = medicineMaps(parent.medicines);
+  const { inactiveNames, purposes, activeNames } = medicineMaps(parent.medicines, istDateString(now));
   const medicines = chosen ? slotMedicines(chosen, inactiveNames, purposes) : [];
   const forCall: ParentForCall = { ...parent, phone: phone.e164 };
-  const snapshot: CallSnapshot = { medicines, callType: 'reminder', asked: await extrasFor(forCall, 'reminder', activeNames, now) };
+  const snapshot: CallSnapshot = { medicines, callType: 'reminder', asked: await extrasFor(forCall, 'reminder', activeNames, now, deps) };
 
   const log = await claimAttempt({
     parentId: parent.id,

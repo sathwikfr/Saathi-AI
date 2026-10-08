@@ -1,13 +1,5 @@
 import { NextResponse } from 'next/server';
-import {
-  getParentsForUser,
-  getSharedParentsForUser,
-  createParent,
-  setMedicinesForParent,
-  setEmergencyContacts,
-  deleteParentSoft,
-  newId
-} from '@/lib/db';
+import { getParentsForUser, getSharedParentsForUser, createParent, setMedicinesForParent, setEmergencyContacts, deleteParentSoft, newId, cleanTabletCount } from '@/lib/db';
 import { requireUser } from '@/lib/access';
 import { canAddParents, getEffectivePlan, smallestPlanFor } from '@/lib/plans';
 import { Medicine, EmergencyContact, MedicineTimingSlot, FoodRelation } from '@/lib/types';
@@ -67,7 +59,8 @@ export async function POST(req: Request) {
       consentGiven,
       medicines,
       emergencyContacts,
-      details
+      details,
+      caretaker
     } = body;
 
     if (!name || typeof name !== 'string' || !name.trim()) {
@@ -85,45 +78,6 @@ export async function POST(req: Request) {
 
     if (consentGiven !== true) {
       return NextResponse.json({ error: 'Parent consent is mandatory before starting calls' }, { status: 400 });
-    }
-
-    // Validate emergency contacts before creating anything.
-    let formattedContacts: Omit<EmergencyContact, 'parentId'>[] = [];
-    if (Array.isArray(emergencyContacts) && emergencyContacts.length > 0) {
-      for (const [i, c] of (emergencyContacts as Partial<EmergencyContact>[]).entries()) {
-        const contactName = (c.name || '').trim();
-        const contactPhone = (c.phone || '').trim();
-        if (!contactName && !contactPhone) continue; // empty optional row
-        const norm = normalizePhone(contactPhone);
-        if (!contactName || !norm.ok) {
-          return NextResponse.json(
-            { error: `Emergency contact ${i + 1}: ${!contactName ? 'name is required' : norm.ok ? '' : norm.reason}` },
-            { status: 400 }
-          );
-        }
-        formattedContacts.push({
-          id: newId('emg'),
-          name: contactName,
-          relation: (c.relation || 'Son / Daughter').toString().slice(0, 100),
-          phone: norm.e164,
-          priority: formattedContacts.length === 0 ? 'primary' : 'secondary',
-          role: c.role,
-          isLocal: c.isLocal === true
-        });
-      }
-    }
-    if (formattedContacts.length === 0) {
-      // Default to the account holder as primary emergency contact.
-      const norm = normalizePhone(user.phone || '');
-      if (!norm.ok) {
-        return NextResponse.json(
-          { error: 'Please add at least one emergency contact with a valid mobile number.' },
-          { status: 400 }
-        );
-      }
-      formattedContacts = [
-        { id: newId('emg'), name: user.name, relation: 'Child (Primary Caregiver)', phone: norm.e164, priority: 'primary' }
-      ];
     }
 
     // Check plan limits
@@ -153,6 +107,59 @@ export async function POST(req: Request) {
       );
     }
 
+    // Remind: WhatsApp reminders for someone who manages their own medicines; no calls, so no emergency ladder.
+    const whatsappOnly = plan.channel === 'whatsapp';
+
+    // Remind: the caretaker told when a dose isn't confirmed (optional; any country, they may live abroad).
+    let cleanCaretaker: { name: string; phone: string } | null = null;
+    if (whatsappOnly && caretaker && typeof caretaker === 'object' && (caretaker.name || caretaker.phone)) {
+      const cName = typeof caretaker.name === 'string' ? caretaker.name.trim().slice(0, 80) : '';
+      const cPhone = normalizePhone(typeof caretaker.phone === 'string' ? caretaker.phone : '');
+      if (!cName || !cPhone.ok) {
+        return NextResponse.json({ error: `Caretaker: ${!cName ? 'please add a name' : cPhone.ok ? '' : cPhone.reason}` }, { status: 400 });
+      }
+      cleanCaretaker = { name: cName, phone: cPhone.e164 };
+    }
+
+    // Validate emergency contacts before creating anything.
+    let formattedContacts: Omit<EmergencyContact, 'parentId'>[] = [];
+    if (Array.isArray(emergencyContacts) && emergencyContacts.length > 0) {
+      for (const [i, c] of (emergencyContacts as Partial<EmergencyContact>[]).entries()) {
+        const contactName = (c.name || '').trim();
+        const contactPhone = (c.phone || '').trim();
+        if (!contactName && !contactPhone) continue; // empty optional row
+        const norm = normalizePhone(contactPhone);
+        if (!contactName || !norm.ok) {
+          return NextResponse.json(
+            { error: `Emergency contact ${i + 1}: ${!contactName ? 'name is required' : norm.ok ? '' : norm.reason}` },
+            { status: 400 }
+          );
+        }
+        formattedContacts.push({
+          id: newId('emg'),
+          name: contactName,
+          relation: (c.relation || 'Son / Daughter').toString().slice(0, 100),
+          phone: norm.e164,
+          priority: formattedContacts.length === 0 ? 'primary' : 'secondary',
+          role: c.role,
+          isLocal: c.isLocal === true
+        });
+      }
+    }
+    if (formattedContacts.length === 0 && !whatsappOnly) {
+      // Default to the account holder as primary emergency contact.
+      const norm = normalizePhone(user.phone || '');
+      if (!norm.ok) {
+        return NextResponse.json(
+          { error: 'Please add at least one emergency contact with a valid mobile number.' },
+          { status: 400 }
+        );
+      }
+      formattedContacts = [
+        { id: newId('emg'), name: user.name, relation: 'Child (Primary Caregiver)', phone: norm.e164, priority: 'primary' }
+      ];
+    }
+
     const parent = await createParent({
       userId: user.id,
       name: name.trim().slice(0, 120),
@@ -164,7 +171,9 @@ export async function POST(req: Request) {
       callSchedule: Array.isArray(callSchedule) ? callSchedule : undefined,
       consentGiven: true,
       // Address, "lives alone", emergency card details (validated in db.cleanParentDetails).
-      details: details && typeof details === 'object' ? details : undefined
+      details: details && typeof details === 'object' ? details : undefined,
+      reminderChannel: whatsappOnly ? 'whatsapp' : undefined,
+      caretaker: cleanCaretaker
     });
 
     try {
@@ -186,7 +195,9 @@ export async function POST(req: Request) {
               foodRelation: FOOD_RELATIONS.includes(m.foodRelation as FoodRelation) ? m.foodRelation : 'not_specified',
               frequency: FREQUENCIES.includes(m.frequency as Medicine['frequency']) ? m.frequency! : 'daily',
               isActive: true,
-              purpose: typeof m.purpose === 'string' ? m.purpose : undefined
+              purpose: typeof m.purpose === 'string' ? m.purpose : undefined,
+              endsOn: typeof m.endsOn === 'string' ? m.endsOn : undefined,
+              tabletsLeft: cleanTabletCount(m.tabletsLeft) ?? undefined
             };
           });
         if (formattedMeds.length > 0) {
@@ -194,10 +205,12 @@ export async function POST(req: Request) {
         }
       }
 
-      await setEmergencyContacts(
-        parent.id,
-        formattedContacts.map(c => ({ ...c, parentId: parent.id }))
-      );
+      if (formattedContacts.length > 0) {
+        await setEmergencyContacts(
+          parent.id,
+          formattedContacts.map(c => ({ ...c, parentId: parent.id }))
+        );
+      }
     } catch (childErr) {
       // Don't leave a half-created profile behind (it would block a retry via plan limits).
       await deleteParentSoft(parent.id).catch(() => undefined);

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { raiseToolEscalation } from '@/lib/callResults';
-import { requestSecret, safeEqual } from '@/lib/secrets';
+import { requestSecret, routeSecret, safeEqual } from '@/lib/secrets';
 
 /**
  * Called by the Sarvam agent's "escalate_emergency" API tool mid-call when the
@@ -8,7 +8,7 @@ import { requestSecret, safeEqual } from '@/lib/secrets';
  * SARVAM_WEBHOOK_SECRET. The JSON reply is read back to the agent.
  */
 export async function POST(req: Request) {
-  if (!safeEqual(requestSecret(req, 'x-sarvam-secret'), process.env.SARVAM_WEBHOOK_SECRET)) {
+  if (!safeEqual(requestSecret(req, 'x-sarvam-secret'), routeSecret('SARVAM_ESCALATE_SECRET'))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

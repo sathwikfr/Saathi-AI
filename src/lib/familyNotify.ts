@@ -15,6 +15,7 @@
  *    so families never go from getting something to getting nothing.
  */
 import { Prisma } from '@prisma/client';
+import { ownerPlanFor } from './planAccess';
 import { prisma } from './prisma';
 import { newId } from './db';
 import { normalizePhone } from './phone';
@@ -54,6 +55,8 @@ type Person = Prisma.UserGetPayload<{ include: { notificationPreferences: true }
 export function whatsappRecipient(user: Person): string | null {
   const prefs = user.notificationPreferences;
   if (!prefs?.whatsappOptInAt || prefs.whatsapp === false) return null;
+  // Nothing goes to a number until that number itself has sent us START: an account could otherwise be pointed at a stranger.
+  if (!prefs.whatsappVerifiedAt) return null;
   const phone = normalizePhone(prefs.whatsappNumber || user.phone || '');
   return phone.ok ? phone.e164 : null;
 }
@@ -90,12 +93,26 @@ async function emailSafetyFallback(person: Person, parentName: string, alerts: N
   return serious.length ? emailAlertsTo(person, parentName, serious, deps) : 0;
 }
 
+/**
+ * Who may get routine WhatsApp updates about a parent: the first `allowance` people (owner first, then family members
+ * in the order they joined) among those who opted in. The plan sets the allowance (Solo 1, Family 2, Extended 5).
+ */
+export function whatsappAllowed(people: Person[], allowance: number): Set<string> {
+  const allowed = new Set<string>();
+  for (const p of people) {
+    if (allowed.size >= allowance) break;
+    if (whatsappRecipient(p)) allowed.add(p.id);
+  }
+  return allowed;
+}
+
 async function notifyPerson(
   person: Person,
   parent: { id: string; name: string; phone: string; userId: string },
   input: { callLogId: string | null; alerts: NotifyAlert[]; update?: string | null },
   cfg: WhatsAppConfig,
-  deps: NotifyDeps
+  deps: NotifyDeps,
+  whatsappOk = true
 ): Promise<{ whatsapp: WhatsAppOutcome; emailed: number }> {
   const prefs = person.notificationPreferences;
   const minLevel = prefs ? prefs.minimumAlertLevel : 1;
@@ -112,7 +129,8 @@ async function notifyPerson(
   });
   if (!plan) return { whatsapp: 'not_wanted', emailed: 0 };
 
-  const to = whatsappRecipient(person);
+  // Over the plan's WhatsApp allowance: dashboard only, but level 3-4 alerts still go by email.
+  const to = whatsappOk ? whatsappRecipient(person) : null;
   if (!to) return { whatsapp: 'not_opted_in', emailed: await emailSafetyFallback(person, parent.name, input.alerts, deps) };
 
   let row;
@@ -174,11 +192,14 @@ export async function notifyFamily(
     return { whatsapp: 'not_configured', emailed, people: people.map(p => ({ userId: p.id, whatsapp: 'not_configured' })) };
   }
 
+  // Routine updates: only the plan's allowance. Emergencies (level 4) reach everyone who opted in: safety isn't tiered.
+  const emergency = input.alerts.some(a => a.level >= 4);
+  const allowed = emergency ? null : whatsappAllowed(people, (await ownerPlanFor(fam.parent.userId)).whatsappPeople);
   let emailed = 0;
   const outcomes: { userId: string; whatsapp: WhatsAppOutcome }[] = [];
   for (const person of people) {
     try {
-      const r = await notifyPerson(person, fam.parent, input, cfg, deps);
+      const r = await notifyPerson(person, fam.parent, input, cfg, deps, !allowed || allowed.has(person.id));
       emailed += r.emailed;
       outcomes.push({ userId: person.id, whatsapp: r.whatsapp });
     } catch (err) {

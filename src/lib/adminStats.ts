@@ -12,7 +12,7 @@ const CUSTOMER_LIMIT = 200;
 // Read-only: nothing in this file writes to the database.
 const realUser = { NOT: { email: { startsWith: TEST_EMAIL_PREFIX } } };
 
-export type PlanBucket = 'free_active' | 'free_ended' | 'solo' | 'family' | 'extended';
+export type PlanBucket = 'free_active' | 'free_ended' | 'essential' | 'solo' | 'family' | 'extended';
 
 export interface AdminCustomer {
   id: string;
@@ -64,12 +64,16 @@ export interface AdminStats {
     last30: number;
     answered30: number;
     answerRatePct: number | null;
+    /** Answered calls with a recorded length (last 30 days): what Sarvam bills (every started minute). */
+    length: { calls: number; avgSeconds: number | null; avgBilledMinutes: number | null; over60Pct: number | null; estMonthlyCostPerParent: number | null };
     byStatus30: Record<string, number>;
     days: AdminDay[];
   };
   customerList: AdminCustomer[];
   alerts: AdminAlert[];
   engagement: AdminEngagement;
+  /** The scheduler's last run; null = never recorded (or the CronRun table isn't there yet). */
+  cron: { lastRunAt: string; ok: boolean; failed: string | null; durationMs: number } | null;
 }
 
 /** Is it working for families? (docs/v1-care-plan.md §6: measure it.) */
@@ -131,16 +135,36 @@ function dayLabel(date: string): string {
 }
 
 function bucketFor(planId: PlanId, expired: boolean): PlanBucket {
+  if (planId === 'essential') return 'essential';
   if (planId === 'solo') return 'solo';
   if (planId === 'family') return 'family';
   if (planId === 'extended') return 'extended';
   return expired ? 'free_ended' : 'free_active';
 }
 
+const RUPEES_PER_BILLED_MINUTE = 4.9;
+
+/** How long the answered calls ran, and what that costs (Sarvam bills every started minute; a call over 60 s is 2 minutes). */
+export function callLength(calls: Array<{ status: string; durationSeconds: number }>) {
+  const timed = calls.filter(c => c.status === 'answered' && c.durationSeconds > 0);
+  if (timed.length === 0) return { calls: 0, avgSeconds: null, avgBilledMinutes: null, over60Pct: null, estMonthlyCostPerParent: null };
+  const seconds = timed.reduce((a, c) => a + c.durationSeconds, 0) / timed.length;
+  const billed = timed.reduce((a, c) => a + Math.ceil(c.durationSeconds / 60), 0) / timed.length;
+  const over = timed.filter(c => c.durationSeconds > 60).length;
+  return {
+    calls: timed.length,
+    avgSeconds: Math.round(seconds),
+    avgBilledMinutes: Math.round(billed * 100) / 100,
+    over60Pct: Math.round((over / timed.length) * 100),
+    // 3 calls a day for 30 days at the average billed length
+    estMonthlyCostPerParent: Math.round(billed * 3 * 30 * RUPEES_PER_BILLED_MINUTE)
+  };
+}
+
 export async function getAdminStats(now: Date = new Date()): Promise<AdminStats> {
   const since30 = new Date(now.getTime() - CALL_WINDOW_DAYS * DAY_MS);
 
-  const [users, calls, alertRows, engagement] = await Promise.all([
+  const [users, calls, alertRows, engagement, cronRow] = await Promise.all([
     prisma.user.findMany({
       where: realUser,
       orderBy: { createdAt: 'desc' },
@@ -149,13 +173,13 @@ export async function getAdminStats(now: Date = new Date()): Promise<AdminStats>
         name: true,
         email: true,
         createdAt: true,
-        subscription: { select: { planId: true, status: true, currentPeriodEnd: true, trialEndsAt: true } },
+        subscription: { select: { planId: true, status: true, currentPeriodEnd: true, trialEndsAt: true, amount: true } },
         parents: { select: { id: true, isDeleted: true, isPaused: true } }
       }
     }),
     prisma.callLog.findMany({
       where: { createdAt: { gte: since30 }, parent: { user: realUser } },
-      select: { status: true, callDate: true, createdAt: true, parentId: true, parent: { select: { userId: true } } }
+      select: { status: true, callDate: true, createdAt: true, parentId: true, durationSeconds: true, parent: { select: { userId: true } } }
     }),
     prisma.alertRecord.findMany({
       where: { parent: { user: realUser } },
@@ -169,7 +193,9 @@ export async function getAdminStats(now: Date = new Date()): Promise<AdminStats>
         parent: { select: { name: true, user: { select: { name: true, email: true } } } }
       }
     }),
-    getEngagement(now)
+    getEngagement(now),
+    // async wrapper: also covers a stale Prisma client without the model (throws synchronously), not just a missing table
+    (async () => prisma.cronRun.findUnique({ where: { name: 'dispatch' } }))().catch(() => null)
   ]);
 
   // ---- calls -------------------------------------------------------------
@@ -210,7 +236,7 @@ export async function getAdminStats(now: Date = new Date()): Promise<AdminStats>
   }
 
   // ---- customers, plans, parents ----------------------------------------
-  const buckets: Record<PlanBucket, number> = { free_active: 0, free_ended: 0, solo: 0, family: 0, extended: 0 };
+  const buckets: Record<PlanBucket, number> = { free_active: 0, free_ended: 0, essential: 0, solo: 0, family: 0, extended: 0 };
   let payingActive = 0;
   let onPaidTrial = 0;
   let pastDue = 0;
@@ -235,7 +261,8 @@ export async function getAdminStats(now: Date = new Date()): Promise<AdminStats>
     if (plan.id !== 'free') {
       if (status === 'active') {
         payingActive++;
-        estimatedMrr += PLANS[plan.id].priceMonthly;
+        // What is charged: the plan plus its add-ons (the subscription row holds the total).
+        estimatedMrr += u.subscription?.amount || PLANS[plan.id].priceMonthly;
       } else if (status === 'trialing') onPaidTrial++;
       else if (status === 'past_due') pastDue++;
       else if (status === 'cancelled') cancelling++;
@@ -288,6 +315,7 @@ export async function getAdminStats(now: Date = new Date()): Promise<AdminStats>
       last30: calls.length,
       answered30,
       answerRatePct: finished30 ? Math.round((answered30 / finished30) * 100) : null,
+      length: callLength(calls),
       byStatus30,
       days: dayKeys.map((k) => days.get(k)!)
     },
@@ -301,6 +329,9 @@ export async function getAdminStats(now: Date = new Date()): Promise<AdminStats>
       customerEmail: a.parent.user.email,
       createdAt: a.createdAt.toISOString()
     })),
-    engagement
+    engagement,
+    cron: cronRow
+      ? { lastRunAt: cronRow.lastRunAt.toISOString(), ok: cronRow.ok, failed: cronRow.failed, durationMs: cronRow.durationMs }
+      : null
   };
 }

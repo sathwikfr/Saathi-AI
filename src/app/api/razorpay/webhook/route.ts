@@ -119,7 +119,7 @@ export async function POST(req: Request) {
               to: user.email,
               name: user.name,
               planName: plan.name,
-              amount: plan.priceMonthly,
+              amount: current.amount,
               retryUrl: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/account/billing`
             });
           } catch (err) {
@@ -141,7 +141,7 @@ export async function POST(req: Request) {
               to: user.email,
               name: user.name,
               planName: plan.name,
-              amount: plan.priceMonthly,
+              amount: current.amount,
               accessUntil: periodEnd ?? current.currentPeriodEnd
             })
           );

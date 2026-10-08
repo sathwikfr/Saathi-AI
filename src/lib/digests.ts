@@ -11,10 +11,14 @@
  * so families keep a reason to look without being flooded.
  */
 import { prisma } from './prisma';
+import { ownerPlanFor } from './planAccess';
+import { familyRecipients } from './familyAccess';
+import { whatsappAllowed } from './familyNotify';
 import { CallFact, computeBaseline, subjectsIn, COMPLAINT_SUBJECTS, isoWeekKey } from './insightRules';
 import { toCallFact } from './insights';
 import { sendSummary, SummaryPeriod, NotifyDeps } from './familyNotify';
 import { sendCareSummaryEmail } from './email';
+import { checkBp, checkSugar, parseRanges, ReadingRanges } from './readings';
 
 const IST = 'Asia/Kolkata';
 const DAY = 86400000;
@@ -87,11 +91,95 @@ function shortDay(date: string) {
   return new Date(`${date}T12:00:00+05:30`).toLocaleDateString('en-IN', { weekday: 'short', timeZone: IST });
 }
 
+/** A BP / sugar reading as the summaries see it (said on a call or typed in by the family). */
+export interface ReadingFact {
+  kind: string;
+  systolic: number | null;
+  diastolic: number | null;
+  value: number | null;
+  context: string | null;
+  takenAt: Date;
+}
+
+const avg = (xs: number[]) => Math.round(xs.reduce((a, b) => a + b, 0) / xs.length);
+const WHEN: Record<string, string> = { fasting: 'fasting', after_food: 'after food' };
+
+/**
+ * One short line about the period's BP and sugar readings, e.g.
+ *   weekly: "Readings: BP 5 times, average 141/88, highest 156/96 (Tue), previous week 136/84; sugar 3 times,
+ *            fasting average 132, after food average 168; 1 outside the limits."
+ *   daily:  "Readings: BP 142/88; sugar 151 (after food)."
+ * Numbers only, never "good" or "bad". Null when there were no readings. Pure.
+ */
+export function readingsLine(readings: ReadingFact[], opts: { period: SummaryPeriod; now: Date; ranges?: ReadingRanges }): string | null {
+  const span = PERIOD_DAYS[opts.period] * DAY;
+  const end = opts.now.getTime();
+  const inRange = (r: ReadingFact, from: number, to: number) => r.takenAt.getTime() >= from && r.takenAt.getTime() < to;
+  const cur = readings.filter(r => inRange(r, end - span, end + 1));
+  const prev = readings.filter(r => inRange(r, end - 2 * span, end - span));
+  const isBp = (r: ReadingFact) => r.kind === 'bp' && !!r.systolic && !!r.diastolic;
+  const isSugar = (r: ReadingFact) => r.kind === 'sugar' && !!r.value;
+  const bp = cur.filter(isBp);
+  const sugar = cur.filter(isSugar);
+  if (!bp.length && !sugar.length) return null;
+
+  const parts: string[] = [];
+  const times = (n: number) => (n === 1 ? 'once' : `${n} times`);
+  const dayLabel = (d: Date) =>
+    d.toLocaleDateString('en-IN', opts.period === 'weekly' ? { weekday: 'short', timeZone: IST } : { day: 'numeric', month: 'short', timeZone: IST });
+
+  if (bp.length && opts.period === 'daily') {
+    parts.push(`BP ${bp.map(r => `${r.systolic}/${r.diastolic}`).join(', ')}`);
+  } else if (bp.length) {
+    const bits = [`BP ${times(bp.length)}`, bp.length > 1 ? `average ${avg(bp.map(r => r.systolic!))}/${avg(bp.map(r => r.diastolic!))}` : `${bp[0].systolic}/${bp[0].diastolic}`];
+    if (bp.length > 1) {
+      const top = bp.reduce((a, b) => (b.systolic! > a.systolic! ? b : a));
+      bits.push(`highest ${top.systolic}/${top.diastolic} (${dayLabel(top.takenAt)})`);
+    }
+    const pbp = prev.filter(isBp);
+    if (bp.length > 1 && pbp.length > 1) {
+      bits.push(`previous ${opts.period === 'weekly' ? 'week' : 'month'} ${avg(pbp.map(r => r.systolic!))}/${avg(pbp.map(r => r.diastolic!))}`);
+    }
+    parts.push(bits.join(', '));
+  }
+
+  if (sugar.length && opts.period === 'daily') {
+    parts.push(`sugar ${sugar.map(r => `${Math.round(r.value!)}${r.context && WHEN[r.context] ? ` (${WHEN[r.context]})` : ''}`).join(', ')}`);
+  } else if (sugar.length) {
+    // Fasting and after-food numbers mean different things, so they are averaged separately.
+    const groups = ['fasting', 'after_food', 'other']
+      .map(key => ({ key, rows: sugar.filter(r => (key === 'other' ? !WHEN[r.context || ''] : r.context === key)) }))
+      .filter(g => g.rows.length);
+    const desc = groups.map(g => {
+      const label = g.key === 'other' ? (groups.length > 1 ? 'other times ' : '') : `${WHEN[g.key]} `;
+      return g.rows.length > 1 ? `${label}average ${avg(g.rows.map(r => r.value!))}` : `${label}${Math.round(g.rows[0].value!)}`;
+    });
+    parts.push(`sugar ${times(sugar.length)}, ${desc.join(', ')}`);
+  }
+
+  const ranges = opts.ranges || {};
+  const outside = cur.filter(r =>
+    isBp(r)
+      ? checkBp({ systolic: r.systolic!, diastolic: r.diastolic! }, ranges).outside
+      : isSugar(r) && checkSugar({ value: r.value!, context: r.context as 'fasting' | 'after_food' | 'random' | null }, ranges).outside
+  ).length;
+  if (outside) parts.push(`${outside} outside the limits`);
+  return `Readings: ${parts.join('; ')}.`;
+}
+
 /** The few lines about one parent for one period. Pure. */
 export function parentSummary(
   name: string,
   facts: CallFact[],
-  opts: { period: SummaryPeriod; now: Date; insightTitles?: string[]; renewals?: string[]; paused?: boolean }
+  opts: {
+    period: SummaryPeriod;
+    now: Date;
+    insightTitles?: string[];
+    renewals?: string[];
+    paused?: boolean;
+    readings?: ReadingFact[];
+    readingRanges?: ReadingRanges;
+  }
 ): string {
   const since = opts.now.getTime() - PERIOD_DAYS[opts.period] * DAY;
   const inPeriod = facts.filter(f => f.at.getTime() >= since && !['placed', 'scheduled'].includes(f.status));
@@ -99,6 +187,9 @@ export function parentSummary(
 
   if (inPeriod.length === 0) {
     lines.push(opts.paused ? `${name}: calls are paused.` : `${name}: no check-in calls in this period.`);
+    // Readings the family typed in still count.
+    const readingText = readingsLine(opts.readings || [], { period: opts.period, now: opts.now, ranges: opts.readingRanges });
+    if (readingText) lines.push(readingText);
   } else {
     const answered = inPeriod.filter(f => f.status === 'answered');
     const meds = answered.flatMap(f => f.medicineResults).filter(m => m.status !== 'unknown' && m.status !== 'later');
@@ -122,6 +213,8 @@ export function parentSummary(
         });
       lines.push(`Mentioned: ${list.join('; ')}.`);
     }
+    const readingText = readingsLine(opts.readings || [], { period: opts.period, now: opts.now, ranges: opts.readingRanges });
+    if (readingText) lines.push(readingText);
     const said = answered.map(f => f.feedback).filter((x): x is string => !!x);
     if (said.length) lines.push(`Wanted you to know: "${said[0]}".`);
     if (opts.period !== 'daily' && facts.length >= 10) {
@@ -140,14 +233,26 @@ export function parentSummary(
 /** Every parent a person looks after: their own and the ones shared with them. */
 async function parentsOf(userId: string) {
   const [owned, shared] = await Promise.all([
-    prisma.parentProfile.findMany({ where: { userId, isDeleted: false }, select: { id: true, name: true, isPaused: true } }),
+    prisma.parentProfile.findMany({ where: { userId, isDeleted: false }, select: { id: true, name: true, isPaused: true, readingRanges: true, reminderChannel: true } }),
     prisma.caregiverInvite.findMany({
       where: { userId, status: 'accepted' },
-      select: { parent: { select: { id: true, name: true, isPaused: true, isDeleted: true } } }
+      select: { parent: { select: { id: true, name: true, isPaused: true, isDeleted: true, readingRanges: true, reminderChannel: true } } }
     })
   ]);
-  const all = [...owned, ...shared.map(s => s.parent).filter(p => !p.isDeleted)];
-  return all.filter((p, i) => all.findIndex(q => q.id === p.id) === i);
+  // WhatsApp-reminder people (Remind) have no calls to summarise. (Filtered here: a NOT on a nullable column would drop nulls too.)
+  const all = [...owned, ...shared.map(s => s.parent).filter(p => !p.isDeleted)].filter(p => p.reminderChannel !== 'whatsapp');
+  const unique = all.filter((p, i) => all.findIndex(q => q.id === p.id) === i);
+  // Shared parents: only if this member is within that parent's WhatsApp allowance (Solo 1, Family 2, Extended 5).
+  const ownedIds = new Set(owned.map(p => p.id));
+  const kept = [];
+  for (const p of unique) {
+    if (ownedIds.has(p.id)) { kept.push(p); continue; }
+    const fam = await familyRecipients(p.id);
+    if (!fam) continue;
+    const allowed = whatsappAllowed([fam.owner, ...fam.members], (await ownerPlanFor(fam.parent.userId)).whatsappPeople);
+    if (allowed.has(userId)) kept.push(p);
+  }
+  return kept;
 }
 
 function appUrl() {
@@ -169,6 +274,12 @@ export async function buildSummaryFor(userId: string, period: SummaryPeriod, now
       orderBy: { createdAt: 'desc' },
       select: { title: true }
     });
+    // Two periods back, so the weekly / monthly line can compare with the one before.
+    const readings = await prisma.healthReading.findMany({
+      where: { parentId: p.id, takenAt: { gte: new Date(now.getTime() - 2 * PERIOD_DAYS[period] * DAY) } },
+      orderBy: { takenAt: 'asc' },
+      select: { kind: true, systolic: true, diastolic: true, value: true, context: true, takenAt: true }
+    });
     const renewals: string[] = [];
     if (period !== 'daily') {
       const soon = new Date(now.getTime() + 30 * DAY).toISOString().slice(0, 10);
@@ -184,7 +295,9 @@ export async function buildSummaryFor(userId: string, period: SummaryPeriod, now
         now,
         insightTitles: insights.map(i => i.title),
         renewals,
-        paused: p.isPaused
+        paused: p.isPaused,
+        readings,
+        readingRanges: parseRanges(p.readingRanges)
       })
     );
   }

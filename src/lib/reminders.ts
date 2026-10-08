@@ -24,6 +24,8 @@ import { newId, newReminderStartCode, cleanTabletCount } from './db';
 import { getEffectivePlan, reminderChannelFor } from './plans';
 import { PlanId, LinkedMedicineDetail, FoodRelation, ReminderView, ReminderAnswer } from './types';
 import { istDateString, istMinutesOfDay, isSlotDue, parseClockTime, formatIstClock } from './ist';
+import { dueWhatsappAppointments } from './appointments';
+import { waLang, WaLang, META_LANGUAGE, localReplies, localWeeklyText, appointmentWords } from './waTranslations';
 import { medicineMaps, medicineIsCurrent, slotMedicines } from './callDispatch';
 import {
   WhatsAppConfig,
@@ -32,7 +34,8 @@ import {
   sendText,
   renderTemplate,
   WHATSAPP_TEMPLATES,
-  WA_PAYLOAD
+  WA_PAYLOAD,
+  WhatsAppApiError
 } from './whatsapp';
 import { scanMessage, scanSymptomMessage } from './safety';
 import { recordAlert } from './alerts';
@@ -172,6 +175,16 @@ export const REMINDER_REPLIES = {
   caretakerRestarted: (name: string) => `You'll get ${firstName(name)}'s medicine updates again. Reply STOP any time to stop them.`
 } as const;
 
+/**
+ * The person's replies in their language (drafts: see waTranslations.ts). Anything not translated stays English.
+ * Messages to the caretaker are always English.
+ */
+export function repliesFor(language: string | null | undefined): typeof REMINDER_REPLIES {
+  const lang = waLang(language);
+  if (lang === 'en') return REMINDER_REPLIES;
+  return { ...REMINDER_REPLIES, ...localReplies(lang, MAX_ASKS) } as unknown as typeof REMINDER_REPLIES;
+}
+
 // Codes are 8 characters from newReminderStartCode()'s alphabet (no 0/O, 1/I/L), so "start please" never matches.
 const START_RE = /^start\s+([a-hj-km-np-z2-9]{8})$/i;
 const STOP_WORDS = new Set(['stop', 'unsubscribe', 'stop all']);
@@ -305,6 +318,24 @@ export function parseTopUp(text: string, medicines: { name: string; counted: boo
   return medicines.length === 1 ? { name: medicines[0].name, count } : { name: null, count };
 }
 
+/** Weekly progress goes out on Sundays from this hour (IST), once. */
+export const WEEKLY_FROM_MINUTES = 18 * 60;
+/** A week with fewer checks than this isn't worth a message. */
+export const WEEKLY_MIN_CHECKS = 3;
+
+/** "This week you confirmed 13 of 14 medicine checks. Well done! 💪": kind, never a scolding. One line. */
+export function weeklyProgressText(taken: number, total: number, lang: WaLang = 'en'): string {
+  if (lang !== 'en') return localWeeklyText(lang, taken, total);
+  if (taken >= total) return `This week you confirmed all ${total} medicine checks. Well done! 💪`;
+  const line = `This week you confirmed ${taken} of ${total} medicine checks.`;
+  return taken / total >= 0.8 ? `${line} Well done! 💪` : `${line} A fresh week starts tomorrow.`;
+}
+
+/** Is it Sunday evening (IST), the time for the weekly progress? */
+export function isWeeklyTime(now: Date): boolean {
+  return new Date(`${istDateString(now)}T00:00:00Z`).getUTCDay() === 0 && istMinutesOfDay(now) >= WEEKLY_FROM_MINUTES;
+}
+
 /** The person's reminder times for today, earliest first, capped by the plan. */
 export function cappedSlots<T extends { time: string }>(slots: T[], cap: number): T[] {
   return [...slots]
@@ -337,6 +368,10 @@ export interface ReminderSummary {
   asked: number;
   missed: number;
   caretakerAlerts: number;
+  /** Check-up reminders (evening before / morning of). */
+  appointments: number;
+  /** Weekly progress messages (opt-in, Sunday evening). */
+  weekly: number;
   failed: number;
 }
 
@@ -344,6 +379,7 @@ type ReminderRow = Prisma.MedicineReminderGetPayload<object>;
 type PersonRow = {
   id: string;
   name: string;
+  language: string;
   isDeleted: boolean;
   isPaused: boolean;
   reminderWhatsapp: string | null;
@@ -383,10 +419,12 @@ export function caretakerReady(p: Pick<PersonRow, 'caretakerWhatsapp' | 'caretak
 async function sendClaimedTemplate(
   cfg: WhatsAppConfig,
   row: { kind: string; refKey: string; parentId: string; phone: string; alertId?: string | null },
-  template: 'reminder' | 'caretaker' | 'caretakerAlert',
+  template: 'reminder' | 'caretaker' | 'caretakerAlert' | 'appointment' | 'weekly',
   params: string[],
   deps: ReminderDeps,
-  now: Date
+  now: Date,
+  /** The person's language for the three templates that have translations; English if it isn't approved yet. */
+  lang: WaLang = 'en'
 ): Promise<{ ok: boolean; error?: string }> {
   let msg;
   try {
@@ -411,7 +449,15 @@ async function sendClaimedTemplate(
     throw err;
   }
   try {
-    const { messageId } = await sendTemplate(cfg, row.phone, template, params, deps.fetchImpl);
+    let messageId: string;
+    try {
+      ({ messageId } = await sendTemplate(cfg, row.phone, template, params, deps.fetchImpl, lang !== 'en' ? META_LANGUAGE[lang] : undefined));
+    } catch (err) {
+      // 132001: that translation isn't approved (yet). Send the English one rather than nothing.
+      if (lang === 'en' || !(err instanceof WhatsAppApiError) || err.code !== 132001) throw err;
+      console.warn(`[reminders] ${template} has no ${lang} translation yet; sent in English`);
+      ({ messageId } = await sendTemplate(cfg, row.phone, template, params, deps.fetchImpl));
+    }
     await prisma.whatsAppMessage.update({ where: { id: msg.id }, data: { status: 'sent', providerMessageId: messageId } });
     return { ok: true };
   } catch (err) {
@@ -426,7 +472,7 @@ async function sendClaimedTemplate(
 function sendAsk(cfg: WhatsAppConfig, rem: ReminderRow, person: PersonRow, ask: number, deps: ReminderDeps, now: Date) {
   if (!person.reminderWhatsapp) return Promise.resolve({ ok: false, error: 'no WhatsApp number' });
   const params = reminderParams(person.name, rem.slotTime, readMedicines(rem.medicinesJson), person.discreetReminders);
-  return sendClaimedTemplate(cfg, { kind: 'reminder', refKey: `${rem.id}:ask${ask}`, parentId: person.id, phone: person.reminderWhatsapp }, 'reminder', params, deps, now);
+  return sendClaimedTemplate(cfg, { kind: 'reminder', refKey: `${rem.id}:ask${ask}`, parentId: person.id, phone: person.reminderWhatsapp }, 'reminder', params, deps, now, waLang(person.language));
 }
 
 /**
@@ -472,7 +518,7 @@ function caretakerAlertsToday(parentId: string, now: Date): Promise<number> {
 export async function runReminders(deps: ReminderDeps = {}): Promise<ReminderSummary> {
   const now = deps.now || new Date();
   const cfg = deps.whatsapp !== undefined ? deps.whatsapp : getWhatsAppConfig();
-  const summary: ReminderSummary = { configured: !!cfg, peopleChecked: 0, sent: 0, asked: 0, missed: 0, caretakerAlerts: 0, failed: 0 };
+  const summary: ReminderSummary = { configured: !!cfg, peopleChecked: 0, sent: 0, asked: 0, missed: 0, caretakerAlerts: 0, appointments: 0, weekly: 0, failed: 0 };
   if (!cfg) return summary;
 
   const today = istDateString(now);
@@ -560,6 +606,59 @@ export async function runReminders(deps: ReminderDeps = {}): Promise<ReminderSum
           p.isPaused = false;
         } else {
           continue;
+        }
+      }
+
+      // Check-up reminders (doctor, scan, lab): the evening before and the morning of. Claimed once each.
+      const appts = await prisma.appointment.findMany({
+        where: { parentId: p.id, cancelledAt: null, startsAt: { gte: new Date(now.getTime() - 3600000), lte: new Date(now.getTime() + 2 * 86400000) } }
+      });
+      const lang = waLang(p.language);
+      for (const due of dueWhatsappAppointments(appts, now, appointmentWords(lang))) {
+        const res = await sendClaimedTemplate(
+          cfg,
+          { kind: 'appointment', refKey: `${due.id}:${due.which}`, parentId: p.id, phone: p.reminderWhatsapp! },
+          'appointment',
+          [firstName(p.name), due.text],
+          deps,
+          now,
+          lang
+        );
+        if (res.ok || res.error === 'already sent') {
+          if (res.ok) summary.appointments += 1;
+          await prisma.appointment.update({ where: { id: due.id }, data: due.which === 'same_day' ? { remindedSameDay: now } : { remindedDayBefore: now } });
+        } else summary.failed += 1;
+      }
+
+      // Weekly progress (opt-in): Sunday evening, once, only when the week had enough checks to talk about.
+      if (p.weeklyProgress && isWeeklyTime(now)) {
+        const weekDates = Array.from({ length: 7 }, (_, i) => istDateString(new Date(now.getTime() - i * 86400000)));
+        const rows = await prisma.medicineReminder.findMany({ where: { parentId: p.id, reminderDate: { in: weekDates }, status: 'sent' }, select: { answer: true } });
+        if (rows.length >= WEEKLY_MIN_CHECKS) {
+          const taken = rows.filter(r => r.answer === 'taken').length;
+          const res = await sendClaimedTemplate(
+            cfg,
+            { kind: 'weekly_progress', refKey: `${p.id}:${today}`, parentId: p.id, phone: p.reminderWhatsapp! },
+            'weekly',
+            [firstName(p.name), weeklyProgressText(taken, rows.length, waLang(p.language))],
+            deps,
+            now,
+            waLang(p.language)
+          );
+          if (res.ok) {
+            summary.weekly += 1;
+            await prisma.parentProfile.update({ where: { id: p.id }, data: { weeklyProgressSentAt: now } });
+            if (p.weeklyProgressToCaretaker && caretakerReady(p)) {
+              await sendClaimedTemplate(
+                cfg,
+                { kind: 'caretaker_weekly', refKey: `${p.id}:${today}`, parentId: p.id, phone: p.caretakerWhatsapp! },
+                'caretaker',
+                [firstName(p.name), `${firstName(p.name)} confirmed ${taken} of ${rows.length} medicine checks this week.`],
+                deps,
+                now
+              );
+            }
+          } else if (res.error !== 'already sent') summary.failed += 1;
         }
       }
 
@@ -710,7 +809,7 @@ export async function handleReminderInbound(input: ReminderInbound, cfg: WhatsAp
       await prisma.whatsAppMessage.update({ where: { id: input.inboundId }, data: { parentId: person.id } });
       const plan = await planFor(person.userId, now);
       const times = cappedSlots(person.callSchedule, plan.remindersPerDay || DEFAULT_REMINDERS_PER_DAY).map(s => s.time);
-      return replyTo(cfg, input, person.id, REMINDER_REPLIES.started(person.name, times, caretakerReady(person) ? person.caretakerName : null), deps);
+      return replyTo(cfg, input, person.id, repliesFor(person.language).started(person.name, times, caretakerReady(person) ? person.caretakerName : null), deps);
     }
     const caredFor = await prisma.parentProfile.findFirst({ where: { caretakerStartCode: code, isDeleted: false } });
     if (caredFor) {
@@ -778,9 +877,10 @@ type InboundPerson = PersonRow & {
 
 /** Records Yes / Not yet on one check and returns the reply (shared by the buttons and typed answers). */
 async function answerCheck(cfg: WhatsAppConfig | null, person: InboundPerson, rem: ReminderRow, yes: boolean, deps: ReminderDeps, now: Date): Promise<string> {
+  const R = repliesFor(person.language);
   const caretaker = caretakerReady(person) ? person.caretakerName : null;
   if (yes) {
-    if (rem.answer === 'taken') return REMINDER_REPLIES.alreadyTaken;
+    if (rem.answer === 'taken') return R.alreadyTaken;
     await prisma.medicineReminder.update({ where: { id: rem.id }, data: { answer: 'taken', answeredAt: now, nextAskAt: null } });
     // Told the caretaker it was missed? Tell them it's been taken after all.
     if (rem.caretakerAlertedAt && cfg) {
@@ -788,15 +888,15 @@ async function answerCheck(cfg: WhatsAppConfig | null, person: InboundPerson, re
     }
     const done = courseEndsNow(person.medicines, now) && !nextTimeToday(person.callSchedule, now);
     const low = done ? [] : await countTablets(person, rem, now);
-    return `${REMINDER_REPLIES.taken(displayTime(formatIstClock(now)))}${done ? `\n\n${REMINDER_REPLIES.courseDone}` : ''}` +
-      `${low.length ? `\n\n${REMINDER_REPLIES.runningLow(low)}` : ''}`;
+    return `${R.taken(displayTime(formatIstClock(now)))}${done ? `\n\n${R.courseDone}` : ''}` +
+      `${low.length ? `\n\n${R.runningLow(low)}` : ''}`;
   }
-  if (rem.answer === 'taken') return REMINDER_REPLIES.alreadyTaken;
-  if (rem.answer === 'missed') return REMINDER_REPLIES.afterMissed;
+  if (rem.answer === 'taken') return R.alreadyTaken;
+  if (rem.answer === 'missed') return R.afterMissed;
   const next = new Date(now.getTime() + ASK_GAP_MINUTES * MINUTE);
   await prisma.medicineReminder.update({ where: { id: rem.id }, data: { answer: 'not_yet', nextAskAt: next } });
   const at = displayTime(formatIstClock(next));
-  return rem.askCount >= MAX_ASKS ? REMINDER_REPLIES.notYetLast(at, caretaker) : REMINDER_REPLIES.notYet(at);
+  return rem.askCount >= MAX_ASKS ? R.notYetLast(at, caretaker) : R.notYet(at);
 }
 
 /**
@@ -861,11 +961,12 @@ async function noteUnwell(cfg: WhatsAppConfig | null, person: InboundPerson, inp
     await notifyFamily({ parentId: person.id, callLogId: null, alerts: [rec.alert] }, deps);
   }
   // Only replies that went with an alert start the gap.
-  return { text: REMINDER_REPLIES.unwell(caretakerTold ? person.caretakerName : null), kind: 'unwell_reply' };
+  return { text: repliesFor(person.language).unwell(caretakerTold ? person.caretakerName : null), kind: 'unwell_reply' };
 }
 
 /** Yes / Not yet (buttons or typed), STOP / START and anything else the person writes. */
 async function personMessage(person: InboundPerson, input: ReminderInbound, cfg: WhatsAppConfig | null, deps: ReminderDeps, now: Date, word: string): Promise<number> {
+  const R = repliesFor(person.language);
   // ---- Yes, taken / Not yet buttons (older "later" / "skip" buttons count as Not yet)
   const isYes = input.payload === WA_PAYLOAD.taken;
   const isNotYet = input.payload === WA_PAYLOAD.notYet || input.payload === 'rem_later' || input.payload === 'rem_skip';
@@ -881,12 +982,12 @@ async function personMessage(person: InboundPerson, input: ReminderInbound, cfg:
   if (STOP_WORDS.has(word)) {
     await prisma.parentProfile.update({ where: { id: person.id }, data: { reminderOptOutAt: now } });
     await stopFamilyUpdates(input.phone);
-    return replyTo(cfg, input, person.id, REMINDER_REPLIES.stopped, deps);
+    return replyTo(cfg, input, person.id, R.stopped, deps);
   }
   if (START_WORDS.has(word)) {
-    if (!person.reminderOptOutAt) return replyTo(cfg, input, person.id, REMINDER_REPLIES.alreadyOn, deps);
+    if (!person.reminderOptOutAt) return replyTo(cfg, input, person.id, R.alreadyOn, deps);
     await prisma.parentProfile.update({ where: { id: person.id }, data: { reminderOptOutAt: null, reminderOptInAt: now } });
-    return replyTo(cfg, input, person.id, REMINDER_REPLIES.restarted, deps);
+    return replyTo(cfg, input, person.id, R.restarted, deps);
   }
 
   // ---- Words that may mean an emergency: always first. One warm message to the person and one alert to the caretaker
@@ -908,7 +1009,7 @@ async function personMessage(person: InboundPerson, input: ReminderInbound, cfg:
       caretakerTold = await messageCaretaker(cfg, person, 'emergency', input.inboundId, CARETAKER_TEXT.emergency(person.name, input.text.slice(0, 200), person.reminderWhatsapp || person.phone), deps, now, rec.alertId || null);
       if (caretakerTold) await noteCaretakerAsked(rec.alertId, person);
     }
-    const sent = await replyTo(cfg, input, person.id, REMINDER_REPLIES.emergency(person.name, caretakerTold ? person.caretakerName : null), deps, 'emergency_reply');
+    const sent = await replyTo(cfg, input, person.id, R.emergency(person.name, caretakerTold ? person.caretakerName : null), deps, 'emergency_reply');
     // The account holder too, unless that is the person (they just got the reply) or the caretaker (already told).
     const ownerNumber = person.user.notificationPreferences?.whatsappNumber || person.user.phone;
     if (rec.alert && ownerNumber !== input.phone && !(caretakerTold && ownerNumber === person.caretakerWhatsapp)) {
@@ -931,7 +1032,7 @@ async function personMessage(person: InboundPerson, input: ReminderInbound, cfg:
     });
     const first = cappedSlots(person.callSchedule, 24)[0]?.time || null;
     const unwell = symptoms.hit ? await noteUnwell(cfg, person, input, deps, now) : null;
-    return replyTo(cfg, input, person.id, `${REMINDER_REPLIES.pausedToday(first)}${unwell?.text ? `\n\n${unwell.text}` : ''}`, deps, unwell?.text ? unwell.kind : 'reminder_reply');
+    return replyTo(cfg, input, person.id, `${R.pausedToday(first)}${unwell?.text ? `\n\n${unwell.text}` : ''}`, deps, unwell?.text ? unwell.kind : 'reminder_reply');
   }
 
   // ---- "Iron 30": bought more tablets. Only whole messages made of a number, a medicine name and filler words.
@@ -939,10 +1040,10 @@ async function personMessage(person: InboundPerson, input: ReminderInbound, cfg:
     const active = person.medicines.filter(m => m.isActive);
     const topUp = parseTopUp(input.text, active.map(m => ({ name: m.name, counted: m.tabletsLeft !== null })));
     if (topUp) {
-      if (!topUp.name) return replyTo(cfg, input, person.id, REMINDER_REPLIES.whichMedicine(active[0]?.name || 'Iron'), deps);
+      if (!topUp.name) return replyTo(cfg, input, person.id, R.whichMedicine(active[0]?.name || 'Iron'), deps);
       const med = active.find(m => m.name === topUp.name)!;
       await prisma.medicine.update({ where: { id: med.id }, data: { tabletsLeft: topUp.count, refillNotifiedAt: null } });
-      return replyTo(cfg, input, person.id, REMINDER_REPLIES.toppedUp(med.name, topUp.count), deps);
+      return replyTo(cfg, input, person.id, R.toppedUp(med.name, topUp.count), deps);
     }
   }
 

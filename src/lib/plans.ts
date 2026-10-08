@@ -11,23 +11,129 @@ export const PAID_PLAN_IDS: PlanId[] = ['essential', 'solo', 'family', 'extended
  * a 5-minute chat each week costs ~₹105 a month at Sarvam rates.
  */
 export const COMPANION_ADDON_PRICE = 199;
+
+/**
+ * Add-ons (2026-10-08), picked at checkout on any calling plan (Solo, Family, Extended):
+ *  - Health Monitor: BP and sugar by voice, the chart, the family's limits and alerts, health trends against the parent's
+ *    own normal, and ONE short extra call a day per parent just for the readings (outside the 3-call cap, so the medicine
+ *    calls stay under a minute). Priced by how many parents the plan holds.
+ *  - Daily Touches: festival and birthday wishes, a weather note on very hot / cold / rainy days and the "did the helper
+ *    come?" check, each only when the call has room (the call stays under a minute).
+ * A Razorpay plan is a fixed amount and its add-ons are one-time charges, so every combination is its own plan
+ * (RAZORPAY_PLAN_ID_<PLAN>[_MONITOR][_TOUCHES]; scripts/create-razorpay-plans.ts creates them all).
+ */
+export const HEALTH_MONITOR = {
+  id: 'health_monitor',
+  name: 'Health Monitor',
+  /** Solo (1 parent) / Family (2) / Extended (5): about ₹150 of calls per parent, so cheaper per parent on the bigger plans. */
+  priceByPlan: { solo: 299, family: 499, extended: 999 } as Partial<Record<PlanId, number>>,
+  tagline: 'BP and sugar by voice, with charts, alerts and health trends',
+  features: [
+    'Saathi asks for BP and sugar once a day on a short call of its own',
+    'A chart for you and the doctor, and your own limits',
+    'An alert when a reading is out of range or at a level doctors treat as urgent',
+    "Health trends: you are told when sleep, mood or appetite drift from their usual",
+    'Saathi never comments on the numbers'
+  ]
+};
+
+export const DAILY_TOUCHES = {
+  id: 'daily_touches',
+  name: 'Daily Touches',
+  priceMonthly: 99,
+  tagline: 'Festival and birthday wishes, weather notes and the helper check',
+  features: [
+    'Wishes for the festivals you tick, birthdays and family days',
+    'A kind weather note on very hot, cold or rainy days',
+    'A "did the helper come today?" check',
+    'Only on a call that has room, so calls stay short'
+  ]
+};
+
+export interface Addons {
+  healthMonitor: boolean;
+  dailyTouches: boolean;
+}
+export const NO_ADDONS: Addons = { healthMonitor: false, dailyTouches: false };
+
+/** Add-ons are for the calling plans (Remind has no calls, Free has no paid period). */
+export function healthMonitorAvailable(planId: PlanId): boolean {
+  return HEALTH_MONITOR.priceByPlan[planId] !== undefined;
+}
+export function dailyTouchesAvailable(planId: PlanId): boolean {
+  return planId === 'solo' || planId === 'family' || planId === 'extended';
+}
+
+export function healthMonitorPrice(planId: PlanId): number {
+  return HEALTH_MONITOR.priceByPlan[planId] ?? 0;
+}
+
+/** Drops the add-ons a plan doesn't offer. */
+export function cleanAddons(planId: PlanId, input: Partial<Addons> | null | undefined): Addons {
+  return {
+    healthMonitor: !!input?.healthMonitor && healthMonitorAvailable(planId),
+    dailyTouches: !!input?.dailyTouches && dailyTouchesAvailable(planId)
+  };
+}
+
+/**
+ * Changing plan (or adding Health Monitor) while a paid period is still running: the new plan's FIRST CHARGE waits for the
+ * end of that period (like a free trial does), so the customer is not charged twice for the same days. The new plan and its
+ * features apply at once. Returns where the old period ends, or null when there is nothing to carry over (first plan, a
+ * cancelled or failing subscription, or under a day left).
+ */
+export interface CarriedPeriod {
+  periodEnd: Date;
+  status: 'active' | 'trialing';
+  trialEndsAt: Date | null;
+}
+
+export function carriedPeriod(
+  sub: { planId: PlanId; status: string; currentPeriodEnd: string; trialEndsAt?: string; cancelAtPeriodEnd: boolean; razorpaySubscriptionId?: string } | null | undefined,
+  now: Date = new Date()
+): CarriedPeriod | null {
+  if (!sub || !sub.razorpaySubscriptionId || sub.cancelAtPeriodEnd) return null;
+  if (!PLANS[sub.planId] || PLANS[sub.planId].priceMonthly === 0) return null;
+  if (sub.status !== 'active' && sub.status !== 'trialing') return null;
+  const end = new Date(sub.currentPeriodEnd);
+  if (Number.isNaN(end.getTime()) || end.getTime() - now.getTime() < 86400000) return null;
+  return {
+    periodEnd: end,
+    status: sub.status,
+    trialEndsAt: sub.status === 'trialing' && sub.trialEndsAt ? new Date(sub.trialEndsAt) : sub.status === 'trialing' ? end : null
+  };
+}
+
+/** What the customer pays each month: the plan plus the add-ons (only where they are offered). */
+export function monthlyPrice(planId: PlanId, healthMonitor: boolean | Partial<Addons>, dailyTouches = false): number {
+  const wanted = typeof healthMonitor === 'object' ? healthMonitor : { healthMonitor, dailyTouches };
+  const add = cleanAddons(planId, wanted);
+  return PLANS[planId].priceMonthly + (add.healthMonitor ? healthMonitorPrice(planId) : 0) + (add.dailyTouches ? DAILY_TOUCHES.priceMonthly : 0);
+}
 // TODO(add-on): until the add-on is billed (Razorpay add-on on the subscription), `weeklyChat` is false on every plan,
 // so the weekly chat is not offered and not dispatched.
 
 /**
- * Pricing rationale (reset 2026-10-04, kept as low as the cost allows; GST not included).
- * **3 calls a day is a product requirement** on calling plans, so cost is cut elsewhere: optional extras ride only on the
- * day's first answered call, the health question rotates (one a day), and a missed call is retried once.
- * Sarvam: ₹4.90 per started minute incl. telephony; ~1.2 billed minutes per call assumed (check real durationSeconds),
- * +8% retries. Per parent a month at 3 calls a day ≈ ₹571 calls + ₹40 follow-ups / call-backs / emergency calls.
+ * Pricing rationale (reset 2026-10-04, Solo lowered 2026-10-08; kept as low as the cost allows; GST not included).
+ * **3 calls a day is a product requirement** on calling plans, so cost is cut elsewhere: the health questions ride on ONE
+ * call a day (the earliest that fits in about a minute, callPlanning.chooseHealthSlot), the health question rotates
+ * (one a day), a missed call is retried once (30 minutes later) and there are no extra "you said later" calls.
+ * Sarvam: ₹4.90 per started minute incl. telephony, so a call that stays under 60 seconds bills 1 minute. Saathi never
+ * cuts a parent off. Per parent a month at 3 calls a day: ≈ ₹441 calls at 1 billed minute each (+8% retries), ≈ ₹660 at
+ * 1.5 minutes each (check real durationSeconds: /admin shows the average), + ≈ ₹20 call-backs / emergency calls.
  * WhatsApp utility message ≈ ₹0.13 in India (foreign numbers cost much more, so people abroad default to
  * "problems + one daily summary"). "Ask about your parent" ≈ ₹6 a question (Sonnet 5.5), capped per plan.
  * Doctor / lab visit reminders are in every calling plan (2026-10-05); the rest of the extras are Family / Extended.
  * Busy month (every Ask question used, family in India), after the ~2.4% payment fee:
  *   Remind   ₹149:   WhatsApp only; worst case (never answers: 3 asks a dose + 2 caretaker alerts a day) ≈ ₹63 -> ≥ ₹82 left
- *   Solo     ₹999:   1 parent, 1 WhatsApp person, 15 Ask   ≈ ₹740   -> ≈ ₹235 left
- *   Family   ₹1,999: 2 parents, 2 WhatsApp people, 30 Ask ≈ ₹1,450 -> ≈ ₹500 left (couple on one phone ≈ ₹950)
- *   Extended ₹4,999: 5 parents, 5 WhatsApp people, 50 Ask ≈ ₹3,590 -> ≈ ₹1,290 left
+ *   Solo     ₹899:   1 parent, 1 WhatsApp person, 10 Ask   ≈ ₹590 (calls ~1 min) -> ≈ ₹310 left; ≈ ₹830 (1.5 min) -> ≈ ₹70 left
+ *   Family   ₹1,699: 2 parents, 2 WhatsApp people, 20 Ask  ≈ ₹1,150 (calls ~1 min) -> ≈ ₹500 left (≈ ₹30 at 1.5 min a call)
+ *            = ₹99 less than two Solo plans, with one dashboard, 2 WhatsApp people, the timeline and the couple call.
+ *   Extended ₹3,999: 5 parents, 5 WhatsApp people, 30 Ask  ≈ ₹2,840 (calls ~1 min) -> ≈ ₹1,160 left (≈ break-even at 1.5 min a call)
+ *            = ₹800 a parent: Solo ₹899, Family ₹850, Extended ₹800.
+ * Add-ons (any calling plan; each is its own Razorpay plan, see HEALTH_MONITOR):
+ *   Health Monitor: Solo ₹299, Family ₹499, Extended ₹999: one short readings call a day per parent ≈ ₹150 each (1 billed
+ *   minute), ≈ ₹300 each worst case. Daily Touches ₹99: only on calls with room, so it adds almost no call time.
  * Weekly chat is a ₹199 add-on, not bundled. Changing a price needs a new Razorpay plan
  * (RAZORPAY_PLAN_ID_ESSENTIAL [= Remind] / _SOLO / _FAMILY / _EXTENDED).
  */
@@ -91,7 +197,7 @@ export const PLANS: Record<PlanId, Plan> = {
     id: 'solo',
     name: 'Solo Care',
     tagline: 'Check-in calls for one parent, timed to their medicines',
-    priceMonthly: 999,
+    priceMonthly: 899,
     currency: '₹',
     hasTrial: true,
     trialDays: 7,
@@ -100,10 +206,10 @@ export const PLANS: Record<PlanId, Plan> = {
     callsPerDay: 3,
     remindersPerDay: 0,
     weeklyChat: false,
-    askPerMonth: 15,
+    askPerMonth: 10,
     whatsappPeople: 1,
     premium: false,
-    razorpayPlanId: 'plan_carecircle_solo_999',
+    razorpayPlanId: 'plan_carecircle_solo_899',
     features: [
       '1 parent or elder relative',
       '3 check-in calls a day, timed to their medicines, in 9 Indian languages',
@@ -112,14 +218,14 @@ export const PLANS: Record<PlanId, Plan> = {
       'Doctor and lab visit reminders, then "how did it go?"',
       'Emergency alerts to your family and local contacts, emergency card',
       'WhatsApp updates for 1 family member',
-      '15 questions a month to Ask about your parent'
+      '10 questions a month to Ask about your parent'
     ]
   },
   family: {
     id: 'family',
     name: 'Family Care',
     tagline: 'Everything for both parents, and updates for two of you',
-    priceMonthly: 1999,
+    priceMonthly: 1699,
     currency: '₹',
     hasTrial: true,
     trialDays: 7,
@@ -129,25 +235,23 @@ export const PLANS: Record<PlanId, Plan> = {
     callsPerDay: 3,
     remindersPerDay: 0,
     weeklyChat: false,
-    askPerMonth: 30,
+    askPerMonth: 20,
     whatsappPeople: 2,
     premium: true,
-    razorpayPlanId: 'plan_carecircle_family_1999',
+    razorpayPlanId: 'plan_carecircle_family_1699',
     features: [
       'Up to 2 parents (one call for both if they share a phone)',
       'Everything in Solo Care, 3 calls a day each',
       'WhatsApp updates for 2 family members, e.g. one in the US, one in the UK',
-      'BP and sugar readings by voice, with a chart',
-      'Health trends and family messages read out by Saathi',
-      'Festivals, birthdays, weather, helper check, timeline and life stories',
-      '30 questions a month to Ask about your parents'
+      'A timeline of the days, calls and alerts, and a summary for the doctor',
+      '20 questions a month to Ask about your parents'
     ]
   },
   extended: {
     id: 'extended',
     name: 'Extended Family',
     tagline: 'For larger families caring for several elders',
-    priceMonthly: 4999,
+    priceMonthly: 3999,
     currency: '₹',
     hasTrial: true,
     trialDays: 7,
@@ -156,15 +260,15 @@ export const PLANS: Record<PlanId, Plan> = {
     callsPerDay: 3,
     remindersPerDay: 0,
     weeklyChat: false,
-    askPerMonth: 50,
+    askPerMonth: 30,
     whatsappPeople: 5,
     premium: true,
-    razorpayPlanId: 'plan_carecircle_extended_4999',
+    razorpayPlanId: 'plan_carecircle_extended_3999',
     features: [
       'Up to 5 parents or elder relatives',
       'Everything in Family Care, 3 calls a day each',
       'WhatsApp updates for 5 family members',
-      '50 questions a month to Ask about your parents',
+      '30 questions a month to Ask about your parents',
       'Priority support'
     ]
   }

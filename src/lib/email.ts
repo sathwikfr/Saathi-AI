@@ -30,6 +30,13 @@ declare global {
 }
 
 const outbox: SentEmailRecord[] = global.__carecircle_email_outbox || [];
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+/** The dev outbox holds whole emails (reset links, alert text): never kept in production, and capped elsewhere. */
+function pushOutbox(record: SentEmailRecord): void {
+  if (IS_PRODUCTION) return;
+  outbox.push(record);
+  if (outbox.length > 50) outbox.splice(0, outbox.length - 50);
+}
 if (!global.__carecircle_email_outbox) {
   global.__carecircle_email_outbox = outbox;
 }
@@ -301,10 +308,15 @@ async function dispatchEmail({
 
   console.log(`\n======================================================`);
   console.log(`[Aaptha Email Gateway] Trigger: ${templateName}`);
-  console.log(`  To:      ${to}`);
-  console.log(`  From:    ${senderEmail}`);
-  console.log(`  Subject: ${subject}`);
-  console.log(`  Preview: ${text.substring(0, 160)}...`);
+  if (IS_PRODUCTION) {
+    // Server logs are readable by more people than the family: no names, health words or addresses there.
+    console.log(`  To:      ${to.replace(/^(.).*(@.*)$/, '$1***$2')}`);
+  } else {
+    console.log(`  To:      ${to}`);
+    console.log(`  From:    ${senderEmail}`);
+    console.log(`  Subject: ${subject}`);
+    console.log(`  Preview: ${text.substring(0, 160)}...`);
+  }
 
   if (client) {
     try {
@@ -322,7 +334,7 @@ async function dispatchEmail({
         console.error(`  [Resend API Error]:`, response.error);
         emailRecord.status = 'failed';
         emailRecord.error = response.error.message;
-        outbox.push(emailRecord);
+        pushOutbox(emailRecord);
         return { success: false, error: response.error.message };
       }
 
@@ -330,7 +342,7 @@ async function dispatchEmail({
       console.log(`======================================================\n`);
       emailRecord.id = response.data?.id || emailRecord.id;
       emailRecord.status = 'sent_resend';
-      outbox.push(emailRecord);
+      pushOutbox(emailRecord);
       return { success: true, id: response.data?.id };
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
@@ -338,7 +350,7 @@ async function dispatchEmail({
       console.log(`======================================================\n`);
       emailRecord.status = 'failed';
       emailRecord.error = errMsg;
-      outbox.push(emailRecord);
+      pushOutbox(emailRecord);
       return { success: false, error: errMsg };
     }
   } else {
@@ -347,7 +359,7 @@ async function dispatchEmail({
     console.log(`  Email recorded in dev outbox (Mock Delivered).`);
     console.log(`======================================================\n`);
     emailRecord.status = 'simulated_dev';
-    outbox.push(emailRecord);
+    pushOutbox(emailRecord);
     return { success: true, id: emailRecord.id, simulated: true };
   }
 }
@@ -366,7 +378,7 @@ export async function sendPasswordResetEmail({
   resetUrl: string;
   expiresInMinutes?: number;
 }) {
-  const recipientName = name ? name.split(' ')[0] : 'there';
+  const recipientName = firstName(name);
   const title = 'Reset your Aaptha password';
   const contentHtml = `
     <p>Hi ${recipientName},</p>
@@ -404,7 +416,7 @@ export async function sendVerificationEmail({
   name?: string;
   verifyUrl: string;
 }) {
-  const recipientName = name ? name.split(' ')[0] : 'there';
+  const recipientName = firstName(name);
   const title = 'Welcome to Aaptha! Please verify your email';
   const contentHtml = `
     <p>Hi ${recipientName},</p>
@@ -444,7 +456,7 @@ export async function sendOtpEmail({
   code: string;
   expiresInMinutes?: number;
 }) {
-  const recipientName = name ? name.split(' ')[0] : 'there';
+  const recipientName = firstName(name);
   const title = 'Your Aaptha Verification Code';
   const contentHtml = `
     <p>Hi ${recipientName},</p>
@@ -493,7 +505,7 @@ export async function sendPaymentReceiptEmail({
   nextBillingDate?: string;
   paymentMethod?: string;
 }) {
-  const recipientName = name ? name.split(' ')[0] : 'there';
+  const recipientName = firstName(name);
   const title = 'Payment Confirmation & Receipt';
   const contentHtml = `
     <p>Hi ${recipientName},</p>
@@ -571,7 +583,7 @@ export async function sendPaymentFailedEmail({
   amount: number;
   retryUrl: string;
 }) {
-  const recipientName = name ? name.split(' ')[0] : 'there';
+  const recipientName = firstName(name);
   const title = 'Payment Issue with Your Aaptha Subscription';
   const contentHtml = `
     <p>Hi ${recipientName},</p>
@@ -611,7 +623,7 @@ export async function sendSubscriptionCancelledEmail({
   planName: string;
   accessUntil: string;
 }) {
-  const recipientName = name ? name.split(' ')[0] : 'there';
+  const recipientName = firstName(name);
   const title = 'Your Aaptha subscription has been cancelled';
   const contentHtml = `
     <p>Hi ${recipientName},</p>
