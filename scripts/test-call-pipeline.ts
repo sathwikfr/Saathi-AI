@@ -8,6 +8,7 @@
  *         parents are never touched. All test rows are deleted at the end.
  */
 import 'dotenv/config';
+import './lib/testDb';
 import { prisma } from '../src/lib/prisma';
 import { newId, createUser, updateUserSubscription } from '../src/lib/db';
 import { getEffectivePlan, freeTrialDaysLeft, freeTrialEnd, FREE_TRIAL_DAYS } from '../src/lib/plans';
@@ -215,7 +216,7 @@ async function partB() {
   };
 
   const stamp = Date.now();
-  const user = await prisma.user.create({
+    const user = await prisma.user.create({
     data: {
       id: newId('usr'), name: 'Pipeline Tester', email: `pipeline-test-${stamp}@example.com`, phone: null,
       subscription: { create: { id: newId('sub'), planId: 'family', status: 'active', currentPeriodEnd: new Date(Date.now() + 30 * 864e5), amount: 399 } },
@@ -232,7 +233,7 @@ async function partB() {
       data: {
         id: newId('parent'), userId: user.id, name: 'Test Amma', relationship: 'Mother', phone: '+919000012345',
         language: 'Telugu', callTime: '08:30 AM', consentGiven: true,
-        createdAt: new Date(Date.now() - 3 * 864e5), // not "created today"
+        createdAt: new Date(Date.UTC(2026, 8, 28)), // a fixed old date: never "created today" on the fake days (a real-clock offset broke on 8 Oct)
         callSchedule: {
           create: [
             { id: newId('slot'), time: '08:30 AM', slot: 'morning', label: 'Morning Medicine Reminder', linkedMedicineNames: morningMeds.map(m => m.name), linkedMedicinesJson: JSON.stringify(morningMeds) },
@@ -311,7 +312,7 @@ async function partB() {
     check('escalate unknown call', (await raiseToolEscalation('nope', 'x', alertDeps)).status === 'unknown_call');
 
     // ---- B5 no answer → retries → final alert ---------------------------------
-    console.log('\nB5. No answer → retry after 15 min → busy → retry → final alert');
+    console.log('\nB5. No answer → retry after 30 min → busy → retry → final alert');
     const sarvam5 = makeFakeSarvam();
     await runDispatch({ now: day1(15, 35), fetchImpl: sarvam5.fetchImpl, config: cfg, alertDeps, parentIds: scope }); // 09:05 PM IST
     const a1 = await prisma.callLog.findFirst({ where: { parentId: parent.id, slot: 'bedtime', attemptNumber: 1 } });
@@ -329,27 +330,24 @@ async function partB() {
     }, { now: day1(15, 36), deps: alertDeps });
     check('retry scheduled', o5a.status === 'processed' && !!o5a.retryAt, o5a);
     const a1after = await prisma.callLog.findUnique({ where: { id: a1!.id } });
-    check('attempt 1 (silent pickup) unanswered with nextRetryAt +15m', a1after?.status === 'unanswered' && a1after.nextRetryAt?.getTime() === day1(15, 51).getTime(), a1after?.nextRetryAt);
+    check('attempt 1 (silent pickup) unanswered with nextRetryAt +30m', a1after?.status === 'unanswered' && a1after.nextRetryAt?.getTime() === day1(16, 6).getTime(), a1after?.nextRetryAt);
     check('silent pickup marked no_response, not a missed medicine', a1after?.failureReason === 'no_response' && a1after.medicationConfirmed !== true);
     check('no alert yet (retry pending)', (await prisma.alertRecord.count({ where: { callLogId: a1!.id } })) === 0);
-    const early = await runDispatch({ now: day1(15, 45), fetchImpl: sarvam5.fetchImpl, config: cfg, alertDeps, parentIds: scope });
+    const early = await runDispatch({ now: day1(15, 55), fetchImpl: sarvam5.fetchImpl, config: cfg, alertDeps, parentIds: scope });
     check('too early: no retry', early.retried === 0);
-    const r2 = await runDispatch({ now: day1(15, 52), fetchImpl: sarvam5.fetchImpl, config: cfg, alertDeps, parentIds: scope });
+    const r2 = await runDispatch({ now: day1(16, 7), fetchImpl: sarvam5.fetchImpl, config: cfg, alertDeps, parentIds: scope });
     check('retry placed', r2.retried === 1, r2);
     const a2 = await prisma.callLog.findFirst({ where: { parentId: parent.id, slot: 'bedtime', attemptNumber: 2 } });
     check('attempt 2 exists and placed', a2?.status === 'placed');
-    const r2again = await runDispatch({ now: day1(15, 53), fetchImpl: sarvam5.fetchImpl, config: cfg, alertDeps, parentIds: scope });
+    const r2again = await runDispatch({ now: day1(16, 8), fetchImpl: sarvam5.fetchImpl, config: cfg, alertDeps, parentIds: scope });
     check('retry not repeated', r2again.retried === 0);
-    await processSarvamWebhook({ attempt_id: a2!.providerAttemptId, status: 'busy' }, { now: day1(15, 53), deps: alertDeps });
-    const r3 = await runDispatch({ now: day1(16, 10), fetchImpl: sarvam5.fetchImpl, config: cfg, alertDeps, parentIds: scope });
-    check('third attempt placed', r3.retried === 1, r3);
-    const a3 = await prisma.callLog.findFirst({ where: { parentId: parent.id, slot: 'bedtime', attemptNumber: 3 } });
-    const o5c = await processSarvamWebhook({ attempt_id: a3!.providerAttemptId, status: 'no_answer' }, { now: day1(16, 11), deps: alertDeps });
-    check('no retry after attempt 3', o5c.status === 'processed' && o5c.retryAt === null, o5c);
-    const finalAlert = await prisma.alertRecord.findMany({ where: { callLogId: a3!.id } });
-    check("final level-2 'couldn't reach' alert", finalAlert.length === 1 && finalAlert[0].level === 2 && finalAlert[0].message.includes('3 times'), finalAlert);
-    const r4 = await runDispatch({ now: day1(16, 30), fetchImpl: sarvam5.fetchImpl, config: cfg, alertDeps, parentIds: scope });
-    check('no 4th attempt', r4.retried === 0 && (await prisma.callLog.count({ where: { parentId: parent.id, slot: 'bedtime' } })) === 3);
+    // One retry only (2026-10-04): attempt 2 is the last; busy again -> the family is told.
+    const o5c = await processSarvamWebhook({ attempt_id: a2!.providerAttemptId, status: 'busy' }, { now: day1(16, 8), deps: alertDeps });
+    check('no retry after attempt 2', o5c.status === 'processed' && o5c.retryAt === null, o5c);
+    const finalAlert = await prisma.alertRecord.findMany({ where: { callLogId: a2!.id } });
+    check("final level-2 'couldn't reach' alert", finalAlert.length === 1 && finalAlert[0].level === 2 && finalAlert[0].message.includes('2 times'), finalAlert);
+    const r3 = await runDispatch({ now: day1(16, 40), fetchImpl: sarvam5.fetchImpl, config: cfg, alertDeps, parentIds: scope });
+    check('no 3rd attempt', r3.retried === 0 && (await prisma.callLog.count({ where: { parentId: parent.id, slot: 'bedtime' } })) === 2);
 
     // ---- B6 plan cap ----------------------------------------------------------
     console.log('\nB6. Free plan: only 1 call/day');
@@ -383,20 +381,20 @@ async function partB() {
     check('503 → failed with retry scheduled', s8.failedToPlace === 1 && f1?.status === 'failed' && !!f1.nextRetryAt, f1);
     check('no family alert for a transient error yet', (await prisma.alertRecord.count({ where: { callLogId: f1!.id } })) === 0);
     const back = makeFakeSarvam();
-    const s8b = await runDispatch({ now: day4(3, 50), fetchImpl: back.fetchImpl, config: cfg, alertDeps, parentIds: scope });
+    const s8b = await runDispatch({ now: day4(4, 10), fetchImpl: back.fetchImpl, config: cfg, alertDeps, parentIds: scope });
     check('retry succeeds when service is back', s8b.retried === 1, s8b);
     const day5 = (hh: number, mm: number) => new Date(Date.UTC(2026, 9, 9, hh, mm));
     const denied = makeFakeSarvam({ mode: 'http', status: 401 });
-    const emailsB8 = emails.length;
+    // (Earlier unfinished fake-day calls are now closed AND reported as lost by the sweep, so only this call's alerts are checked.)
     const s8c = await runDispatch({ now: day5(3, 30), fetchImpl: denied.fetchImpl, config: cfg, alertDeps, parentIds: scope });
     const f2 = await prisma.callLog.findFirst({ where: { parentId: parent.id, callDate: '2026-10-09', attemptNumber: 1 } });
-    check('401 (our config) → failed, no retry, no family alert', s8c.failedToPlace === 1 && f2?.status === 'failed' && f2.nextRetryAt === null && emails.length === emailsB8, f2);
+    check('401 (our config) → failed, no retry, no family alert', s8c.failedToPlace === 1 && f2?.status === 'failed' && f2.nextRetryAt === null && (await prisma.alertRecord.count({ where: { callLogId: f2.id } })) === 0, f2);
     const dayB8d = (hh: number, mm: number) => new Date(Date.UTC(2026, 9, 11, hh, mm));
     const noCredits = makeFakeSarvam({ mode: 'http', status: 402 });
     const s8d = await runDispatch({ now: dayB8d(3, 30), fetchImpl: noCredits.fetchImpl, config: cfg, alertDeps, parentIds: scope });
     const f3 = await prisma.callLog.findFirst({ where: { parentId: parent.id, callDate: '2026-10-11', attemptNumber: 1 } });
     check('402 (our Sarvam credits used up) → failed, no retry, no family alert',
-      s8d.failedToPlace === 1 && f3?.status === 'failed' && f3.nextRetryAt === null && emails.length === emailsB8 &&
+      s8d.failedToPlace === 1 && f3?.status === 'failed' && f3.nextRetryAt === null &&
       (await prisma.alertRecord.count({ where: { callLogId: f3.id } })) === 0, f3);
 
     // ---- B9 stale placed calls --------------------------------------------------
@@ -429,24 +427,24 @@ async function partB() {
     // ---- B11 manual / test calls --------------------------------------------------
     console.log('\nB11. Test / manual calls');
     const sarvam11 = makeFakeSarvam();
-    const noCfg = await placeManualCall({ parentId: parent.id, ownerId: user.id, kind: 'test' }, { config: null });
+    const noCfg = await placeManualCall({ parentId: parent.id, requesterId: user.id, kind: 'test' }, { config: null });
     check('not configured → 503', !noCfg.ok && noCfg.status === 503 && noCfg.code === 'CALLING_NOT_CONNECTED');
-    const wrongOwner = await placeManualCall({ parentId: parent.id, ownerId: 'someone-else', kind: 'test' }, { config: cfg, fetchImpl: sarvam11.fetchImpl });
+    const wrongOwner = await placeManualCall({ parentId: parent.id, requesterId: 'someone-else', kind: 'test' }, { config: cfg, fetchImpl: sarvam11.fetchImpl });
     check("someone else's parent → 404, no call", !wrongOwner.ok && wrongOwner.status === 404 && sarvam11.calls.length === 0);
-    const m1 = await placeManualCall({ parentId: parent.id, ownerId: user.id, kind: 'test' }, { config: cfg, fetchImpl: sarvam11.fetchImpl });
+    const m1 = await placeManualCall({ parentId: parent.id, requesterId: user.id, kind: 'test' }, { config: cfg, fetchImpl: sarvam11.fetchImpl });
     check('test call placed', m1.ok && sarvam11.calls.length === 1, m1);
     const mlog = m1.ok ? await prisma.callLog.findUnique({ where: { id: m1.callLogId } }) : null;
     check("test call logged with slot 'test', no slot id", mlog?.slot === 'test' && mlog.slotId === null && mlog.status === 'placed');
     const mo = m1.ok ? await processSarvamWebhook({ attempt_id: mlog!.providerAttemptId, status: 'no_answer' }, { deps: alertDeps }) : null;
     check('test call never retried', mo?.status === 'processed' && (mo as { retryAt: string | null }).retryAt === null);
     const noCredits11 = makeFakeSarvam({ mode: 'http', status: 402 });
-    const mx = await placeManualCall({ parentId: parent.id, ownerId: user.id, kind: 'test' }, { config: cfg, fetchImpl: noCredits11.fetchImpl });
+    const mx = await placeManualCall({ parentId: parent.id, requesterId: user.id, kind: 'test' }, { config: cfg, fetchImpl: noCredits11.fetchImpl });
     check('402 from Sarvam → clear "problem on our side" error (503), not "try again in a few minutes"', !mx.ok && mx.status === 503 && mx.code === 'CALLING_UNAVAILABLE', mx);
-    const m2 = await placeManualCall({ parentId: parent.id, ownerId: user.id, kind: 'test' }, { config: cfg, fetchImpl: sarvam11.fetchImpl });
-    const m3 = await placeManualCall({ parentId: parent.id, ownerId: user.id, kind: 'test' }, { config: cfg, fetchImpl: sarvam11.fetchImpl });
+    const m2 = await placeManualCall({ parentId: parent.id, requesterId: user.id, kind: 'test' }, { config: cfg, fetchImpl: sarvam11.fetchImpl });
+    const m3 = await placeManualCall({ parentId: parent.id, requesterId: user.id, kind: 'test' }, { config: cfg, fetchImpl: sarvam11.fetchImpl });
     check('2 per hour allowed, 3rd rate-limited (a refused attempt does not count)', m2.ok && !m3.ok && m3.status === 429, [m2.ok, m3.ok]);
     await prisma.parentProfile.update({ where: { id: parent.id }, data: { isPaused: true } });
-    const mp = await placeManualCall({ parentId: parent.id, ownerId: user.id, kind: 'test' }, { config: cfg, fetchImpl: sarvam11.fetchImpl });
+    const mp = await placeManualCall({ parentId: parent.id, requesterId: user.id, kind: 'test' }, { config: cfg, fetchImpl: sarvam11.fetchImpl });
     check('paused parent → 409', !mp.ok && mp.status === 409);
 
     // ---- B12 unconfigured dispatch does nothing ------------------------------------
@@ -469,7 +467,7 @@ async function partB() {
     const sarvam14 = makeFakeSarvam();
     const s14 = await runDispatch({ now: new Date(Date.UTC(2026, 9, 15, 3, 30)), fetchImpl: sarvam14.fetchImpl, config: cfg, alertDeps, parentIds: scope });
     check('expired trial: no calls placed', s14.placed === 0 && sarvam14.calls.length === 0, s14);
-    const m14 = await placeManualCall({ parentId: parent.id, ownerId: user.id, kind: 'test' }, { config: cfg, fetchImpl: sarvam14.fetchImpl });
+    const m14 = await placeManualCall({ parentId: parent.id, requesterId: user.id, kind: 'test' }, { config: cfg, fetchImpl: sarvam14.fetchImpl });
     check('expired trial: test call refused (402 TRIAL_ENDED)', !m14.ok && m14.status === 402 && m14.code === 'TRIAL_ENDED', m14);
     await prisma.userSubscription.update({ where: { userId: user.id }, data: { planId: 'family', status: 'active', currentPeriodEnd: new Date(Date.now() + 30 * 864e5) } });
     const s14b = await runDispatch({ now: new Date(Date.UTC(2026, 9, 15, 3, 35)), fetchImpl: sarvam14.fetchImpl, config: cfg, alertDeps, parentIds: scope });

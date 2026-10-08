@@ -20,16 +20,23 @@ export default function PrivacyPage() {
       <h2>1. Who is who</h2>
       <p>
         <b>You</b> are the family member who creates the account and adds a parent. <b>Your parent</b> receives the check-in
-        calls. We ask you to confirm that your parent knows about the calls and agrees to them. Aaptha is the service that
-        decides how this information is used.
+        calls. You confirm that you have told your parent about the calls, and on the first call Saathi asks your parent
+        directly, in their language, whether the calls are okay and tells them that what they say is shared with the family.
+        If your parent says no, or later says &ldquo;stop calling me&rdquo;, calls stop until you resume them, and Saathi asks
+        again first. <b>Family members you invite</b> (siblings, carers) see the same updates. Aaptha is the service that
+        decides how this information is used. Your parent can read a short version of this notice in their language at{' '}
+        <Link href="/notice/en">the parent notice</Link>.
       </p>
 
       <h2>2. What we collect</h2>
       <ul>
         <li><b>Your account:</b> name, email address, mobile number, password (stored only as a one-way hash), plan and billing status.</li>
-        <li><b>About your parent:</b> name, relationship to you, phone number, preferred language, time zone, call times, and emergency contacts you add.</li>
+        <li><b>About your parent:</b> name, relationship to you, phone number, preferred language, time zone, call times, emergency contacts you add, and the emergency-card details you choose to add (address, blood group, conditions, allergies, nearest hospital, doctor).</li>
+        <li><b>Health records you upload</b> to the vault: reports, prescriptions, scans, bills and insurance papers, kept privately and opened only through short-lived links.</li>
         <li><b>Health details you give us:</b> medicine names, doses and timings, typed in or read from a prescription photo you upload.</li>
-        <li><b>From the calls:</b> whether the call was answered, how long it lasted, which medicines your parent said they took, their mood, anything they asked us to tell you, a short summary, and a text transcript of the conversation.</li>
+        <li><b>From the calls:</b> whether the call was answered, how long it lasted, which medicines your parent said they took, their answers about sleep, appetite and pain when asked, their mood, anything they asked us to tell you, a short summary, and a text transcript of the conversation. We also count how many words your parent said, to notice if answers get much shorter than usual.</li>
+        <li><b>Patterns across calls:</b> for example the same complaint on several days, written as a nudge to the family. We never diagnose.</li>
+        <li><b>Messages your parent forwards to our WhatsApp number</b> to check for scams, and our reply.</li>
         <li><b>Alerts we raise:</b> for example a missed medicine, a health worry, or a possible emergency.</li>
         <li><b>Technical data:</b> the sign-in session and basic logs needed to keep the service secure.</li>
       </ul>
@@ -38,7 +45,8 @@ export default function PrivacyPage() {
       <h2>3. Why we use it</h2>
       <ul>
         <li>To place the check-in calls, understand the answers, and show you the results.</li>
-        <li>To alert you and the people you invite when something needs attention.</li>
+        <li>To alert you and the people you invite when something needs attention, and, in a possible emergency, to phone you and the emergency contacts you added. They hear your parent&apos;s name, address and what was said, so they can go and help.</li>
+        <li>To answer your questions about your parent from their records (&ldquo;Ask about…&rdquo;) and to check messages your parent forwards for signs of fraud.</li>
         <li>To run your subscription, send receipts and account emails, and keep the service secure.</li>
         <li>To improve reliability, for example noticing that a call time never gets answered.</li>
       </ul>
@@ -48,7 +56,9 @@ export default function PrivacyPage() {
       <ul>
         <li><b>Sarvam AI</b> — places the voice calls, understands speech and produces the transcript and summary.</li>
         <li><b>Groq</b> — reads the medicines from a prescription photo you upload. The image is sent for reading and we do not keep the file; we keep only the medicine list you review and confirm.</li>
-        <li><b>Supabase</b> — stores our database.</li>
+        <li><b>Supabase</b> — stores our database and the files in the health record vault.</li>
+        <li><b>Meta (WhatsApp)</b> — carries the call updates, alerts and summaries you choose to get on WhatsApp, and your parent&apos;s scam-check messages.</li>
+        <li><b>Anthropic (Claude)</b> — answers your questions about your parent using their records, and checks messages your parent forwards for scam warning signs. It receives only what each answer needs.</li>
         <li><b>Razorpay</b> — takes payments. We never see or store your card number, UPI PIN or CVV.</li>
         <li><b>Resend</b> — sends our emails.</li>
         <li><b>Vercel</b> — hosts the website.</li>
@@ -67,9 +77,11 @@ export default function PrivacyPage() {
 
       <h2>6. How long we keep it</h2>
       <p>
-        We keep your information while your account is open. When you delete a parent profile, their calls stop and the
-        profile is archived; ask us and we will permanently erase it along with the call history. When you close your
-        account, we erase your data except records we must keep by law, such as invoices.
+        We keep your information while your account is open. The full word-by-word transcript of each call is deleted after
+        90 days; the short summary, the medicine answers, the mood and any alerts stay so you can see how your parent has
+        been over time. When you delete a parent profile, their calls stop and the profile is archived; ask us and we will
+        permanently erase it along with the call history and vault files. When you close your account, we erase your data
+        except records we must keep by law, such as invoices.
       </p>
 
       <h2>7. Your choices and rights</h2>
@@ -87,7 +99,9 @@ export default function PrivacyPage() {
 
       <h2>8. Security</h2>
       <p>
-        Passwords are hashed, sessions can be revoked, connections use HTTPS, and only you can see your parents&apos; details.
+        Passwords are hashed, sessions can be revoked, connections use HTTPS, and only you and the family members you invite
+        can see your parents&apos; details. An emergency card you choose to share is visible to anyone with its link until you
+        turn the link off.
         No system is perfectly secure, so please use a strong password and tell us at once if you think your account was
         accessed by someone else.
       </p>

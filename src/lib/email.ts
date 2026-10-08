@@ -30,6 +30,13 @@ declare global {
 }
 
 const outbox: SentEmailRecord[] = global.__carecircle_email_outbox || [];
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+/** The dev outbox holds whole emails (reset links, alert text): never kept in production, and capped elsewhere. */
+function pushOutbox(record: SentEmailRecord): void {
+  if (IS_PRODUCTION) return;
+  outbox.push(record);
+  if (outbox.length > 50) outbox.splice(0, outbox.length - 50);
+}
 if (!global.__carecircle_email_outbox) {
   global.__carecircle_email_outbox = outbox;
 }
@@ -301,10 +308,15 @@ async function dispatchEmail({
 
   console.log(`\n======================================================`);
   console.log(`[Aaptha Email Gateway] Trigger: ${templateName}`);
-  console.log(`  To:      ${to}`);
-  console.log(`  From:    ${senderEmail}`);
-  console.log(`  Subject: ${subject}`);
-  console.log(`  Preview: ${text.substring(0, 160)}...`);
+  if (IS_PRODUCTION) {
+    // Server logs are readable by more people than the family: no names, health words or addresses there.
+    console.log(`  To:      ${to.replace(/^(.).*(@.*)$/, '$1***$2')}`);
+  } else {
+    console.log(`  To:      ${to}`);
+    console.log(`  From:    ${senderEmail}`);
+    console.log(`  Subject: ${subject}`);
+    console.log(`  Preview: ${text.substring(0, 160)}...`);
+  }
 
   if (client) {
     try {
@@ -322,7 +334,7 @@ async function dispatchEmail({
         console.error(`  [Resend API Error]:`, response.error);
         emailRecord.status = 'failed';
         emailRecord.error = response.error.message;
-        outbox.push(emailRecord);
+        pushOutbox(emailRecord);
         return { success: false, error: response.error.message };
       }
 
@@ -330,7 +342,7 @@ async function dispatchEmail({
       console.log(`======================================================\n`);
       emailRecord.id = response.data?.id || emailRecord.id;
       emailRecord.status = 'sent_resend';
-      outbox.push(emailRecord);
+      pushOutbox(emailRecord);
       return { success: true, id: response.data?.id };
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
@@ -338,7 +350,7 @@ async function dispatchEmail({
       console.log(`======================================================\n`);
       emailRecord.status = 'failed';
       emailRecord.error = errMsg;
-      outbox.push(emailRecord);
+      pushOutbox(emailRecord);
       return { success: false, error: errMsg };
     }
   } else {
@@ -347,7 +359,7 @@ async function dispatchEmail({
     console.log(`  Email recorded in dev outbox (Mock Delivered).`);
     console.log(`======================================================\n`);
     emailRecord.status = 'simulated_dev';
-    outbox.push(emailRecord);
+    pushOutbox(emailRecord);
     return { success: true, id: emailRecord.id, simulated: true };
   }
 }
@@ -366,7 +378,7 @@ export async function sendPasswordResetEmail({
   resetUrl: string;
   expiresInMinutes?: number;
 }) {
-  const recipientName = name ? name.split(' ')[0] : 'there';
+  const recipientName = firstName(name);
   const title = 'Reset your Aaptha password';
   const contentHtml = `
     <p>Hi ${recipientName},</p>
@@ -404,7 +416,7 @@ export async function sendVerificationEmail({
   name?: string;
   verifyUrl: string;
 }) {
-  const recipientName = name ? name.split(' ')[0] : 'there';
+  const recipientName = firstName(name);
   const title = 'Welcome to Aaptha! Please verify your email';
   const contentHtml = `
     <p>Hi ${recipientName},</p>
@@ -444,7 +456,7 @@ export async function sendOtpEmail({
   code: string;
   expiresInMinutes?: number;
 }) {
-  const recipientName = name ? name.split(' ')[0] : 'there';
+  const recipientName = firstName(name);
   const title = 'Your Aaptha Verification Code';
   const contentHtml = `
     <p>Hi ${recipientName},</p>
@@ -493,7 +505,7 @@ export async function sendPaymentReceiptEmail({
   nextBillingDate?: string;
   paymentMethod?: string;
 }) {
-  const recipientName = name ? name.split(' ')[0] : 'there';
+  const recipientName = firstName(name);
   const title = 'Payment Confirmation & Receipt';
   const contentHtml = `
     <p>Hi ${recipientName},</p>
@@ -571,7 +583,7 @@ export async function sendPaymentFailedEmail({
   amount: number;
   retryUrl: string;
 }) {
-  const recipientName = name ? name.split(' ')[0] : 'there';
+  const recipientName = firstName(name);
   const title = 'Payment Issue with Your Aaptha Subscription';
   const contentHtml = `
     <p>Hi ${recipientName},</p>
@@ -611,7 +623,7 @@ export async function sendSubscriptionCancelledEmail({
   planName: string;
   accessUntil: string;
 }) {
-  const recipientName = name ? name.split(' ')[0] : 'there';
+  const recipientName = firstName(name);
   const title = 'Your Aaptha subscription has been cancelled';
   const contentHtml = `
     <p>Hi ${recipientName},</p>
@@ -658,15 +670,16 @@ export async function sendUrgentAlertEmail({
   summary: string;
   actionUrl: string;
 }) {
-  const recipientName = name ? name.split(' ')[0] : 'there';
+  const recipientName = firstName(name);
   const levelLabel = alertLevel === 'level_3' ? 'CRITICAL ALERT' : 'IMPORTANT HEALTH UPDATE';
-  const title = `${levelLabel}: ${parentName}`;
+  const title = `${levelLabel}: ${esc(parentName)}`;
+  // The summary can quote what the parent said on the call, so everything user-supplied is escaped.
   const contentHtml = `
     <p>Hi ${recipientName},</p>
-    <p>Aaptha's AI companion detected a health update during the latest check-in call with <strong>${parentName}</strong>.</p>
+    <p>Aaptha's AI companion detected a health update during the latest check-in call with <strong>${esc(parentName)}</strong>.</p>
     <div class="info-card" style="border-left: 4px solid #ef4444;">
-      <div style="font-weight: 700; color: #b91c1c; margin-bottom: 6px;">${alertType}</div>
-      <p style="margin: 0; font-size: 14px; color: #2b2621;">${summary}</p>
+      <div style="font-weight: 700; color: #b91c1c; margin-bottom: 6px;">${esc(alertType)}</div>
+      <p style="margin: 0; font-size: 14px; color: #2b2621;">${esc(summary)}</p>
     </div>
     <p>Please review the full call transcript and verify that your parent is resting comfortably.</p>
   `;
@@ -881,5 +894,90 @@ export async function sendTrialEmail(input: TrialEmailInput) {
     html,
     text: `Hi ${plainName},\n\n${bodyText}\n\nBilling: ${appUrl('/account/billing')}`,
     templateName: `trial_${input.variant}`
+  });
+}
+
+// --------------------------------------------------------------------------
+// CARE SUMMARY (daily / weekly / monthly), only while WhatsApp isn't set up
+// --------------------------------------------------------------------------
+export async function sendCareSummaryEmail({
+  to,
+  name,
+  period,
+  parentNames,
+  text,
+  actionUrl
+}: {
+  to: string;
+  name?: string;
+  period: 'daily' | 'weekly' | 'monthly';
+  parentNames: string;
+  text: string;
+  actionUrl: string;
+}) {
+  const label = period === 'daily' ? 'Today' : period === 'weekly' ? 'This week' : 'This month';
+  const paragraphs = text
+    .split(/\n+/)
+    .filter(Boolean)
+    .map(line => `<p style="margin: 0 0 10px;">${esc(line)}</p>`)
+    .join('');
+  const html = renderAapthaTemplate({
+    title: `${label} with ${esc(parentNames)}`,
+    badge: `${period.toUpperCase()} SUMMARY`,
+    contentHtml: `
+      <p>Hi ${firstName(name)},</p>
+      <p>Here is ${label.toLowerCase()} from the check-in calls with <strong>${esc(parentNames)}</strong>.</p>
+      <div class="info-card">${paragraphs}</div>
+    `,
+    ctaText: 'Open the dashboard',
+    ctaUrl: actionUrl,
+    secondaryNote: 'Change how often you get these in Account settings.'
+  });
+  return dispatchEmail({
+    to,
+    subject: `${label} with ${parentNames}`,
+    html,
+    text: `${label} with ${parentNames}\n\n${text}\n\n${actionUrl}`,
+    templateName: `care_summary_${period}`
+  });
+}
+
+// --------------------------------------------------------------------------
+// FAMILY INVITE (a sibling / relative asked to help look after a parent)
+// --------------------------------------------------------------------------
+export async function sendFamilyInviteEmail({
+  to,
+  name,
+  inviterName,
+  parentName,
+  role,
+  inviteUrl
+}: {
+  to: string;
+  name?: string;
+  inviterName: string;
+  parentName: string;
+  role: 'viewer' | 'co_manager';
+  inviteUrl: string;
+}) {
+  const what = role === 'co_manager' ? 'see the calls and help manage them' : 'see how the calls are going';
+  const html = renderAapthaTemplate({
+    title: `${esc(inviterName)} invited you to help look after ${esc(parentName)}`,
+    badge: 'FAMILY INVITE',
+    contentHtml: `
+      <p>Hi ${firstName(name)},</p>
+      <p><strong>${esc(inviterName)}</strong> uses Aaptha for daily check-in calls with <strong>${esc(parentName)}</strong>, and has invited you to ${what}.</p>
+      <p>You will get your own updates after each call, and you can say "I'm on it" if something needs attention, so nobody carries it alone.</p>
+    `,
+    ctaText: 'Accept the invite',
+    ctaUrl: inviteUrl,
+    secondaryNote: 'If you were not expecting this, you can ignore this email.'
+  });
+  return dispatchEmail({
+    to,
+    subject: `${inviterName} invited you to help look after ${parentName}`,
+    html,
+    text: `${inviterName} invited you to help look after ${parentName} on Aaptha.\n\nAccept: ${inviteUrl}`,
+    templateName: 'family_invite'
   });
 }

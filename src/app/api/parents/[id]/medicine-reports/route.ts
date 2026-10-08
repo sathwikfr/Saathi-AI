@@ -1,13 +1,14 @@
 import { NextResponse } from 'next/server';
 import { getMedicineReportsForParent, createMedicineReport } from '@/lib/db';
-import { requireOwnedParent } from '@/lib/access';
-import { extractFromRequest } from '@/lib/medicineReportIntake';
+import { requireParentAccess } from '@/lib/access';
+import { extractFromRequest, EXTRACTIONS_PER_HOUR } from '@/lib/medicineReportIntake';
+import { consumeRateLimit } from '@/lib/security';
 
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function GET(req: Request, { params }: Ctx) {
   const { id } = await params;
-  const access = await requireOwnedParent(id);
+  const access = await requireParentAccess(id, 'view');
   if (!access.ok) return access.response;
 
   const reports = await getMedicineReportsForParent(id);
@@ -16,8 +17,12 @@ export async function GET(req: Request, { params }: Ctx) {
 
 export async function POST(req: Request, { params }: Ctx) {
   const { id } = await params;
-  const access = await requireOwnedParent(id);
+  const access = await requireParentAccess(id, 'manage');
   if (!access.ok) return access.response;
+  // Each photo is a paid vision request; shared with the onboarding extraction route.
+  if (!consumeRateLimit(`extract:${access.user.id}`, EXTRACTIONS_PER_HOUR, 3600000).allowed) {
+    return NextResponse.json({ error: 'That is a lot of photos in one hour. Please try again later, or add the medicines by hand.' }, { status: 429 });
+  }
 
   try {
     const result = await extractFromRequest(req);

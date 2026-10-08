@@ -40,8 +40,9 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: 'There is no paid subscription to cancel.' }, { status: 400 });
       }
       await cancelRazorpaySubscription(user.subscription.razorpaySubscriptionId, true);
-      const ok = await cancelSubscription(user.id);
-      console.log(`User ${user.id} cancelled subscription. Reason: ${reason || 'Not specified'}`);
+      const ok = await cancelSubscription(user.id, typeof reason === 'string' ? reason : null);
+      const safeReason = typeof reason === 'string' && reason ? [...reason].map(c => (c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127 ? ' ' : c)).join('').slice(0, 200) : 'Not specified';
+      console.log(`User ${user.id} cancelled subscription. Reason: ${safeReason}`);
 
       const plan = PLANS[user.subscription.planId];
       const accessUntil = new Date(user.subscription.currentPeriodEnd).toLocaleDateString('en-IN', {

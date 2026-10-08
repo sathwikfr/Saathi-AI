@@ -2,8 +2,9 @@ import { NextResponse } from 'next/server';
 import { requireUser } from '@/lib/access';
 import { createSubscriptionServer, PaymentsUnavailableError } from '@/lib/razorpay';
 import { PlanId } from '@/lib/types';
-import { PLANS } from '@/lib/plans';
+import { PLANS, carriedPeriod } from '@/lib/plans';
 import { getParentsForUser } from '@/lib/db';
+import { consumeRateLimit } from '@/lib/security';
 
 export async function POST(req: Request) {
   const auth = await requireUser();
@@ -11,7 +12,7 @@ export async function POST(req: Request) {
   const { user } = auth;
 
   try {
-    const { planId } = await req.json();
+    const { planId, healthMonitor, dailyTouches } = await req.json();
 
     if (!planId || !PLANS[planId as PlanId]) {
       return NextResponse.json({ error: 'Invalid plan selected.' }, { status: 400 });
@@ -32,12 +33,22 @@ export async function POST(req: Request) {
       );
     }
 
-    const subResult = await createSubscriptionServer(planId as PlanId, {
-      userId: user.id,
-      email: user.email,
-      name: user.name,
-      phone: user.phone || undefined
-    });
+    // Every Razorpay subscription made here is real (and notifies the customer): keep one account from filling it.
+    if (!consumeRateLimit(`rzp-create:${user.id}`, 10, 60 * 60 * 1000).allowed) {
+      return NextResponse.json({ error: 'Too many checkout attempts. Please try again in a little while.' }, { status: 429 });
+    }
+    // The 7-day free trial is for the first paid plan only: anyone who has had a Razorpay subscription before pays from day one.
+    const subResult = await createSubscriptionServer(
+      planId as PlanId,
+      { userId: user.id, email: user.email, name: user.name, phone: user.phone || undefined },
+      {
+        noTrial: !!user.subscription?.razorpaySubscriptionId,
+        healthMonitor: healthMonitor === true,
+        dailyTouches: dailyTouches === true,
+        // Paid days left on the current plan are not charged twice: the new plan's first charge waits for them.
+        startAt: carriedPeriod(user.subscription)?.periodEnd
+      }
+    );
 
     return NextResponse.json({
       success: true,

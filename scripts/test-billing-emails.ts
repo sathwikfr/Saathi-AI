@@ -9,6 +9,7 @@
  *         accounts (`userIds`), so real customers are never touched. Test rows are deleted at the end.
  */
 import 'dotenv/config';
+import './lib/testDb';
 import crypto from 'crypto';
 
 // Never send real email from a test run.
@@ -18,6 +19,7 @@ process.env.NEXT_PUBLIC_APP_URL = 'https://app.test.example';
 process.env.RAZORPAY_WEBHOOK_SECRET = 'billing-test-webhook-secret';
 
 import { prisma } from '../src/lib/prisma';
+import { PLANS } from '../src/lib/plans';
 import { createUser } from '../src/lib/db';
 import {
   getRecentEmails,
@@ -104,7 +106,7 @@ async function partA() {
 
   console.log('\nA6. Trial reminders');
   const cases: Array<[string, TrialEmailInput, RegExp[]]> = [
-    ['free ending', { variant: 'free_ending', to: 'a@example.com', name: 'Asha', endsOn: new Date('2026-10-20T06:00:00Z') }, [/20 Oct 2026/, /will stop/, /Family Care is ₹1,299 a month/]],
+    ['free ending', { variant: 'free_ending', to: 'a@example.com', name: 'Asha', endsOn: new Date('2026-10-20T06:00:00Z') }, [/20 Oct 2026/, /will stop/, new RegExp(`Family Care is ₹${PLANS.family.priceMonthly.toLocaleString('en-IN')} a month`)]],
     ['free ended', { variant: 'free_ended', to: 'a@example.com', name: 'Asha', endedOn: new Date('2026-10-20T06:00:00Z') }, [/20 Oct 2026/, /have paused/, /safe/]],
     ['paid ending', { variant: 'paid_ending', to: 'a@example.com', name: 'Asha', planName: 'Family Care', amount: 1299, chargeOn: new Date('2026-10-20T06:00:00Z') }, [/₹1,299/, /20 Oct 2026/, /cancel before 20 Oct 2026/]]
   ];
@@ -238,7 +240,7 @@ async function partB() {
     const p1 = await runLifecycleEmails({ userIds: paidScope, send: async i => (paidSent.push(i), { success: true }) });
     check('only the trial ending in 2 days is warned', p1.paidEnding === 1 && paidSent.length === 1 && paidSent[0].to === soon.email, { p1, paidSent });
     const info = paidSent[0];
-    check('email carries plan, amount and charge date', info.variant === 'paid_ending' && info.planName === 'Family Care' && info.amount === 1299);
+    check('email carries plan, amount and charge date', info.variant === 'paid_ending' && info.planName === 'Family Care' && info.amount === PLANS.family.priceMonthly);
     const p2 = await runLifecycleEmails({ userIds: paidScope, send: async i => (paidSent.push(i), { success: true }) });
     check('warned only once', p2.paidEnding === 0 && paidSent.length === 1, p2);
 

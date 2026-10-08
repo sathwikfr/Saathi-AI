@@ -7,11 +7,13 @@ import { Brand } from '@/components/Navbar';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { FoodRelation, MedicineTimingSlot } from '@/lib/types';
 
-const STEPS = ['Parent', 'Medicines', 'Call times', 'Contacts', 'Consent'];
+const STEPS = ['Parent', 'Medicines', 'Call times', 'Emergency plan', 'Consent'];
+/** Remind (WhatsApp reminders): no call times, no emergency plan. */
+export const WHATSAPP_STEPS = ['Who', 'Medicines', 'Reminder times', 'Start'];
 
 /** Focused full-page frame for the onboarding wizard. */
-export function WizardShell({ step, children }: { step: number; children: React.ReactNode }) {
-  const pct = Math.min(100, ((step - 1) / STEPS.length) * 100 + (step > STEPS.length ? 0 : 100 / STEPS.length / 2));
+export function WizardShell({ step, steps = STEPS, children }: { step: number; steps?: string[]; children: React.ReactNode }) {
+  const pct = Math.min(100, ((step - 1) / steps.length) * 100 + (step > steps.length ? 0 : 100 / steps.length / 2));
   return (
     <>
       <header className="wizard-top">
@@ -25,13 +27,13 @@ export function WizardShell({ step, children }: { step: number; children: React.
           </div>
         </div>
         <div className="wizard-progress" aria-hidden="true">
-          <i style={{ width: `${step > STEPS.length ? 100 : pct}%` }} />
+          <i style={{ width: `${step > steps.length ? 100 : pct}%` }} />
         </div>
       </header>
       <main id="main" className="wrap" style={{ paddingBottom: '80px', flex: 1 }}>
-        {step <= STEPS.length && (
+        {step <= steps.length && (
           <ol className="wizard-steps" aria-label="Setup progress" style={{ listStyle: 'none' }}>
-            {STEPS.map((label, i) => {
+            {steps.map((label, i) => {
               const n = i + 1;
               const state = n < step ? 'done' : n === step ? 'current' : '';
               return (

@@ -86,7 +86,7 @@ export async function runLifecycleEmails(opts: LifecycleOptions = {}): Promise<L
   // ---- Paid plan's free trial, about to turn into the first monthly charge ----
   const paidTrials = await prisma.userSubscription.findMany({
     where: {
-      planId: { in: ['solo', 'family', 'extended'] },
+      planId: { in: ['essential', 'solo', 'family', 'extended'] },
       status: { in: ['trialing', 'active'] },
       cancelAtPeriodEnd: false,
       razorpaySubscriptionId: { not: null },

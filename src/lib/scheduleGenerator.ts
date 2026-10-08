@@ -353,6 +353,16 @@ export function generateProposedSchedule(
  * Creates a human readable summary of the active schedule
  * e.g. "2 calls a day: 8:15 AM, 8:45 PM"
  */
+/** "2 WhatsApp reminders a day: 08:00 AM, 09:00 PM" (Remind plan). */
+export function formatReminderSummary(schedule: ScheduledCallSlot[]): string {
+  const active = schedule.filter(s => s.isActive);
+  if (active.length === 0) return 'No reminder times yet';
+  const sortedTimes = [...active].sort((a, b) => timeToMinutes(a.time) - timeToMinutes(b.time)).map(s => s.time);
+  return active.length === 1
+    ? `1 WhatsApp reminder a day at ${sortedTimes[0]}`
+    : `${active.length} WhatsApp reminders a day: ${sortedTimes.join(', ')}`;
+}
+
 export function formatScheduleSummary(schedule: ScheduledCallSlot[]): string {
   const active = schedule.filter(s => s.isActive);
   if (active.length === 0) return 'No calls scheduled';

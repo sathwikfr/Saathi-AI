@@ -16,7 +16,7 @@ export function ContactLine() {
   );
 }
 
-export const LEGAL_UPDATED = '30 September 2026';
+export const LEGAL_UPDATED = '3 October 2026';
 
 export function LegalPage({ title, intro, children }: { title: string; intro: string; children: React.ReactNode }) {
   return (

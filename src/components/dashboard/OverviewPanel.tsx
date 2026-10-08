@@ -20,10 +20,13 @@ type Props = {
   onInvite: () => void;
   onAddMedicine: () => void;
   onOpenMedicines: () => void;
+  /** Owner or co-manager (viewers only see the day). */
+  manage?: boolean;
+  isOwner?: boolean;
 };
 
 export function OverviewPanel({
-  parent, medicines, stats, testCalling, onTestCall, onPause, onResume, onInvite, onAddMedicine, onOpenMedicines
+  parent, medicines, stats, testCalling, onTestCall, onPause, onResume, onInvite, onAddMedicine, onOpenMedicines, manage = true, isOwner = true
 }: Props) {
   const { latestToday, todayCalls, activeSlots, nextSlot, now } = stats;
   const name = displayName(parent.name);
@@ -154,7 +157,7 @@ export function OverviewPanel({
 
       <div>
         {/* ACTIONS */}
-        <section className="panel" aria-labelledby="actions-title">
+        {manage && <section className="panel" aria-labelledby="actions-title">
           <div className="panel-head" style={{ marginBottom: '12px' }}>
             <h3 id="actions-title">Quick actions</h3>
           </div>
@@ -188,24 +191,28 @@ export function OverviewPanel({
               </button>
             )}
 
-            <button type="button" className="action" onClick={onInvite}>
-              <span className="icon-tile"><Users size={17} /></span>
-              <span>
-                Invite a sibling
-                <small>Share the care with family</small>
-              </span>
-              <ChevronRight size={16} />
-            </button>
+            {isOwner && (
+              <button type="button" className="action" onClick={onInvite}>
+                <span className="icon-tile"><Users size={17} /></span>
+                <span>
+                  Invite a sibling
+                  <small>Share the care with family</small>
+                </span>
+                <ChevronRight size={16} />
+              </button>
+            )}
           </div>
-        </section>
+        </section>}
 
         {/* MEDICINES */}
         <section className="panel" aria-labelledby="meds-title">
           <div className="panel-head" style={{ marginBottom: '12px' }}>
             <h3 id="meds-title">Medicines</h3>
-            <button type="button" onClick={onAddMedicine} className="btn btn-ghost btn-sm">
-              <Plus size={14} /> Add
-            </button>
+            {manage && (
+              <button type="button" onClick={onAddMedicine} className="btn btn-ghost btn-sm">
+                <Plus size={14} /> Add
+              </button>
+            )}
           </div>
 
           {activeMeds.length === 0 ? (

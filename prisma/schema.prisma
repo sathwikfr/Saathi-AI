@@ -9,16 +9,18 @@ generator client {
 }
 
 model User {
-  id            String   @id @default(uuid())
+  id            String    @id @default(uuid())
   name          String
-  email         String   @unique
+  email         String    @unique
   phone         String?
   avatar        String?
   passwordHash  String?
-  emailVerified Boolean  @default(false)
-  phoneVerified Boolean  @default(false)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  emailVerified Boolean   @default(false)
+  phoneVerified Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  lastSeenAt    DateTime? // last dashboard visit (weekly-active families metric)
+  upiId         String? // payer's UPI ID, so siblings can pay their share directly (Aaptha never holds the money)
 
   subscription            UserSubscription?
   notificationPreferences NotificationPreferences?
@@ -91,6 +93,12 @@ model UserSubscription {
   paymentMethodBrand     String?
   razorpaySubscriptionId String?
   razorpayPaymentId      String?
+  cancelReason           String? // asked when the customer cancels
+  cancelledAt            DateTime?
+  // Solo add-on (2026-10-08): BP / sugar by voice + a short readings call, +₹299 a month. Only meaningful on the Solo plan.
+  healthMonitor          Boolean   @default(false)
+  // Add-on (2026-10-08): festivals, birthday wishes, weather notes and the helper check, only when a call has room for them.
+  dailyTouches           Boolean   @default(false)
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
 }
@@ -130,6 +138,72 @@ model ParentProfile {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
+  // The parent's OWN consent, asked by Saathi on the first call (consentGiven above is the family's confirmation).
+  parentConsent       String? // null/pending | given | declined | withdrawn
+  parentConsentAt     DateTime?
+  parentConsentCallId String?
+
+  // Emergency card (shared with neighbours / hospital through cardToken)
+  address         String?
+  livesAlone      Boolean @default(false)
+  bloodGroup      String?
+  conditions      String?
+  allergies       String?
+  nearestHospital String?
+  doctorName      String?
+  doctorPhone     String?
+  cardToken       String? @unique // null = card not shared
+
+  // Trust set-up and call rhythm
+  introducedAt      DateTime? // family introduced Saathi to the parent
+  numberSavedAt     DateTime? // Saathi's number saved on the parent's phone
+  lastSafetyLineAt  DateTime? // "I will never ask for money or OTPs"
+  lastWellbeingAt   DateTime? // sleep / appetite / pain questions
+  lastRefillCheckAt DateTime?
+  birthDate         String? // MM-DD, for a birthday wish
+
+  // Weekly companion call (opt-in, paid plans)
+  companionEnabled Boolean   @default(false)
+  companionDay     Int? // 0 = Sunday … 6 = Saturday (IST)
+  companionTime    String? // "05:00 PM" IST
+  companionTopics  String? // family-written interests
+  lastCompanionAt  DateTime?
+
+  // v1.1 (2026-10-04)
+  readingsToAsk      String[]  @default([]) // "bp", "sugar": Saathi asks for today's reading once a day
+  readingRanges      String? // JSON {bpSysMax, bpSysMin, bpDiaMax, sugarMax, sugarMin} set by the family / doctor
+  callTogetherWithId String? // the other parent on the same phone: one call for both
+  city               String? // for weather notes
+  latitude           Float?
+  longitude          Float?
+  festivals          String[]  @default([]) // festivals the parent celebrates (names from the public Indian holiday calendar)
+  specialDaysJson    String? // JSON [{date: "MM-DD" | "YYYY-MM-DD", label, kind: "greet" | "fast"}]
+  chemistName        String?
+  chemistPhone       String?
+  hearingMode        Boolean   @default(false) // slower, clearer, repeats questions
+  helperName         String? // maid / nurse / attendant who visits
+  helperDays         Int[]     @default([]) // 0 = Sunday … 6 = Saturday
+  lastWeatherNoteAt  DateTime?
+
+  // WhatsApp medicine reminders instead of calls (Essential plan, 2026-10-04)
+  reminderChannel           String? // null / "call" = Saathi calls; "whatsapp" = WhatsApp reminders, never called
+  reminderStartCode         String?   @unique // code in the "START <code>" WhatsApp link the person sends to opt in
+  reminderWhatsapp          String? // E.164 number that sent START: reminders only ever go here
+  reminderOptInAt           DateTime?
+  reminderOptOutAt          DateTime? // STOP; START turns reminders back on
+  discreetReminders         Boolean   @default(false) // no medicine names in the message (lock screens)
+  // Remind plan, opt-in (2026-10-08): one WhatsApp a week, Sunday evening, "you took 13 of 14". Off unless the person turns it on.
+  weeklyProgress            Boolean   @default(false)
+  weeklyProgressToCaretaker Boolean   @default(false)
+  weeklyProgressSentAt      DateTime?
+  // Remind plan: the caretaker told when a dose isn't confirmed after 3 asks (opts in with their own START link)
+  caretakerName             String?
+  caretakerPhone            String? // E.164, as the family entered it
+  caretakerStartCode        String?   @unique
+  caretakerWhatsapp         String? // number that sent the caretaker START: alerts only go here
+  caretakerOptInAt          DateTime?
+  caretakerOptOutAt         DateTime?
+
   callSchedule      ScheduledCallSlot[]
   medicines         Medicine[]
   emergencyContacts EmergencyContact[]
@@ -138,6 +212,14 @@ model ParentProfile {
   suggestions       ScheduleSuggestion[]
   caregivers        CaregiverInvite[]
   medicineReports   MedicineReport[]
+  escalations       Escalation[]
+  insights          HealthInsight[]
+  documents         HealthDocument[]
+  readings          HealthReading[]
+  messages          FamilyMessage[]
+  appointments      Appointment[]
+  stories           LifeStory[]
+  reminders         MedicineReminder[]
 
   @@index([userId])
 }
@@ -158,18 +240,23 @@ model ScheduledCallSlot {
 }
 
 model Medicine {
-  id           String        @id @default(uuid())
-  parentId     String
-  parent       ParentProfile @relation(fields: [parentId], references: [id], onDelete: Cascade)
-  name         String
-  dosage       String
-  timeOfDay    String        @default("morning")
-  timingSlots  String[]
-  foodRelation String        @default("not_specified")
-  frequency    String        @default("daily")
-  isActive     Boolean       @default(true)
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  id               String        @id @default(uuid())
+  parentId         String
+  parent           ParentProfile @relation(fields: [parentId], references: [id], onDelete: Cascade)
+  name             String
+  dosage           String
+  timeOfDay        String        @default("morning")
+  timingSlots      String[]
+  foodRelation     String        @default("not_specified")
+  frequency        String        @default("daily")
+  isActive         Boolean       @default(true)
+  purpose          String? // the family's one-line reason ("keeps your BP steady"); Saathi repeats it, never invents one
+  endsOn           String? // last day of a course (IST YYYY-MM-DD); reminders and calls leave it out afterwards
+  // Remind plan (2026-10-05): tablets left, counted down on each "Yes"; one "running out" note ~3 days before.
+  tabletsLeft      Int?
+  refillNotifiedAt DateTime?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
 
   @@index([parentId])
 }
@@ -183,6 +270,11 @@ model EmergencyContact {
   phone     String
   priority  String        @default("primary")
   createdAt DateTime      @default(now())
+
+  role           String? // family | neighbour | security | doctor | caregiver | other
+  isLocal        Boolean   @default(false) // lives near the parent and can go there
+  practiceAt     DateTime? // answered a practice alert call
+  practiceResult String? // yes | no | unclear | no_answer
 
   @@index([parentId])
 }
@@ -215,6 +307,9 @@ model CallLog {
   endedAt           DateTime?
   nextRetryAt       DateTime?
   processedAt       DateTime? // set once the end-of-call result has been applied (webhook idempotency)
+  followUpAt        DateTime? // parent said "later": one follow-up call about those medicines (claimed by clearing it)
+  parentWords       Int? // words the parent spoke (kept after transcripts are cleared, for the "shorter answers" trend)
+  pairedCallLogId   String? // couple call: the other parent's log of the same phone call
 
   @@unique([parentId, slotId, callDate, attemptNumber])
   @@index([parentId])
@@ -222,18 +317,25 @@ model CallLog {
 }
 
 model AlertRecord {
-  id        String        @id @default(uuid())
-  parentId  String
-  parent    ParentProfile @relation(fields: [parentId], references: [id], onDelete: Cascade)
-  level     Int           @default(1)
-  title     String
-  message   String
-  channel   String        @default("whatsapp")
-  timestamp String
-  status    String        @default("sent")
-  createdAt DateTime      @default(now())
-  callLogId String? // call that raised this alert (dedupe + traceability)
+  id             String        @id @default(uuid())
+  parentId       String
+  parent         ParentProfile @relation(fields: [parentId], references: [id], onDelete: Cascade)
+  level          Int           @default(1)
+  title          String
+  message        String
+  channel        String        @default("whatsapp")
+  timestamp      String
+  status         String        @default("sent")
+  createdAt      DateTime      @default(now())
+  callLogId      String? // call that raised this alert (dedupe + traceability)
   acknowledgedAt DateTime? // family tapped "I'll handle it" on WhatsApp
+
+  handledByName String? // who said "I'm on it"
+  handledVia    String? // whatsapp | call | dashboard
+  outcome       String? // fine | doctor_visit | hospital | other (recorded afterwards; closes the alert)
+  outcomeNote   String?
+  outcomeAt     DateTime?
+  outcomeById   String?
 
   @@index([parentId])
 }
@@ -257,28 +359,49 @@ model CaregiverInvite {
   id        String        @id @default(uuid())
   parentId  String
   parent    ParentProfile @relation(fields: [parentId], references: [id], onDelete: Cascade)
-  email     String
+  email     String // "" when invited by link without an email
   name      String
   role      String        @default("viewer")
-  status    String        @default("pending")
+  status    String        @default("pending") // pending | accepted | revoked
   invitedAt DateTime      @default(now())
 
+  // Family circle: an accepted invite gives this account access to the parent.
+  userId      String?
+  token       String?   @unique // invite link token (cleared once accepted)
+  phone       String?
+  invitedById String?
+  acceptedAt  DateTime?
+  revokedAt   DateTime?
+  sharesBill  Boolean   @default(false) // pays a share of the plan to the payer (UPI)
+
   @@index([parentId])
+  @@index([userId])
 }
 
 model NotificationPreferences {
-  id                String   @id @default(uuid())
-  userId            String   @unique
-  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  whatsapp          Boolean  @default(true)
-  sms               Boolean  @default(true)
-  email             Boolean  @default(true)
-  push              Boolean  @default(false)
-  minimumAlertLevel Int      @default(1)
-  whatsappNumber    String? // E.164; null = use the account phone
-  whatsappOptInAt   DateTime? // explicit opt-in (Meta requires it); null = not opted in
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id                 String    @id @default(uuid())
+  userId             String    @unique
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  whatsapp           Boolean   @default(true)
+  sms                Boolean   @default(true)
+  email              Boolean   @default(true)
+  push               Boolean   @default(false)
+  minimumAlertLevel  Int       @default(1)
+  whatsappNumber     String? // E.164; null = use the account phone
+  whatsappOptInAt    DateTime? // explicit opt-in (Meta requires it); null = not opted in
+  whatsappVerifiedAt DateTime? // set when that number itself sent START to our number; no updates are sent until then
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  timezone         String? // IANA, e.g. "America/New_York"; null = Asia/Kolkata
+  dailySummary     Boolean @default(false) // routine call results batched into one message a day
+  dailySummaryHour Int     @default(20) // local hour (0-23) in `timezone`
+  weeklyDigest     Boolean @default(true)
+  digestDay        Int     @default(0) // 0 = Sunday
+  digestHour       Int     @default(9)
+  monthlySummary   Boolean @default(true)
+  wakeForEmergency Boolean @default(true) // phone call (not only WhatsApp) for level-4 alerts
+  emergencyPhone   String? // E.164 number to ring for level 4; null = account phone
 }
 
 model MedicineReport {
@@ -343,3 +466,215 @@ model WhatsAppMessage {
   @@index([userId])
   @@index([phone])
 }
+
+/// One emergency (level-4 alert), wellness check ("lives alone" parent unreachable) or practice alert,
+/// worked through a ladder of people who can act until someone says "I'm on it".
+model Escalation {
+  id             String        @id @default(uuid())
+  parentId       String
+  parent         ParentProfile @relation(fields: [parentId], references: [id], onDelete: Cascade)
+  alertId        String?       @unique // the AlertRecord this escalates (null for practice alerts)
+  kind           String // emergency | wellness_check | practice
+  reason         String
+  status         String        @default("active") // active | handled | exhausted | closed
+  round          Int           @default(0) // ladder round reached
+  nextStepAt     DateTime? // when the next round is due if nobody has responded
+  handledByName  String?
+  handledByPhone String?
+  handledVia     String? // whatsapp | call | dashboard
+  handledAt      DateTime?
+  closedAt       DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  attempts EscalationAttempt[]
+
+  @@index([parentId])
+  @@index([status, nextStepAt])
+}
+
+/// One call or message in an escalation (to the family, a local contact, or the parent again).
+model EscalationAttempt {
+  id                String     @id @default(uuid())
+  escalationId      String
+  escalation        Escalation @relation(fields: [escalationId], references: [id], onDelete: Cascade)
+  round             Int
+  targetType        String // owner | member | contact | parent
+  targetId          String? // user / EmergencyContact / parent id
+  name              String
+  phone             String
+  channel           String // call | whatsapp
+  providerAttemptId String?    @unique // Sarvam attempt id for calls
+  status            String     @default("pending") // pending | placed | answered | no_answer | busy | failed | sent
+  response          String? // yes | no | unclear
+  failureReason     String?
+  createdAt         DateTime   @default(now())
+  respondedAt       DateTime?
+
+  @@index([escalationId])
+}
+
+/// A pattern noticed across several calls (never a diagnosis). Once per kind and subject per parent per week.
+model HealthInsight {
+  id          String        @id @default(uuid())
+  parentId    String
+  parent      ParentProfile @relation(fields: [parentId], references: [id], onDelete: Cascade)
+  kind        String // repeat_complaint | low_mood | shorter_answers | missed_calls | adherence_drop | poor_sleep | poor_appetite | pain
+  refKey      String // ISO week (+ subject), e.g. "2026-W40:knee"
+  level       Int           @default(1)
+  title       String
+  message     String
+  evidence    String? // JSON: [{ callLogId, date, text }]
+  createdAt   DateTime      @default(now())
+  dismissedAt DateTime?
+
+  @@unique([parentId, kind, refKey])
+  @@index([parentId])
+}
+
+/// A file in a parent's health record vault. The file itself is in a private Supabase Storage bucket.
+model HealthDocument {
+  id           String        @id @default(uuid())
+  parentId     String
+  parent       ParentProfile @relation(fields: [parentId], references: [id], onDelete: Cascade)
+  uploadedById String
+  kind         String // prescription | lab_report | scan | bill | discharge | insurance | other
+  title        String
+  docDate      String? // YYYY-MM-DD the document is from
+  renewalDate  String? // YYYY-MM-DD (insurance policies), shown as a reminder
+  notes        String?
+  fileName     String
+  mimeType     String
+  sizeBytes    Int
+  storageKey   String        @unique
+  isDeleted    Boolean       @default(false)
+  createdAt    DateTime      @default(now())
+
+  @@index([parentId])
+}
+
+/// A BP / sugar (or other) reading the parent said on a call, or the family typed in.
+model HealthReading {
+  id          String        @id @default(uuid())
+  parentId    String
+  parent      ParentProfile @relation(fields: [parentId], references: [id], onDelete: Cascade)
+  callLogId   String?
+  kind        String // bp | sugar
+  systolic    Int?
+  diastolic   Int?
+  value       Float? // sugar mg/dL
+  context     String? // fasting | after_food | random
+  takenAt     DateTime
+  source      String        @default("call") // call | family
+  enteredById String?
+  createdAt   DateTime      @default(now())
+
+  @@index([parentId, kind, takenAt])
+}
+
+/// A message between the family and the parent, delivered by Saathi on the next call (or said by the parent).
+model FamilyMessage {
+  id          String        @id @default(uuid())
+  parentId    String
+  parent      ParentProfile @relation(fields: [parentId], references: [id], onDelete: Cascade)
+  userId      String? // family author (to_parent)
+  authorName  String
+  direction   String // to_parent | from_parent
+  text        String
+  status      String        @default("pending") // pending | delivered | cancelled (to_parent); received (from_parent)
+  callLogId   String?
+  createdAt   DateTime      @default(now())
+  deliveredAt DateTime?
+
+  @@index([parentId, status])
+}
+
+/// A doctor visit or lab test: Saathi reminds the day before and on the day, then asks how it went.
+model Appointment {
+  id                String        @id @default(uuid())
+  parentId          String
+  parent            ParentProfile @relation(fields: [parentId], references: [id], onDelete: Cascade)
+  createdById       String
+  title             String
+  kind              String        @default("doctor") // doctor | lab | other
+  startsAt          DateTime
+  location          String?
+  notes             String? // what to remember, e.g. "bring the old reports"
+  fasting           Boolean       @default(false) // lab tests that need an empty stomach
+  remindedDayBefore DateTime?
+  remindedSameDay   DateTime?
+  followedUpAt      DateTime?
+  outcomeText       String? // what the parent said afterwards
+  cancelledAt       DateTime?
+  createdAt         DateTime      @default(now())
+
+  @@index([parentId, startsAt])
+}
+
+/// A memory the parent shared on a call (mostly the weekly chat), for the family's "life stories" book.
+model LifeStory {
+  id        String        @id @default(uuid())
+  parentId  String
+  parent    ParentProfile @relation(fields: [parentId], references: [id], onDelete: Cascade)
+  callLogId String?
+  title     String
+  text      String
+  hiddenAt  DateTime?
+  createdAt DateTime      @default(now())
+
+  @@index([parentId])
+}
+
+/// "I've paid my share" for one month (siblings pay the payer by UPI; Aaptha only keeps the note).
+model BillShare {
+  id           String    @id @default(uuid())
+  ownerId      String
+  memberId     String
+  month        String // YYYY-MM (IST)
+  amount       Int
+  paidMarkedAt DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@unique([ownerId, memberId, month])
+  @@index([memberId])
+}
+
+/// One WhatsApp medicine reminder (one reminder time on one day): sent, nudged once, then answered or missed.
+model MedicineReminder {
+  id                 String        @id
+  parentId           String
+  parent             ParentProfile @relation(fields: [parentId], references: [id], onDelete: Cascade)
+  slotId             String
+  slotTime           String // "08:30 AM" (IST)
+  reminderDate       String // IST YYYY-MM-DD
+  medicinesJson      String // [{name, dosage, foodRelation}] as reminded
+  status             String        @default("pending") // pending | sent | failed
+  answer             String? // taken | later | skipped | missed (null = no answer yet)
+  sentAt             DateTime?
+  nudgedAt           DateTime?
+  snoozeUntil        DateTime?
+  snoozeCount        Int           @default(0)
+  answeredAt         DateTime?
+  failureReason      String?
+  // Remind plan (2026-10-04): "did you take it?" asked up to 3 times, 30 min apart, then the caretaker is told.
+  // (nudgedAt / snoozeUntil / snoozeCount above belong to the first version and are no longer written.)
+  askCount           Int           @default(0)
+  nextAskAt          DateTime?
+  caretakerAlertedAt DateTime?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  @@unique([parentId, slotId, reminderDate])
+  @@index([parentId, reminderDate])
+  @@index([status, answer])
+}
+
+/// How many "Ask about your parent" questions were used (2026-10-08): one row per counter, e.g. "month:<ownerId>:2026-10"
+/// (a plan's monthly allowance, shared by the family circle) or "day:<userId>:2026-10-08" (a person's daily limit).
+/// Replaces the in-memory counters, which each serverless instance had its own copy of.
+model AskUsage {
+  key       String   @id
+  count     Int      @default(0)
+  updatedAt DateTime @updatedAt
+}
+

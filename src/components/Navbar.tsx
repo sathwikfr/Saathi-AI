@@ -41,7 +41,9 @@ export function Navbar() {
   const menuRef = useRef<HTMLDivElement>(null);
 
   // "Add a parent" only appears once a plan's AutoPay is set up (payment details come first).
-  const canAdd = user ? canAddParents(getEffectivePlan(user.subscription, user.createdAt)) : false;
+  // Remind (WhatsApp reminders, one person) is set up from the dashboard instead.
+  const navPlan = user ? getEffectivePlan(user.subscription, user.createdAt) : null;
+  const canAdd = navPlan ? canAddParents(navPlan) && navPlan.channel === 'call' : false;
   const links = user ? APP_LINKS.filter(l => l.href !== '/onboarding' || canAdd) : MARKETING_LINKS;
 
   useEffect(() => {

@@ -48,7 +48,11 @@ async function main() {
     notificationPrefs: await prisma.notificationPreferences.count({ where: { userId: user.id } }),
     resetTokens: await prisma.passwordResetRecord.count({ where: { userId: user.id } }),
     oauthLinks: await prisma.oAuthAccount.count({ where: { userId: user.id } }),
-    otps: user.phone ? await prisma.oTPRecord.count({ where: { phone: user.phone } }) : 0
+    otps: user.phone ? await prisma.oTPRecord.count({ where: { phone: user.phone } }) : 0,
+    medicineReminders: await prisma.medicineReminder.count({ where: byParent }),
+    // No foreign key to User, so these don't cascade.
+    billShares: await prisma.billShare.count({ where: { OR: [{ ownerId: user.id }, { memberId: user.id }] } }),
+    whatsappMessages: await prisma.whatsAppMessage.count({ where: { OR: [{ userId: user.id }, byParent] } })
   };
 
   console.log(`Account ${email} (${user.id}) owns:`);
@@ -64,6 +68,8 @@ async function main() {
     prisma.passwordResetRecord.deleteMany({ where: { userId: user.id } }),
     prisma.oAuthAccount.deleteMany({ where: { userId: user.id } }),
     ...(user.phone ? [prisma.oTPRecord.deleteMany({ where: { phone: user.phone } })] : []),
+    prisma.billShare.deleteMany({ where: { OR: [{ ownerId: user.id }, { memberId: user.id }] } }),
+    prisma.whatsAppMessage.deleteMany({ where: { OR: [{ userId: user.id }, byParent] } }),
     prisma.user.delete({ where: { id: user.id } })
   ]);
 

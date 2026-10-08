@@ -11,12 +11,19 @@ export interface Plan {
   popular?: boolean;
   features: string[];
   parentsIncluded: number;
+  /** How medicine reminders reach the person: Saathi phone calls, or WhatsApp messages only (Remind). */
   channel: 'call' | 'whatsapp';
+  /** Max scheduled Saathi calls per parent per day (controls call cost). 0 on WhatsApp-only plans. */
   callsPerDay: number;
+  /** WhatsApp plans: reminder times a day per person (earliest win). */
   remindersPerDay: number;
+  /** Weekly chat (companion) call included. Off on every plan until the paid add-on has billing (COMPANION_ADDON_PRICE). */
   weeklyChat: boolean;
+  /** "Ask about your parent" questions a month for the whole account (each is a paid AI request). */
   askPerMonth: number;
+  /** Family members who get WhatsApp updates (owner first, then accepted family members). Remind: 0 (it has a caretaker instead). */
   whatsappPeople: number;
+  /** Family and Extended: the couple call (one call for two parents on a phone) and the timeline. BP/sugar and the daily touches are add-ons. */
   premium: boolean;
   /** Free plan only: it lasts this many days from account creation, then calls stop. */
   expiresAfterDays?: number;
@@ -86,6 +93,9 @@ export interface UserSubscription {
   paymentMethodBrand?: string;
   razorpaySubscriptionId?: string;
   razorpayPaymentId?: string;
+  /** Add-ons (any calling plan). */
+  healthMonitor?: boolean;
+  dailyTouches?: boolean;
 }
 
 export interface Invoice {
@@ -108,6 +118,8 @@ export interface LinkedMedicineDetail {
   dosage?: string;
   foodRelation?: FoodRelation;
   questionScript?: string;
+  /** The family's one-line reason ("keeps your BP steady"), filled in from Medicine.purpose when a call is placed. */
+  purpose?: string;
 }
 
 export interface ScheduledCallSlot {
@@ -137,7 +149,86 @@ export interface ParentProfile {
   consentDate: string;
   createdAt: string;
   isDeleted?: boolean;
+  /** The parent's own answer when Saathi asked on a call (consentGiven is the family's confirmation). */
+  parentConsent: ParentConsent;
+  parentConsentAt?: string;
+  address?: string;
+  livesAlone: boolean;
+  bloodGroup?: string;
+  conditions?: string;
+  allergies?: string;
+  nearestHospital?: string;
+  doctorName?: string;
+  doctorPhone?: string;
+  introducedAt?: string;
+  numberSavedAt?: string;
+  birthDate?: string;
+  companionEnabled: boolean;
+  companionDay?: number;
+  companionTime?: string;
+  companionTopics?: string;
+  // v1.1
+  readingsToAsk: string[];
+  readingRanges?: { bpSysMax?: number; bpSysMin?: number; bpDiaMax?: number; sugarMax?: number; sugarMin?: number };
+  callTogetherWithId?: string;
+  city?: string;
+  hasWeatherLocation: boolean;
+  festivals: string[];
+  specialDays: { date: string; label: string; kind: 'greet' | 'fast' }[];
+  chemistName?: string;
+  chemistPhone?: string;
+  hearingMode: boolean;
+  helperName?: string;
+  helperDays: number[];
+  /** WhatsApp medicine reminders instead of calls (Remind plan). */
+  reminderChannel: 'call' | 'whatsapp';
+  /** When the person sent START on WhatsApp (their own opt-in); null = not started yet. */
+  reminderOptInAt?: string;
+  /** When they sent STOP. */
+  reminderOptOutAt?: string;
+  discreetReminders: boolean;
+  /** Remind plan, opt-in: one WhatsApp a week (Sunday evening) with how many checks were confirmed. */
+  weeklyProgress: boolean;
+  /** ... and the caretaker gets it too. */
+  weeklyProgressToCaretaker: boolean;
+  /** Remind plan: who is told when a dose isn't confirmed after 3 asks. */
+  caretakerName?: string;
+  caretakerPhone?: string;
+  /** The caretaker sent START (their own opt-in); null = not yet. */
+  caretakerOptInAt?: string;
+  caretakerOptOutAt?: string;
+  /** How the logged-in user relates to this parent. */
+  accessRole?: ParentAccessRole;
+  /** Shown on shared parents: who set them up. */
+  ownerName?: string;
 }
+
+export type ParentConsent = 'pending' | 'given' | 'declined' | 'withdrawn';
+
+/** WhatsApp medicine reminders (Remind plan). */
+/** taken = Yes; not_yet = the latest reply was Not yet (asked again); missed = no Yes after 3 asks. (later / skipped: first version.) */
+export type ReminderAnswer = 'taken' | 'not_yet' | 'missed' | 'paused' | 'later' | 'skipped';
+
+/** One WhatsApp reminder as the dashboard shows it. */
+export interface ReminderView {
+  id: string;
+  /** IST YYYY-MM-DD */
+  date: string;
+  /** "08:00 AM" */
+  time: string;
+  medicines: string[];
+  /** pending | sent | failed */
+  status: string;
+  /** null = no answer yet */
+  answer: ReminderAnswer | null;
+  sentAt?: string;
+  answeredAt?: string;
+  /** How many times "did you take it?" was asked (1-3). */
+  asks: number;
+  /** The caretaker was asked to call. */
+  caretakerTold: boolean;
+}
+export type ParentAccessRole = 'owner' | 'co_manager' | 'viewer';
 
 export interface Medicine {
   id: string;
@@ -149,7 +240,15 @@ export interface Medicine {
   foodRelation?: FoodRelation;
   frequency: 'daily' | 'twice_daily' | 'as_needed';
   isActive: boolean;
+  /** The family's one-line reason, repeated by Saathi. */
+  purpose?: string;
+  /** Last day of a course (IST YYYY-MM-DD); after it the medicine is left out of reminders and calls. */
+  endsOn?: string;
+  /** Remind plan: tablets left, counted down on each "Yes" (null / undefined = not counted). */
+  tabletsLeft?: number | null;
 }
+
+export type ContactRole = 'family' | 'neighbour' | 'security' | 'doctor' | 'caregiver' | 'other';
 
 export interface EmergencyContact {
   id: string;
@@ -158,6 +257,11 @@ export interface EmergencyContact {
   relation: string;
   phone: string;
   priority: 'primary' | 'secondary';
+  role?: ContactRole;
+  /** Lives near the parent and can go there. */
+  isLocal?: boolean;
+  practiceAt?: string;
+  practiceResult?: string;
 }
 
 export interface CallLog {
@@ -181,6 +285,28 @@ export interface CallLog {
   slotId?: string;
   attemptNumber?: number;
   failureReason?: string;
+  /** Parsed from the end-of-call result (answered calls). */
+  details?: CallDetails;
+}
+
+export type MedicineStatus = 'taken' | 'missed' | 'unknown' | 'later' | 'stopped';
+
+export interface CallDetails {
+  medicineResults: { name: string; status: MedicineStatus }[];
+  healthConcern?: string | null;
+  emergencyFlag?: boolean;
+  sleep?: 'good' | 'poor' | null;
+  appetite?: 'good' | 'poor' | null;
+  pain?: 'none' | 'mild' | 'severe' | null;
+  painWhere?: string | null;
+  runningLow?: string[];
+  stoppedReason?: string | null;
+  consent?: string | null;
+  callType?: string;
+  bp?: { systolic: number; diastolic: number } | null;
+  sugar?: { value: number; context: string | null } | null;
+  appointmentUpdate?: string | null;
+  helperVisited?: 'yes' | 'no' | null;
 }
 
 export interface AlertRecord {
@@ -196,6 +322,49 @@ export interface AlertRecord {
   createdAt?: string;
   /** Set when the family tapped "I'll handle it" on WhatsApp. */
   acknowledgedAt?: string;
+  handledByName?: string;
+  handledVia?: string;
+  outcome?: 'fine' | 'doctor_visit' | 'hospital' | 'other';
+  outcomeNote?: string;
+  outcomeAt?: string;
+  escalation?: EscalationSummary;
+}
+
+export interface EscalationSummary {
+  id: string;
+  kind: 'emergency' | 'wellness_check' | 'practice';
+  status: 'active' | 'handled' | 'exhausted' | 'closed';
+  round: number;
+  handledByName?: string;
+  handledVia?: string;
+  handledAt?: string;
+  nextStepAt?: string;
+  attempts: { name: string; channel: string; status: string; response?: string; createdAt: string; targetType: string }[];
+}
+
+export interface HealthInsight {
+  id: string;
+  parentId: string;
+  kind: string;
+  level: number;
+  title: string;
+  message: string;
+  createdAt: string;
+  dismissedAt?: string;
+}
+
+export interface HealthDocument {
+  id: string;
+  parentId: string;
+  kind: 'prescription' | 'lab_report' | 'scan' | 'bill' | 'discharge' | 'insurance' | 'other';
+  title: string;
+  docDate?: string;
+  renewalDate?: string;
+  notes?: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  createdAt: string;
 }
 
 export interface ScheduleSuggestion {
@@ -216,8 +385,12 @@ export interface CaregiverInvite {
   email: string;
   name: string;
   role: 'viewer' | 'co_manager';
-  status: 'pending' | 'accepted';
+  status: 'pending' | 'accepted' | 'revoked';
   invitedAt: string;
+  phone?: string;
+  acceptedAt?: string;
+  /** Pending invites only, shown to the owner so they can resend the link. */
+  inviteUrl?: string;
 }
 
 export interface NotificationPreferences {
@@ -226,6 +399,15 @@ export interface NotificationPreferences {
   email: boolean;
   push: boolean;
   minimumAlertLevel: number;
+  timezone?: string | null;
+  dailySummary?: boolean;
+  dailySummaryHour?: number;
+  weeklyDigest?: boolean;
+  digestDay?: number;
+  digestHour?: number;
+  monthlySummary?: boolean;
+  wakeForEmergency?: boolean;
+  emergencyPhone?: string | null;
 }
 
 export interface ExtractedMedicineCandidate {

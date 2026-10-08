@@ -12,6 +12,7 @@ export const metadata: Metadata = {
 const BUCKET_LABEL: Record<PlanBucket, string> = {
   free_active: 'Free trial (running)',
   free_ended: 'Free trial (ended)',
+  essential: 'Remind',
   solo: 'Solo Care',
   family: 'Family Care',
   extended: 'Extended Family'
@@ -127,7 +128,59 @@ export default async function AdminPage() {
             <p>{s.calls.answered30} answered, last 30 days</p>
             <div className="meter" aria-hidden="true"><i style={{ width: `${s.calls.answerRatePct ?? 0}%`, background: 'var(--green)' }} /></div>
           </div>
+          <div className="stat">
+            <span className="panel-label"><PhoneCall size={13} /> Call length</span>
+            <div className="stat-value">{s.calls.length.avgBilledMinutes === null ? '—' : `${s.calls.length.avgBilledMinutes} min`}</div>
+            <p>
+              {s.calls.length.calls === 0
+                ? 'No timed calls yet. Aim: under 60 s (1 billed minute).'
+                : `billed per call · avg ${s.calls.length.avgSeconds} s · ${s.calls.length.over60Pct}% run over 60 s · ≈ ₹${s.calls.length.estMonthlyCostPerParent} a parent a month in calls`}
+            </p>
+          </div>
         </div>
+
+        <section className="panel" aria-labelledby="engagement-title">
+          <div className="panel-head">
+            <div>
+              <h3 id="engagement-title">Is it working for families?</h3>
+              <p>Active = opened the dashboard in the last 7 days. Acted on = someone said &ldquo;I&apos;m on it&rdquo; or recorded what happened.</p>
+            </div>
+          </div>
+          <div className="kv">
+            <div>
+              <span>Families active this week</span>
+              <strong>{s.engagement.activeFamilies7d} of {s.engagement.familiesWithParents}</strong>
+            </div>
+            <div>
+              <span>Alerts acted on (30 days)</span>
+              <strong>
+                {s.engagement.alertsNeedingAction30
+                  ? `${Math.round((s.engagement.alertsActedOn30 / s.engagement.alertsNeedingAction30) * 100)}% (${s.engagement.alertsActedOn30} of ${s.engagement.alertsNeedingAction30})`
+                  : 'No alerts'}
+              </strong>
+            </div>
+            <div>
+              <span>Emergency escalations (30 days)</span>
+              <strong>{s.engagement.escalations30.total} · {s.engagement.escalations30.handled} handled · {s.engagement.escalations30.exhausted} nobody answered</strong>
+            </div>
+            <div>
+              <span>Parents&apos; own consent</span>
+              <strong>{s.engagement.parentConsent.given} yes · {s.engagement.parentConsent.pending} not asked yet · {s.engagement.parentConsent.said_no} said no</strong>
+            </div>
+            <div>
+              <span>Siblings and carers joined</span>
+              <strong>{s.engagement.familyMembers}</strong>
+            </div>
+          </div>
+          {s.engagement.cancelReasons.length > 0 && (
+            <>
+              <h4 style={{ marginTop: '16px', marginBottom: '6px', fontSize: '0.95rem' }}>Why people cancelled</h4>
+              <ul style={{ paddingLeft: '18px', display: 'grid', gap: '4px', fontSize: '0.9rem' }}>
+                {s.engagement.cancelReasons.map((c, i) => <li key={i}>{fmtDate(c.at)}: {c.reason}</li>)}
+              </ul>
+            </>
+          )}
+        </section>
 
         <section className="panel" aria-labelledby="calls-title">
           <div className="panel-head">

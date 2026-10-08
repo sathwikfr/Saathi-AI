@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { isLocalDevRequest } from '@/lib/devMode';
 import { getUserByEmail } from '@/lib/db';
 import { createPasswordResetToken, checkRateLimit, recordFailedAttempt } from '@/lib/security';
 import { sendPasswordResetEmail } from '@/lib/email';
@@ -34,7 +35,8 @@ export async function POST(req: Request) {
       resetToken = await createPasswordResetToken(user.id);
 
       // Determine application base URL
-      const origin = req.headers.get('origin') || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+      // Never from the request: an Origin/Host header is attacker-controlled and this link is emailed to the victim.
+      const origin = (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').replace(/\/$/, '');
       const resetUrl = `${origin}/reset-password?token=${resetToken}&email=${encodeURIComponent(cleanEmail)}`;
 
       // 3. Dispatch real transactional email via Resend
@@ -53,7 +55,7 @@ export async function POST(req: Request) {
     return NextResponse.json({
       success: true,
       message: `If an account exists for ${cleanEmail}, a secure password reset link valid for 20 minutes has been sent to your inbox.`,
-      devResetLink: (process.env.NODE_ENV !== 'production' && resetToken)
+      devResetLink: ((await isLocalDevRequest()) && resetToken)
         ? `/reset-password?token=${resetToken}&email=${encodeURIComponent(cleanEmail)}`
         : undefined
     });

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { requireOwnedParent } from '@/lib/access';
+import { requireParentAccess } from '@/lib/access';
 import { placeManualCall } from '@/lib/callDispatch';
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -11,10 +11,10 @@ type Ctx = { params: Promise<{ id: string }> };
  */
 export async function POST(req: Request, { params }: Ctx) {
   const { id } = await params;
-  const access = await requireOwnedParent(id);
+  const access = await requireParentAccess(id, 'manage');
   if (!access.ok) return access.response;
 
-  const result = await placeManualCall({ parentId: id, ownerId: access.user.id, kind: 'test' });
+  const result = await placeManualCall({ parentId: id, requesterId: access.user.id, kind: 'test' });
 
   if (!result.ok) {
     return NextResponse.json(

@@ -259,7 +259,7 @@ export async function extractMedicinesWithGroqVision({
 
     if (!response.ok) {
       const errMsg = responseData.error?.message || `Groq API Error (${response.status})`;
-      console.error(`[Aaptha Groq Vision] API Error:`, responseData);
+      console.error(`[Aaptha Groq Vision] API Error (HTTP ${response.status}): ${errMsg}`);
       return {
         success: false,
         extractedMedicines: [],
@@ -272,7 +272,7 @@ export async function extractMedicinesWithGroqVision({
     }
 
     const rawContent = responseData.choices?.[0]?.message?.content || '{}';
-    console.log(`[Aaptha Groq Vision] Raw Model Response:\n${rawContent}`);
+    console.log(`[Aaptha Groq Vision] Model replied (${String(rawContent).length} characters; text not logged, it is medical data)`);
 
     // Parse JSON
     let parsed: { medicines?: RawGroqMedicine[] } = {};
@@ -320,7 +320,7 @@ export async function extractMedicinesWithGroqVision({
       // 1. Strict Name Validation Check
       const validation = isValidMedicineName(rawName);
       if (!validation.valid) {
-        console.warn(`[Aaptha Groq Vision] Filtered out invalid medicine name "${rawName}": ${validation.reason}`);
+        console.warn(`[Aaptha Groq Vision] Filtered out an invalid medicine name: ${validation.reason}`);
         continue;
       }
 

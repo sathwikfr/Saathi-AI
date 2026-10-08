@@ -7,6 +7,7 @@
  *         to real phones. All test rows are deleted at the end.
  */
 import 'dotenv/config';
+import './lib/testDb';
 import crypto from 'crypto';
 import { prisma } from '../src/lib/prisma';
 import { newId } from '../src/lib/db';
@@ -17,6 +18,7 @@ import { describeAnsweredCall, planFamilyMessage, WA_REPLIES } from '../src/lib/
 import { processSarvamWebhook, raiseToolEscalation } from '../src/lib/callResults';
 import { runDispatch } from '../src/lib/callDispatch';
 import { processWhatsAppWebhook, InboundDeps } from '../src/lib/whatsappInbound';
+import { whatsappRecipient } from '../src/lib/familyNotify';
 import { SarvamConfig } from '../src/lib/sarvam';
 import { LinkedMedicineDetail } from '../src/lib/types';
 
@@ -161,7 +163,7 @@ async function partB() {
     data: {
       id: newId('usr'), name: 'WhatsApp Tester', email: `whatsapp-test-${stamp}@example.com`, phone: ownerPhone,
       subscription: { create: { id: newId('sub'), planId: 'family', status: 'active', currentPeriodEnd: new Date(Date.now() + 30 * 864e5), amount: 1299 } },
-      notificationPreferences: { create: { whatsapp: true, whatsappOptInAt: new Date(), minimumAlertLevel: 1 } }
+      notificationPreferences: { create: { whatsapp: true, whatsappOptInAt: new Date(), whatsappVerifiedAt: new Date(), minimumAlertLevel: 1 } }
     }
   });
 
@@ -171,7 +173,7 @@ async function partB() {
     const parent = await prisma.parentProfile.create({
       data: {
         id: newId('parent'), userId: user.id, name: 'Test Amma', relationship: 'Mother', phone: parentPhone,
-        language: 'Telugu', callTime: '08:30 AM', consentGiven: true, createdAt: new Date(Date.now() - 3 * 864e5),
+        language: 'Telugu', callTime: '08:30 AM', consentGiven: true, createdAt: new Date(Date.UTC(2026, 8, 20)),
         callSchedule: { create: [{ id: newId('slot'), time: '08:30 AM', slot: 'morning', label: 'Morning', linkedMedicineNames: meds.map(m => m.name), linkedMedicinesJson: JSON.stringify(meds) }] }
       }
     });
@@ -319,7 +321,7 @@ async function partB() {
     const log11b = await placedCall();
     await answer(log11b.providerAttemptId!, { all_medicines_taken: 'yes', health_concern: 'fever', mood: 'unwell' });
     check('level 3: emailed, still no WhatsApp', graph.requests.length === sent11 && emails.length === 3);
-    await prisma.notificationPreferences.update({ where: { userId: user.id }, data: { whatsappOptInAt: new Date() } });
+    await prisma.notificationPreferences.update({ where: { userId: user.id }, data: { whatsappOptInAt: new Date(), whatsappVerifiedAt: new Date() } });
 
     console.log('\nB12. WhatsApp not configured → alert emails as before');
     const log12 = await placedCall();
@@ -336,11 +338,17 @@ async function partB() {
     const text = (from: string, id: string, body: string) => envelope({ messages: [{ from, id, timestamp: '1', type: 'text', text: { body } }] });
     await processWhatsAppWebhook(text(ownerDigits, `wamid.in.${stamp}.10`, 'STOP'), inboundDeps);
     let prefs = await prisma.notificationPreferences.findUnique({ where: { userId: user.id } });
-    check('STOP opts out', prefs?.whatsappOptInAt === null && prefs?.whatsapp === false);
+    check('STOP opts out', prefs?.whatsappOptInAt === null && prefs?.whatsapp === false && prefs?.whatsappVerifiedAt === null);
     check('STOP confirmed', graph.requests[graph.requests.length - 1].body.text?.body === WA_REPLIES.stopped);
     await processWhatsAppWebhook(text(ownerDigits, `wamid.in.${stamp}.11`, 'start'), inboundDeps);
     prefs = await prisma.notificationPreferences.findUnique({ where: { userId: user.id } });
     check('START opts back in (account number)', !!prefs?.whatsappOptInAt && prefs.whatsapp === true && prefs.whatsappNumber === null, prefs);
+    check('START from the number also proves it is theirs', !!prefs?.whatsappVerifiedAt, prefs);
+    // An account pointed at a number nobody has proven gets nothing: opt in with a stranger's number, then see no send.
+    await prisma.notificationPreferences.update({ where: { userId: user.id }, data: { whatsappNumber: '+919123456780', whatsappVerifiedAt: null } });
+    const unprovenUser = await prisma.user.findUnique({ where: { id: user.id }, include: { notificationPreferences: true } });
+    check('an unproven number is never a recipient', unprovenUser ? whatsappRecipient(unprovenUser) === null : false);
+    await prisma.notificationPreferences.update({ where: { userId: user.id }, data: { whatsappNumber: null, whatsappVerifiedAt: new Date() } });
     const r13 = await processWhatsAppWebhook(text(ownerDigits, `wamid.in.${stamp}.12`, 'How is amma?'), inboundDeps);
     check('other text gets the auto-reply', r13.replies === 1 && (graph.requests[graph.requests.length - 1].body.text?.body || '').includes('http://app.test/dashboard'));
     const r13b = await processWhatsAppWebhook(text(ownerDigits, `wamid.in.${stamp}.13`, 'Hello?'), inboundDeps);

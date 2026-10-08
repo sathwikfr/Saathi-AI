@@ -67,6 +67,7 @@ const GROUPS: Group[] = [
       { name: 'NEXT_PUBLIC_RAZORPAY_KEY_ID', hint: 'The same Key ID again (the browser needs it)' },
       { name: 'RAZORPAY_KEY_SECRET', hint: 'Shown once when you generate the key' },
       { name: 'RAZORPAY_WEBHOOK_SECRET', hint: 'Any random string; paste the same value in Razorpay → Webhooks (generated locally already)' },
+      { name: 'RAZORPAY_PLAN_ID_ESSENTIAL', hint: 'Printed by the same script' },
       { name: 'RAZORPAY_PLAN_ID_SOLO', hint: 'Run: npx tsx scripts/create-razorpay-plans.ts --confirm' },
       { name: 'RAZORPAY_PLAN_ID_FAMILY', hint: 'Printed by the same script' },
       { name: 'RAZORPAY_PLAN_ID_EXTENDED', hint: 'Printed by the same script' }
@@ -92,6 +93,35 @@ const GROUPS: Group[] = [
       { name: 'SARVAM_AGENT_PHONE_NUMBER', hint: 'The number you rented, in +91… format' },
       { name: 'SARVAM_WEBHOOK_SECRET', hint: 'Random string (already generated locally); use it as the agent tool bearer token' }
     ]
+  },
+  {
+    title: 'Emergency phone calls (Sarvam "Aaptha Alert" agent)',
+    why: 'Phones you and a nearby contact in an emergency, and neighbours when a parent who lives alone is unreachable. Without it, escalations send WhatsApp/email only.',
+    checks: [
+      { name: 'SARVAM_ALERT_APP_ID', hint: 'The second agent in docs/sarvam-agent.md §9' },
+      { name: 'SARVAM_ALERT_APP_VERSION', hint: 'Its committed version number' }
+    ]
+  },
+  {
+    title: 'Family AI and scam check (Claude)',
+    why: '"Ask about your parent" and the WhatsApp scam check. Optional: everything else works without it.',
+    optional: true,
+    checks: [{ name: 'ANTHROPIC_API_KEY', hint: 'platform.claude.com → API keys' }]
+  },
+  {
+    title: 'Health record vault (Supabase Storage)',
+    why: 'Private storage for reports, scans and bills. Optional: the vault shows "not switched on" without it.',
+    optional: true,
+    checks: [
+      { name: 'SUPABASE_URL', hint: 'Supabase → Project settings → API → Project URL' },
+      { name: 'SUPABASE_SERVICE_ROLE_KEY', hint: 'Supabase → Project settings → API → service_role key (server only, never NEXT_PUBLIC)' }
+    ]
+  },
+  {
+    title: 'Support phone',
+    why: 'A human number parents can call to check Saathi is real or to stop the calls.',
+    optional: true,
+    checks: [{ name: 'NEXT_PUBLIC_SUPPORT_PHONE', hint: 'Any number a person answers, in +91… format' }]
   },
   {
     title: 'WhatsApp call updates (Meta Cloud API)',
@@ -147,6 +177,15 @@ async function checkDatabase(): Promise<string[]> {
     } catch {
       lines.push('✗ WhatsApp tables/columns are missing: apply the additive WhatsApp schema update (see CLAUDE.md, never --accept-data-loss)');
     }
+    try {
+      await prisma.escalation.findFirst({ select: { id: true } });
+      await prisma.healthInsight.findFirst({ select: { id: true } });
+      await prisma.healthDocument.findFirst({ select: { id: true } });
+      await prisma.parentProfile.findFirst({ select: { parentConsent: true, cardToken: true, companionEnabled: true } });
+      lines.push('✓ v1 care tables/columns exist (escalations, insights, vault, consent)');
+    } catch {
+      lines.push('✗ v1 care tables/columns are missing: apply the reviewed additive SQL (docs/v1-care-plan.md, never --accept-data-loss)');
+    }
     await prisma.$disconnect();
   } catch (err) {
     lines.push(`✗ database not reachable: ${err instanceof Error ? err.message.split('\n')[0].slice(0, 120) : 'unknown error'}`);
@@ -187,7 +226,7 @@ async function checkRazorpay(): Promise<string[]> {
   }
   lines.push('✓ Subscriptions enabled');
 
-  for (const name of ['RAZORPAY_PLAN_ID_SOLO', 'RAZORPAY_PLAN_ID_FAMILY', 'RAZORPAY_PLAN_ID_EXTENDED']) {
+  for (const name of ['RAZORPAY_PLAN_ID_ESSENTIAL', 'RAZORPAY_PLAN_ID_SOLO', 'RAZORPAY_PLAN_ID_FAMILY', 'RAZORPAY_PLAN_ID_EXTENDED']) {
     const planId = process.env[name];
     if (!isSet(planId)) continue;
     const s = await status(`/plans/${encodeURIComponent(planId!)}`);

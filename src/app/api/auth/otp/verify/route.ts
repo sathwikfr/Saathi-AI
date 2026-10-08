@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server';
 import { getUserByPhone, isPhoneRegistered, createUser } from '@/lib/db';
 import { AUTH_COOKIE_NAME } from '@/lib/auth';
-import { verifyAndConsumeOtp, createDBSession } from '@/lib/security';
+import { verifyAndConsumeOtp, createDBSession, isCrossSiteRequest, CROSS_SITE_ERROR } from '@/lib/security';
 import { normalizePhone } from '@/lib/phone';
 
 export async function POST(req: Request) {
+  // Another site must not be able to log a visitor into an account it controls (login CSRF).
+  if (isCrossSiteRequest(req.headers)) return NextResponse.json(CROSS_SITE_ERROR, { status: 403 });
   try {
     const { phone, code, purpose = 'login', name, rememberMe = true } = await req.json();
 

@@ -3,7 +3,7 @@
 import React, { useState, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { PLANS, getPlan } from '@/lib/plans';
+import { PLANS, PAID_PLAN_IDS, getPlan, HEALTH_MONITOR, DAILY_TOUCHES, healthMonitorPrice, cleanAddons, monthlyPrice } from '@/lib/plans';
 import { PlanId } from '@/lib/types';
 import { Check, AlertCircle, ArrowRight, ShieldCheck } from 'lucide-react';
 import { CheckoutShell, PageTitle, CheckRow, SummaryRow } from '@/components/checkout/CheckoutUI';
@@ -13,15 +13,21 @@ function ConfirmContent() {
   const searchParams = useSearchParams();
   // Only paid plans are offered: each starts with a 7-day trial once AutoPay is set up (old ?plan=free links land on Family).
   const requestedPlan = searchParams.get('plan');
-  const initialPlan: PlanId = requestedPlan === 'solo' || requestedPlan === 'extended' ? requestedPlan : 'family';
+  const initialPlan: PlanId = requestedPlan === 'essential' || requestedPlan === 'solo' || requestedPlan === 'extended' ? requestedPlan : 'family';
 
   const [selectedPlanId, setSelectedPlanId] = useState<PlanId>(initialPlan);
+  // Add-ons on a calling plan: Health Monitor and Daily Touches. ?monitor=1 / ?touches=1 pre-tick them.
+  const [wantsMonitor, setWantsMonitor] = useState(searchParams.get('monitor') === '1');
+  const [wantsTouches, setWantsTouches] = useState(searchParams.get('touches') === '1');
   const [parentConsentChecked, setParentConsentChecked] = useState(false);
   const [termsChecked, setTermsChecked] = useState(false);
   const [errorNotice, setErrorNotice] = useState('');
   const [loading, setLoading] = useState(false);
 
   const plan = getPlan(selectedPlanId);
+  const add = cleanAddons(plan.id, { healthMonitor: wantsMonitor, dailyTouches: wantsTouches });
+  const offersAddons = plan.channel === 'call' && plan.priceMonthly > 0;
+  const price = monthlyPrice(plan.id, add);
 
   // Calculate trial and first billing dates
   const [today] = useState(() => Date.now());
@@ -45,7 +51,7 @@ function ConfirmContent() {
     }
 
     setLoading(true);
-    router.push(`/checkout/payment?plan=${plan.id}`);
+    router.push(`/checkout/payment?plan=${plan.id}${add.healthMonitor ? '&monitor=1' : ''}${add.dailyTouches ? '&touches=1' : ''}`);
   };
 
   return (
@@ -56,7 +62,7 @@ function ConfirmContent() {
         {/* PLAN */}
         <section className="panel" aria-labelledby="plan-title">
           <div className="plan-options" role="radiogroup" aria-label="Plan" style={{ marginBottom: '24px' }}>
-            {(['solo', 'family', 'extended'] as PlanId[]).map((pid) => {
+            {PAID_PLAN_IDS.map((pid) => {
               const p = PLANS[pid];
               return (
                 <button
@@ -81,7 +87,7 @@ function ConfirmContent() {
             </div>
             <div style={{ textAlign: 'right', flexShrink: 0 }}>
               <div style={{ fontFamily: 'var(--font-serif)', fontSize: '2.2rem', fontWeight: 500, letterSpacing: '-0.03em', lineHeight: 1 }}>
-                ₹{plan.priceMonthly}
+                ₹{price}
               </div>
               <div style={{ fontSize: '0.8rem', color: 'var(--ink-muted)', marginTop: '4px' }}>
                 {plan.priceMonthly === 0 ? 'for 7 days' : 'per month'}
@@ -99,6 +105,35 @@ function ConfirmContent() {
               </li>
             ))}
           </ul>
+
+          {offersAddons && (
+            <div style={{ marginTop: '16px', display: 'grid', gap: '10px' }}>
+              <label className="notice" style={{ margin: 0, display: 'flex', gap: '12px', alignItems: 'flex-start', cursor: 'pointer' }}>
+                <input type="checkbox" checked={wantsMonitor} onChange={e => setWantsMonitor(e.target.checked)} style={{ marginTop: '4px' }} />
+                <span>
+                  <strong>Add {HEALTH_MONITOR.name}: +₹{healthMonitorPrice(plan.id)}/month</strong>
+                  <span style={{ display: 'block', fontSize: '0.86rem', color: 'var(--ink-muted)', marginTop: '2px' }}>
+                    {HEALTH_MONITOR.tagline}. {plan.parentsIncluded > 1 ? `A short readings call a day for each parent (up to ${plan.parentsIncluded}).` : 'A short call a day just for the readings.'} You can add it later too.
+                  </span>
+                </span>
+              </label>
+              <label className="notice" style={{ margin: 0, display: 'flex', gap: '12px', alignItems: 'flex-start', cursor: 'pointer' }}>
+                <input type="checkbox" checked={wantsTouches} onChange={e => setWantsTouches(e.target.checked)} style={{ marginTop: '4px' }} />
+                <span>
+                  <strong>Add {DAILY_TOUCHES.name}: +₹{DAILY_TOUCHES.priceMonthly}/month</strong>
+                  <span style={{ display: 'block', fontSize: '0.86rem', color: 'var(--ink-muted)', marginTop: '2px' }}>
+                    {DAILY_TOUCHES.tagline}. Only on a call that has room, so calls stay short.
+                  </span>
+                </span>
+              </label>
+            </div>
+          )}
+
+          {plan.channel === 'whatsapp' && (
+            <p className="notice teal" style={{ marginTop: '16px', marginBottom: 0, fontSize: '0.86rem' }}>
+              {plan.name} sends WhatsApp reminders only: Saathi does not call. For check-in calls to a parent, choose {PLANS.solo.name} or bigger.
+            </p>
+          )}
         </section>
 
         {/* SUMMARY + CONSENT */}
@@ -109,8 +144,14 @@ function ConfirmContent() {
             {plan.hasTrial ? (
               <>
                 <SummaryRow label={`Due today (${plan.trialDays}-day trial)`} value="₹0" tone="green" strong />
-                <SummaryRow label={`First charge on ${formattedTrialEnd}`} value={`₹${plan.priceMonthly}`} />
-                <SummaryRow label="After that" value={`₹${plan.priceMonthly} every month`} />
+                <SummaryRow label={`First charge on ${formattedTrialEnd}`} value={`₹${price}`} />
+                <SummaryRow label="After that" value={`₹${price} every month`} />
+                {(add.healthMonitor || add.dailyTouches) && (
+                  <SummaryRow
+                    label="Includes"
+                    value={`${plan.name} ₹${plan.priceMonthly}${add.healthMonitor ? ` + ${HEALTH_MONITOR.name} ₹${healthMonitorPrice(plan.id)}` : ''}${add.dailyTouches ? ` + ${DAILY_TOUCHES.name} ₹${DAILY_TOUCHES.priceMonthly}` : ''}`}
+                  />
+                )}
               </>
             ) : (
               <>
@@ -127,9 +168,15 @@ function ConfirmContent() {
             </p>
           )}
 
-          <CheckRow checked={parentConsentChecked} onChange={(v) => { setParentConsentChecked(v); setErrorNotice(''); }} title="My parent knows and has agreed">
-            I&apos;ve told my parent(s) about Saathi and they&apos;re happy to receive check-in calls on their phone.
-          </CheckRow>
+          {plan.channel === 'whatsapp' ? (
+            <CheckRow checked={parentConsentChecked} onChange={(v) => { setParentConsentChecked(v); setErrorNotice(''); }} title="Whoever gets the reminders agrees">
+              The reminders are for me, or the person they are for knows about them. They start them by sending START on WhatsApp and can stop them any time.
+            </CheckRow>
+          ) : (
+            <CheckRow checked={parentConsentChecked} onChange={(v) => { setParentConsentChecked(v); setErrorNotice(''); }} title="My parent knows and has agreed">
+              I&apos;ve told my parent(s) about Saathi and they&apos;re happy to receive check-in calls on their phone.
+            </CheckRow>
+          )}
           <CheckRow checked={termsChecked} onChange={(v) => { setTermsChecked(v); setErrorNotice(''); }} title="Not a medical service">
             I understand Aaptha is a family check-in companion, not a doctor or an emergency service.
             {' '}By continuing I agree to the <Link href="/terms" target="_blank">Terms of Service</Link> and <Link href="/privacy" target="_blank">Privacy Policy</Link>.

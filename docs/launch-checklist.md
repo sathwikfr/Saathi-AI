@@ -55,7 +55,7 @@ GitHub runs can be a few minutes late and pause after 60 days without repository
 Google Cloud Console → Credentials → OAuth client (Web) → add your domain as an authorised origin → set `GOOGLE_CLIENT_ID` and `NEXT_PUBLIC_GOOGLE_CLIENT_ID`. The button appears automatically.
 
 ## 7. Live test before real families (about 15 minutes, use your own phone)
-Follow `docs/sarvam-agent.md` §8: an answered call with a missed medicine, a "chest pain" call (expect a level-4 alert and a critical email), and an unanswered call (expect a retry 15 minutes later and a "couldn't reach" alert after the third miss).
+Follow `docs/sarvam-agent.md` §8: an answered call with a missed medicine, a "chest pain" call (expect a level-4 alert and a critical email), and an unanswered call (expect a retry 30 minutes later and a "couldn't reach" alert after the third miss).
 
 ## 8. Legal
 The Privacy Policy and Terms pages are written from how the product works. Have a lawyer read them once, especially the refund, liability and governing-law clauses, before you take payments.

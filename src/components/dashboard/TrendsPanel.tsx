@@ -1,12 +1,19 @@
 'use client';
 
-import React from 'react';
-import { Download, LineChart } from 'lucide-react';
-import { CallStats, moodLabel } from './helpers';
+import React, { useMemo } from 'react';
+import { Download, LineChart, Sparkles } from 'lucide-react';
+import { CallStats, moodLabel, callLogToFact, formatCallTime } from './helpers';
 import { CountUp } from '@/components/motion/CountUp';
+import { computeBaseline } from '@/lib/insightRules';
+import { HealthInsight } from '@/lib/types';
 
-export function TrendsPanel({ parentName, stats, onExport }: { parentName: string; stats: CallStats; onExport: () => void }) {
+type Props = { parentName: string; stats: CallStats; insights: HealthInsight[]; onExport: () => void };
+
+export function TrendsPanel({ parentName, stats, insights, onExport }: Props) {
   const { completedCalls, adherencePct, reachabilityPct, answered30, last30, confirmed30, moodBreakdown, last7Days } = stats;
+  // The parent's own normal (last 60 days before this week) vs this week: their "health twin".
+  const base = useMemo(() => computeBaseline(completedCalls.map(callLogToFact), new Date()), [completedCalls]);
+  const shownInsights = insights.filter(i => i.kind !== 'combined').slice(0, 6);
 
   if (completedCalls.length === 0) {
     return (
@@ -49,6 +56,57 @@ export function TrendsPanel({ parentName, stats, onExport }: { parentName: strin
           </p>
         </div>
       </div>
+
+      {base.usual.answeredCalls >= 5 && (
+        <section className="panel" aria-labelledby="usual-title">
+          <div className="panel-head">
+            <div>
+              <h3 id="usual-title">This week vs {parentName}&apos;s usual</h3>
+              <p>Compared with {parentName}&apos;s own last two months, not with anyone else.</p>
+            </div>
+          </div>
+          <div className="kv">
+            <div>
+              <span>Picks up</span>
+              <strong>{base.thisWeek.answerRatePct ?? '—'}% <small style={{ color: 'var(--ink-subtle)', fontWeight: 500 }}>usually {base.usual.answerRatePct ?? '—'}%</small></strong>
+            </div>
+            <div>
+              <span>Takes medicines</span>
+              <strong>{base.thisWeek.adherencePct ?? '—'}% <small style={{ color: 'var(--ink-subtle)', fontWeight: 500 }}>usually {base.usual.adherencePct ?? '—'}%</small></strong>
+            </div>
+            <div>
+              <span>Mood</span>
+              <strong>{moodLabel(base.thisWeek.usualMood || undefined)} <small style={{ color: 'var(--ink-subtle)', fontWeight: 500 }}>usually {moodLabel(base.usual.usualMood || undefined).toLowerCase()}</small></strong>
+            </div>
+            <div>
+              <span>Often mentions</span>
+              <strong>{base.usual.commonComplaints.map(c => c.label).join(', ') || 'Nothing in particular'}</strong>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {shownInsights.length > 0 && (
+        <section className="panel" aria-labelledby="noticed-title">
+          <div className="panel-head">
+            <div>
+              <h3 id="noticed-title"><Sparkles size={18} style={{ verticalAlign: '-3px', marginRight: '6px' }} />Noticed across calls</h3>
+              <p>Patterns over several days. A nudge to check in, never a diagnosis.</p>
+            </div>
+          </div>
+          <div className="list">
+            {shownInsights.map(i => (
+              <div key={i.id} className="list-row">
+                <div className="row-main">
+                  <div className="row-title">{i.title}</div>
+                  <div className="row-sub" style={{ textTransform: 'none' }}>{i.message}</div>
+                </div>
+                <span style={{ fontSize: '0.8rem', color: 'var(--ink-subtle)', whiteSpace: 'nowrap' }}>{formatCallTime(i.createdAt)}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="panel" aria-labelledby="week-title">
         <div className="panel-head">

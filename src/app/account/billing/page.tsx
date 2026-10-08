@@ -2,9 +2,10 @@
 
 import React, { useState, useEffect } from 'react';
 import { AccountShell } from '@/components/account/AccountUI';
+import { BillShare } from '@/components/account/BillShare';
 import { Modal } from '@/components/ui/Modal';
 import { useAuth } from '@/context/AuthContext';
-import { PLANS, getEffectivePlan } from '@/lib/plans';
+import { PLANS, PAID_PLAN_IDS, getEffectivePlan } from '@/lib/plans';
 import { PlanId, Invoice, UserSubscription } from '@/lib/types';
 import { CreditCard, AlertTriangle, CheckCircle, Download, ArrowUpRight, Shield, X, HeartCrack } from 'lucide-react';
 
@@ -137,6 +138,9 @@ export default function AccountBillingPage() {
 
   const status = subscription?.status || 'free';
   const isFree = currentPlan.priceMonthly === 0;
+  // What is actually charged each month: the plan plus any add-ons (Health Monitor, Daily Touches).
+  const monthlyTotal = isFree ? 0 : subscription?.amount ?? currentPlan.priceMonthly;
+  const addonNames = [subscription?.healthMonitor ? 'Health Monitor' : '', subscription?.dailyTouches ? 'Daily Touches' : ''].filter(Boolean);
   const formatDate = (d?: string) =>
     d ? new Date(d).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' }) : null;
   const periodEnd = formatDate(subscription?.currentPeriodEnd);
@@ -182,12 +186,12 @@ export default function AccountBillingPage() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px', marginBottom: '18px' }}>
                 <div>
                   <span className={`badge ${statusBadge.cls}`} style={{ marginBottom: '10px' }}>{statusBadge.text}</span>
-                  <h2 id="plan-title" style={{ fontSize: '1.6rem', letterSpacing: '-0.02em' }}>{currentPlan.name}</h2>
+                  <h2 id="plan-title" style={{ fontSize: '1.6rem', letterSpacing: '-0.02em' }}>{currentPlan.name}{addonNames.length > 0 && ` + ${addonNames.join(' + ')}`}</h2>
                   <p style={{ fontSize: '0.9rem', color: 'var(--ink-muted)', marginTop: '2px' }}>{currentPlan.tagline}</p>
                 </div>
                 <div style={{ textAlign: 'right', flexShrink: 0 }}>
                   <div style={{ fontFamily: 'var(--font-serif)', fontSize: '2.2rem', fontWeight: 500, letterSpacing: '-0.03em', lineHeight: 1 }}>
-                    ₹{currentPlan.priceMonthly}
+                    ₹{monthlyTotal}
                   </div>
                   <div style={{ fontSize: '0.8rem', color: 'var(--ink-muted)', marginTop: '4px' }}>{isFree ? 'no plan yet' : 'per month'}</div>
                 </div>
@@ -195,12 +199,12 @@ export default function AccountBillingPage() {
 
               <div className="summary">
                 <div className="summary-row">
-                  <span>Parents</span>
+                  <span>{currentPlan.channel === 'whatsapp' ? 'People' : 'Parents'}</span>
                   <b>Up to {currentPlan.parentsIncluded}</b>
                 </div>
                 <div className="summary-row">
-                  <span>Calls per parent</span>
-                  <b>Up to {currentPlan.callsPerDay} a day</b>
+                  <span>{currentPlan.channel === 'whatsapp' ? 'WhatsApp medicine checks' : 'Calls per parent'}</span>
+                  <b>Up to {currentPlan.channel === 'whatsapp' ? currentPlan.remindersPerDay : currentPlan.callsPerDay} a day</b>
                 </div>
                 {!isFree && periodEnd && (
                   <div className="summary-row">
@@ -316,6 +320,8 @@ export default function AccountBillingPage() {
         </>
       )}
 
+      <BillShare onNotify={(type, message) => setNotification({ type, message })} />
+
       {/* CHANGE PLAN */}
       <Modal open={showSwitchModal} onClose={() => setShowSwitchModal(false)} labelledBy="switch-title">
         <h2 id="switch-title" style={{ fontSize: '1.45rem', letterSpacing: '-0.02em', marginBottom: '6px', paddingRight: '32px' }}>Change your plan</h2>
@@ -324,7 +330,7 @@ export default function AccountBillingPage() {
         </p>
 
         <div role="radiogroup" aria-label="Plans" style={{ display: 'grid', gap: '8px', marginBottom: '22px' }}>
-          {(['free', 'solo', 'family', 'extended'] as PlanId[]).map((pid) => {
+          {(['free', ...PAID_PLAN_IDS] as PlanId[]).map((pid) => {
             const p = PLANS[pid];
             const isCurrent = currentPlan.id === pid;
             return (
@@ -342,7 +348,11 @@ export default function AccountBillingPage() {
                     {p.name}
                     {isCurrent && <span className="badge badge-neutral" style={{ fontSize: '0.7rem' }}>Current</span>}
                   </strong>
-                  <span>{p.parentsIncluded} parent{p.parentsIncluded === 1 ? '' : 's'} · up to {p.callsPerDay} call{p.callsPerDay === 1 ? '' : 's'} a day</span>
+                  <span>
+                    {p.channel === 'whatsapp'
+                      ? `1 person · WhatsApp medicine checks, up to ${p.remindersPerDay} a day, caretaker told, no calls`
+                      : `${p.parentsIncluded} parent${p.parentsIncluded === 1 ? '' : 's'} · up to ${p.callsPerDay} call${p.callsPerDay === 1 ? '' : 's'} a day`}
+                  </span>
                 </div>
                 <strong style={{ fontSize: '1rem' }}>{p.priceMonthly === 0 ? 'Free' : `₹${p.priceMonthly}/mo`}</strong>
               </button>

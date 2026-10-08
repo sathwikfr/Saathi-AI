@@ -11,6 +11,10 @@ export interface WhatsAppStatus {
   optedIn: boolean;
   optedInAt: string | null;
   number: string;
+  /** This number has sent us START, so updates are really being sent. */
+  verified: boolean;
+  /** wa.me link that opens WhatsApp with START ready to send (null when already proven). */
+  startLink: string | null;
 }
 
 export function useWhatsAppStatus() {
@@ -96,8 +100,22 @@ export function WhatsAppSettings() {
     return (
       <div className="toggle-row" style={{ alignItems: 'flex-start' }}>
         <div>
-          <strong><MessageCircle size={16} color="var(--green)" /> WhatsApp <span className="badge badge-green">On</span></strong>
-          <p>Call updates and alerts go to {pretty(status.number)}. Reply STOP on WhatsApp at any time to turn them off.</p>
+          <strong><MessageCircle size={16} color="var(--green)" /> WhatsApp {status.verified ? <span className="badge badge-green">On</span> : <span className="badge">Waiting for START</span>}</strong>
+          {status.verified ? (
+            <p>Call updates and alerts go to {pretty(status.number)}. Reply STOP on WhatsApp at any time to turn them off.</p>
+          ) : (
+            <>
+              <p>
+                <strong>One more step:</strong> to make sure {pretty(status.number)} is really your number, send the word START to Aaptha from that WhatsApp.
+                Updates begin as soon as we receive it.
+              </p>
+              {status.startLink && (
+                <p style={{ marginTop: '6px' }}>
+                  <a className="btn btn-primary btn-sm" href={status.startLink} target="_blank" rel="noopener noreferrer">Open WhatsApp and send START</a>
+                </p>
+              )}
+            </>
+          )}
           {notLive}
           {error && <p className="form-error" role="alert">{error}</p>}
         </div>

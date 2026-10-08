@@ -1,9 +1,13 @@
 /**
- * Creates the 3 WhatsApp templates the app sends, exactly as WHATSAPP_TEMPLATES in
+ * Creates the WhatsApp templates the app sends, exactly as WHATSAPP_TEMPLATES in
  * src/lib/whatsapp.ts defines them (same text, placeholders and quick-reply order).
  *
  *   npx tsx scripts/create-whatsapp-templates.ts --waba <WhatsApp Business account id> --app-url https://your-domain
  *   ... add --confirm to actually submit (without it: dry run, prints what would be sent)
+ *   ... add --languages hi,te,ta,kn,ml,bn,mr,gu (or "all") to also submit the translations of the three Remind
+ *       templates the person reads (medicine check, check-up reminder, weekly progress). DRAFT translations
+ *       (src/lib/waTranslations.ts): have a native speaker check them first. Until a translation is approved the
+ *       app sends the English template, so nothing is lost.
  *
  * Templates belong to one WhatsApp Business account (WABA): run it again for the real
  * account when you move off Meta's test number. Uses WHATSAPP_ACCESS_TOKEN from .env.local
@@ -12,17 +16,31 @@
  */
 import { config } from 'dotenv';
 import { WHATSAPP_TEMPLATES, WhatsAppTemplateKind, DEFAULT_WHATSAPP_API_VERSION } from '../src/lib/whatsapp';
+import { PHRASES, META_LANGUAGE } from '../src/lib/waTranslations';
 
 config({ path: '.env.local', quiet: true });
 config({ path: '.env', quiet: true });
 
-const BUTTON_TEXT: Record<string, string> = { ack: "I'll handle it", recall: 'Call again' };
+const BUTTON_TEXT: Record<string, string> = {
+  ack: "I'll handle it",
+  recall: 'Call again',
+  rem_taken: 'Yes, taken',
+  rem_not_yet: 'Not yet',
+  care_ack: "I'll handle it"
+};
 const EMERGENCY_ACK_TEXT = "I'm on it";
 
 const EXAMPLES: Record<WhatsAppTemplateKind, string[]> = {
   call_update: ['Amma', 'Answered the morning call at 09:10 AM. Medicines: Telmisartan taken, Metformin taken. Mood: cheerful.'],
   attention: ['Amma', 'Amma said she has not taken Metformin this evening. Call details: Answered the evening call at 08:05 PM.'],
-  emergency: ['Amma', 'During the afternoon call, Amma may have described an emergency: "chest pain".', '+91 98765 43210']
+  emergency: ['Amma', 'During the afternoon call, Amma may have described an emergency: "chest pain".', '+91 98765 43210'],
+  handled: ['Amma', 'Ravi (neighbour)'],
+  summary: ['weekly', 'Amma', 'Medicines taken on 19 of 21 calls (90%). Mood mostly calm. Mentioned knee pain on Tuesday and Friday.'],
+  reminder: ['Priya', '8:00 AM', 'Folic acid 5 mg (after food), Iron 1 tablet'],
+  caretakerAlert: ['Priya', 'Priya has not confirmed the 8:00 AM medicines (Folic acid, Iron) after 3 reminders. You may want to call Priya on +91 98765 43210.'],
+  caretaker: ['Priya', 'Good news: Priya has now confirmed the 8:00 AM medicines (at 9:42 AM).'],
+  appointment: ['Priya', 'Tomorrow at 10 AM: scan at Apollo Clinic. Needs an empty stomach.'],
+  weekly: ['Priya', 'This week you confirmed 13 of 14 medicine checks. Well done!']
 };
 
 function arg(name: string): string | undefined {
@@ -36,7 +54,8 @@ function buildTemplate(kind: WhatsAppTemplateKind, appUrl: string) {
     type: 'QUICK_REPLY',
     text: kind === 'emergency' && payload === 'ack' ? EMERGENCY_ACK_TEXT : BUTTON_TEXT[payload]
   }));
-  buttons.push({ type: 'URL', text: 'Open Aaptha', url: `${appUrl}/dashboard` });
+  // Medicine checks go to the person and their caretaker, who may have no Aaptha account: no dashboard link.
+  if (kind !== 'reminder' && kind !== 'caretaker' && kind !== 'caretakerAlert') buttons.push({ type: 'URL', text: 'Open Aaptha', url: `${appUrl}/dashboard` });
   return {
     name: tpl.name,
     language: process.env.WHATSAPP_TEMPLATE_LANGUAGE?.trim() || 'en',
@@ -44,6 +63,24 @@ function buildTemplate(kind: WhatsAppTemplateKind, appUrl: string) {
     components: [
       { type: 'BODY', text: tpl.body, example: { body_text: [EXAMPLES[kind]] } },
       { type: 'BUTTONS', buttons }
+    ]
+  };
+}
+
+/** The translated version of a template the person reads (null for the others, which stay English). */
+function buildTranslation(kind: WhatsAppTemplateKind, lang: keyof typeof PHRASES) {
+  const p = PHRASES[lang];
+  const tpl = WHATSAPP_TEMPLATES[kind];
+  const body = kind === 'reminder' ? p.tplReminder : kind === 'appointment' ? p.tplAppointment : kind === 'weekly' ? p.tplWeekly : null;
+  if (!body) return null;
+  const buttons = kind === 'reminder' ? [{ type: 'QUICK_REPLY', text: p.tplYes }, { type: 'QUICK_REPLY', text: p.tplNotYet }] : [];
+  return {
+    name: tpl.name,
+    language: META_LANGUAGE[lang],
+    category: 'UTILITY',
+    components: [
+      { type: 'BODY', text: body, example: { body_text: [EXAMPLES[kind]] } },
+      ...(buttons.length ? [{ type: 'BUTTONS', buttons }] : [])
     ]
   };
 }
@@ -70,24 +107,40 @@ async function main() {
     console.error(`Meta error ${existing.error.code}: ${existing.error.message}`);
     process.exit(1);
   }
-  const have = new Map<string, string>((existing.data || []).map((t: { name: string; status: string }) => [t.name, t.status]));
+  const keyOf = (name: string, language: string) => `${name}|${language}`;
+  const have = new Map<string, string>((existing.data || []).map((t: { name: string; status: string; language: string }) => [keyOf(t.name, t.language), t.status]));
 
+  const langArg = arg('--languages');
+  const langs = (langArg === 'all' ? Object.keys(PHRASES) : (langArg || '').split(',').map(x => x.trim()).filter(Boolean)) as Array<keyof typeof PHRASES>;
+  const unknown = langs.filter(l => !(l in PHRASES));
+  if (unknown.length) {
+    console.error(`Unknown language(s): ${unknown.join(', ')}. Use: ${Object.keys(PHRASES).join(', ')} or all`);
+    process.exit(1);
+  }
+  const jobs: Array<ReturnType<typeof buildTemplate>> = [];
   for (const kind of Object.keys(WHATSAPP_TEMPLATES) as WhatsAppTemplateKind[]) {
-    const body = buildTemplate(kind, appUrl);
-    if (have.has(body.name)) {
-      console.log(`= ${body.name}: already exists (status ${have.get(body.name)}), left unchanged`);
+    jobs.push(buildTemplate(kind, appUrl));
+    for (const lang of langs) {
+      const t = buildTranslation(kind, lang);
+      if (t) jobs.push(t as ReturnType<typeof buildTemplate>);
+    }
+  }
+
+  for (const body of jobs) {
+    if (have.has(keyOf(body.name, body.language))) {
+      console.log(`= ${body.name} (${body.language}): already exists (status ${have.get(keyOf(body.name, body.language))}), left unchanged`);
       continue;
     }
     if (!confirm) {
-      console.log(`would create ${body.name}:\n${JSON.stringify(body, null, 2)}\n`);
+      console.log(`would create ${body.name} (${body.language}):\n${JSON.stringify(body, null, 2)}\n`);
       continue;
     }
     const res = await fetch(base, { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const data = await res.json();
     if (data.error) {
-      console.log(`✗ ${body.name}: ${data.error.code} ${data.error.error_user_msg || data.error.message}`);
+      console.log(`✗ ${body.name} (${body.language}): ${data.error.code} ${data.error.error_user_msg || data.error.message}`);
     } else {
-      console.log(`✓ ${body.name}: submitted, status ${data.status} (id ${data.id})`);
+      console.log(`✓ ${body.name} (${body.language}): submitted, status ${data.status} (id ${data.id})`);
     }
   }
   if (!confirm) console.log('Dry run only. Add --confirm to submit.');

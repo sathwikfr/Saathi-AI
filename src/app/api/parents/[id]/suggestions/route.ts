@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server';
 import { updateScheduleSuggestionStatus } from '@/lib/db';
-import { requireOwnedParent } from '@/lib/access';
+import { requireParentAccess } from '@/lib/access';
 
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function POST(req: Request, { params }: Ctx) {
   const { id } = await params;
-  const access = await requireOwnedParent(id);
+  const access = await requireParentAccess(id, 'manage');
   if (!access.ok) return access.response;
 
   const { suggestionId, action } = await req.json();

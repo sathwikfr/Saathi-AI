@@ -16,7 +16,7 @@ import { config } from 'dotenv';
 // Same order as Next.js: .env.local wins over .env.
 config({ path: '.env.local', quiet: true });
 config({ path: '.env', quiet: true });
-import { PLANS } from '../src/lib/plans';
+import { PLANS, PAID_PLAN_IDS, HEALTH_MONITOR, DAILY_TOUCHES, monthlyPrice } from '../src/lib/plans';
 
 const PLACEHOLDER = /demo|CareCircle|xxxx|your_/i;
 
@@ -56,7 +56,7 @@ async function main() {
   }
 
   const results: Record<string, string> = {};
-  for (const plan of [PLANS.solo, PLANS.family, PLANS.extended]) {
+  for (const plan of PAID_PLAN_IDS.map(id => PLANS[id])) {
     const amountPaise = plan.priceMonthly * 100;
     const name = `Aaptha ${plan.name} (monthly)`;
     const found = existing.find(
@@ -87,11 +87,39 @@ async function main() {
     results[plan.id] = created.id;
   }
 
-  if (results.solo || results.family || results.extended) {
+  // Add-on combinations: a Razorpay plan is a fixed amount (add-ons are one-time charges), so Solo / Family / Extended each
+  // get a plan for Health Monitor, Daily Touches and both. Env: RAZORPAY_PLAN_ID_<PLAN>_MONITOR / _TOUCHES / _MONITOR_TOUCHES.
+  for (const planId of ['solo', 'family', 'extended'] as const) {
+    for (const add of [{ healthMonitor: true, dailyTouches: false }, { healthMonitor: false, dailyTouches: true }, { healthMonitor: true, dailyTouches: true }]) {
+      const price = monthlyPrice(planId, add);
+      const amountPaise = price * 100;
+      const label = [add.healthMonitor ? HEALTH_MONITOR.name : '', add.dailyTouches ? DAILY_TOUCHES.name : ''].filter(Boolean).join(' + ');
+      const name = `Aaptha ${PLANS[planId].name} + ${label} (monthly)`;
+      const key = `${planId}${add.healthMonitor ? '_MONITOR' : ''}${add.dailyTouches ? '_TOUCHES' : ''}`;
+      const found = existing.find(
+        p => p.item.name === name && p.item.amount === amountPaise && p.item.currency === 'INR' && p.period === 'monthly' && p.interval === 1
+      );
+      if (found) {
+        console.log(`✓ ${PLANS[planId].name} + ${label}: already exists at ₹${price}/month → ${found.id}`);
+        results[key] = found.id;
+      } else if (!confirm) {
+        console.log(`• ${PLANS[planId].name} + ${label}: would create ₹${price}/month (${amountPaise} paise)`);
+      } else {
+        const created: RzpPlan = await client.plans.create({
+          period: 'monthly',
+          interval: 1,
+          item: { name, amount: amountPaise, currency: 'INR', description: `${PLANS[planId].tagline}, plus ${label.toLowerCase()}.` },
+          notes: { carecircle_plan_id: planId, carecircle_addon: [add.healthMonitor ? HEALTH_MONITOR.id : '', add.dailyTouches ? DAILY_TOUCHES.id : ''].filter(Boolean).join(',') }
+        });
+        console.log(`+ ${PLANS[planId].name} + ${label}: created ₹${price}/month → ${created.id}`);
+        results[key] = created.id;
+      }
+    }
+  }
+
+  if (Object.keys(results).length > 0) {
     console.log('\nAdd these to .env (and to your hosting environment):');
-    if (results.solo) console.log(`RAZORPAY_PLAN_ID_SOLO=${results.solo}`);
-    if (results.family) console.log(`RAZORPAY_PLAN_ID_FAMILY=${results.family}`);
-    if (results.extended) console.log(`RAZORPAY_PLAN_ID_EXTENDED=${results.extended}`);
+    for (const [key, id] of Object.entries(results)) console.log(`RAZORPAY_PLAN_ID_${key.toUpperCase()}=${id}`);
   }
   if (!confirm) console.log('\nRun again with --confirm to create the missing plans.');
 }

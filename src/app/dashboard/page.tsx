@@ -6,12 +6,12 @@ import { AnimatePresence, motion } from 'motion/react';
 import { Navbar } from '@/components/Navbar';
 import { useAuth } from '@/context/AuthContext';
 import { Medicine, FoodRelation, ExtractedMedicineCandidate, ParentProfile } from '@/lib/types';
-import { Heart, Pause, Pencil, Plus, ArrowRight, Sparkles, CheckCircle2, AlertTriangle, Info, X, Phone, Languages, CalendarClock } from 'lucide-react';
+import { Heart, Pause, Pencil, Plus, ArrowRight, Sparkles, CheckCircle2, AlertTriangle, Info, X, Phone, Languages, CalendarClock, Siren, Users, MessageCircle } from 'lucide-react';
 import { SAMPLE_PRESCRIPTIONS } from '@/lib/medicineExtractor';
-import { formatScheduleSummary } from '@/lib/scheduleGenerator';
+import { formatScheduleSummary, formatReminderSummary } from '@/lib/scheduleGenerator';
 import { canAddParents, getEffectivePlan, freeTrialDaysLeft, smallestPlanFor } from '@/lib/plans';
 import {
-  ParentDetails, Toast, computeCallStats, formatCallTime, formatPhone, initial, downloadFile, safeFileName, displayName
+  ParentDetails, Toast, computeCallStats, formatCallTime, formatPhone, initial, downloadFile, safeFileName, displayName, canManage
 } from '@/components/dashboard/helpers';
 import { OverviewPanel } from '@/components/dashboard/OverviewPanel';
 import { FamilyOverview, parentStatus } from '@/components/dashboard/FamilyOverview';
@@ -20,10 +20,19 @@ import { CallHistoryPanel } from '@/components/dashboard/CallHistoryPanel';
 import { MedicinesPanel } from '@/components/dashboard/MedicinesPanel';
 import { AlertsPanel } from '@/components/dashboard/AlertsPanel';
 import { SettingsPanel } from '@/components/dashboard/SettingsPanel';
+import { TimelinePanel } from '@/components/dashboard/TimelinePanel';
+import { FamilyPanel } from '@/components/dashboard/FamilyPanel';
+import { RecordsPanel } from '@/components/dashboard/RecordsPanel';
+import { AskPanel } from '@/components/dashboard/AskPanel';
+import { AppointmentsCard } from '@/components/dashboard/AppointmentsCard';
+import { ReadingsPanel } from '@/components/dashboard/ReadingsPanel';
+import { SetupChecklist } from '@/components/dashboard/SetupChecklist';
 import { AddMedicineModal, PauseModal, InviteModal, DeleteParentModal, UploadReportModal, EditParentModal, ParentEdits } from '@/components/dashboard/DashboardModals';
 import { WhatsAppOptInBanner } from '@/components/account/WhatsAppSettings';
+import { RemindersPanel, ReminderSettings, ReminderChannelSwitch } from '@/components/dashboard/RemindersPanel';
+import { HealthMonitorCard } from '@/components/dashboard/HealthMonitorCard';
 
-type TabId = 'overview' | 'trends' | 'calls' | 'medicines' | 'alerts' | 'settings';
+type TabId = 'overview' | 'timeline' | 'trends' | 'calls' | 'medicines' | 'alerts' | 'family' | 'records' | 'settings';
 
 function DashboardContent() {
   const { user } = useAuth();
@@ -46,6 +55,7 @@ function DashboardContent() {
   const [newMedDosage, setNewMedDosage] = useState('1 tablet');
   const [newMedTiming, setNewMedTiming] = useState<Medicine['timeOfDay']>('morning');
   const [newMedFoodRelation, setNewMedFoodRelation] = useState<FoodRelation>('after_food');
+  const [newMedPurpose, setNewMedPurpose] = useState('');
 
   // Prescription Upload Modal State
   const [showUploadModal, setShowUploadModal] = useState(false);
@@ -54,14 +64,13 @@ function DashboardContent() {
   const [extractedMeds, setExtractedMeds] = useState<ExtractedMedicineCandidate[]>([]);
   const [uploadReportId, setUploadReportId] = useState<string | null>(null);
   const [confirmingUpload, setConfirmingUpload] = useState(false);
+  const [stopIds, setStopIds] = useState<string[]>([]);
 
   const [showPauseModal, setShowPauseModal] = useState(false);
   const [pauseReason, setPauseReason] = useState('');
   const [pauseDays, setPauseDays] = useState('7');
 
   const [showInviteModal, setShowInviteModal] = useState(false);
-  const [caregiverEmail, setCaregiverEmail] = useState('');
-  const [caregiverName, setCaregiverName] = useState('');
 
   const [testCalling, setTestCalling] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -100,12 +109,14 @@ function DashboardContent() {
       }
       if (res.ok) {
         const data = await res.json();
-        setParentsList(data.parents || []);
-        if (data.parents && data.parents.length > 0 && !selectedParentId) {
-          setSelectedParentId(data.parents[0].id);
+        // Own parents first, then parents shared through a family invite.
+        const all: ParentProfile[] = [...(data.parents || []), ...(data.sharedParents || [])];
+        setParentsList(all);
+        if (all.length > 0 && (!selectedParentId || !all.some(p => p.id === selectedParentId))) {
+          setSelectedParentId(all[0].id);
         }
         // Load every parent's day so the family overview can show real totals.
-        (data.parents || []).forEach((p: ParentProfile) => fetchParentDetails(p.id));
+        all.forEach((p: ParentProfile) => fetchParentDetails(p.id));
       }
     } catch (err) {
       console.error('Failed to load parents:', err);
@@ -207,7 +218,8 @@ function DashboardContent() {
           dosage: newMedDosage,
           timeOfDay: newMedTiming,
           foodRelation: newMedFoodRelation,
-          frequency: 'daily'
+          frequency: 'daily',
+          purpose: newMedPurpose.trim() || undefined
         })
       });
       const data = await res.json();
@@ -215,6 +227,7 @@ function DashboardContent() {
         setShowAddMedModal(false);
         setNewMedName('');
         setNewMedFoodRelation('after_food');
+        setNewMedPurpose('');
         const notes: string[] = data.scheduleNotes || [];
         setToastMessage({ text: ['Medicine added to the daily check-in routine.', ...notes].join(' '), type: 'success' });
         fetchParentDetails(selectedParentId);
@@ -306,7 +319,8 @@ function DashboardContent() {
             timingSlots: c.timingSlots && c.timingSlots.length > 0 ? c.timingSlots : [c.timeOfDay || 'morning'],
             foodRelation: c.foodRelation || 'not_specified',
             frequency: c.frequency || 'daily'
-          }))
+          })),
+          stopMedicineIds: stopIds
         })
       });
 
@@ -315,6 +329,7 @@ function DashboardContent() {
         setShowUploadModal(false);
         setExtractedMeds([]);
         setUploadFileName(null);
+        setStopIds([]);
         const notes: string[] = data.scheduleNotes || [];
         setToastMessage({ text: [data.message || 'Medicines added to schedule!', ...notes].join(' '), type: 'success' });
         fetchParentDetails(selectedParentId);
@@ -333,6 +348,7 @@ function DashboardContent() {
     setShowUploadModal(false);
     setExtractedMeds([]);
     setUploadFileName(null);
+    setStopIds([]);
   };
 
   // Toggle Medicine Active State
@@ -346,32 +362,6 @@ function DashboardContent() {
       fetchParentDetails(selectedParentId);
     } catch {
       // safe fallback
-    }
-  };
-
-  // Invite Caregiver
-  const handleInviteCaregiver = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!caregiverEmail.includes('@')) return;
-
-    try {
-      const res = await fetch(`/api/parents/${selectedParentId}/caregivers`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: caregiverEmail, name: caregiverName, role: 'co_manager' })
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setShowInviteModal(false);
-        setCaregiverEmail('');
-        setCaregiverName('');
-        setToastMessage({ text: data.message, type: 'success' });
-        fetchParentDetails(selectedParentId);
-      } else {
-        setToastMessage({ text: data.error || 'Failed to invite caregiver', type: 'error' });
-      }
-    } catch {
-      setToastMessage({ text: 'Failed to invite caregiver', type: 'error' });
     }
   };
 
@@ -466,12 +456,25 @@ function DashboardContent() {
             </>
           ) : (
             <>
-              <p style={{ marginBottom: '28px' }}>
-                Add your parent, their medicines and the times that suit them. It takes a few minutes, and Saathi takes it from there.
-              </p>
-              <Link href="/onboarding" className="btn btn-primary btn-lg">
-                Add your first parent <ArrowRight size={18} className="arrow" />
-              </Link>
+              {getEffectivePlan(user?.subscription, user?.createdAt).channel === 'whatsapp' ? (
+                <>
+                  <p style={{ marginBottom: '28px' }}>
+                    Add the medicines and the times, for you or someone in your family. Then the reminders arrive on WhatsApp.
+                  </p>
+                  <Link href="/onboarding" className="btn btn-primary btn-lg">
+                    Set up WhatsApp reminders <ArrowRight size={18} className="arrow" />
+                  </Link>
+                </>
+              ) : (
+                <>
+                  <p style={{ marginBottom: '28px' }}>
+                    Add your parent, their medicines and the times that suit them. It takes a few minutes, and Saathi takes it from there.
+                  </p>
+                  <Link href="/onboarding" className="btn btn-primary btn-lg">
+                    Add your first parent <ArrowRight size={18} className="arrow" />
+                  </Link>
+                </>
+              )}
             </>
           )}
         </div>
@@ -479,16 +482,54 @@ function DashboardContent() {
     );
   }
 
-  const rawParent = parentData?.parent || parentsList.find(p => p.id === selectedParentId) || parentsList[0];
+  const listed = parentsList.find(p => p.id === selectedParentId) || parentsList[0];
+  const rawParent = parentData?.parent || listed;
   const currentParent = { ...rawParent, name: displayName(rawParent.name) };
+  const role = parentData?.role || listed.accessRole || 'owner';
+  const manage = canManage(role);
+  const isOwner = role === 'owner';
+  // WhatsApp medicine reminders instead of calls (Remind plan, or switched in Settings). The server decides from
+  // the owner's plan; until the details load, the stored setting (or the signed-in owner's plan) stands in.
+  const waPerson = (parentData?.channel
+    ?? (rawParent.reminderChannel === 'whatsapp' || (isOwner && getEffectivePlan(user?.subscription, user?.createdAt).channel === 'whatsapp') ? 'whatsapp' : 'call')) === 'whatsapp';
+  // Family / Extended features follow the OWNER's plan (a shared viewer's own plan doesn't matter).
+  const premium = parentData?.ownerPlan?.premium ?? (isOwner ? getEffectivePlan(user?.subscription, user?.createdAt).premium : true);
+  // Add-ons (any calling plan): Health Monitor = BP / sugar / trends, Daily Touches = festivals, weather, helper.
+  const healthMonitor = parentData?.ownerPlan?.healthMonitor ?? (isOwner && !!user?.subscription?.healthMonitor);
+  const dailyTouches = parentData?.ownerPlan?.dailyTouches ?? (isOwner && !!user?.subscription?.dailyTouches);
+  const addonPlanId = parentData?.ownerPlan?.id ?? getEffectivePlan(user?.subscription, user?.createdAt).id;
+  const toast = (text: string, type: Toast['type'] = 'info') => setToastMessage({ text, type });
+  const refresh = () => fetchParentDetails(currentParent.id);
+  const liveEscalation = (parentData?.alerts || []).find(a => a.escalation?.status === 'active');
+  const handleOnIt = async (alertId: string) => {
+    const res = await fetch(`/api/parents/${currentParent.id}/alerts/${alertId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'on_it' })
+    });
+    const data = await res.json().catch(() => ({}));
+    toast(res.ok ? data.message : data.error || 'Could not save.', res.ok ? 'success' : 'error');
+    refresh();
+  };
+  const dismissNudge = async (insightId: string) => {
+    await fetch(`/api/parents/${currentParent.id}/insights/${insightId}`, { method: 'PATCH' });
+    refresh();
+  };
   const pendingSuggestion = parentData?.suggestions?.find(s => s.status === 'pending');
   const stats = computeCallStats(parentData?.callLogs || [], currentParent?.callSchedule || []);
+  const weekAgo = stats.now.getTime() - 7 * 86400000;
+  const nudge = (parentData?.insights || []).find(i => !i.dismissedAt && new Date(i.createdAt).getTime() >= weekAgo);
   const { activeSlots, completedCalls } = stats;
   const effectivePlan = getEffectivePlan(user?.subscription, user?.createdAt);
   const upgradeForParent = smallestPlanFor(parentsList.length + 1);
   const dailyCallCap = effectivePlan.callsPerDay;
-  const dailyCallCapExceeded = !effectivePlan.expired && activeSlots.length > dailyCallCap;
-  const trialDaysLeft = effectivePlan.id === 'free' && !effectivePlan.expired ? freeTrialDaysLeft(user?.createdAt) : null;
+  // Plan banners are about the signed-in user's own plan, so they only show on parents they pay for.
+  const dailyCallCapExceeded = isOwner && !waPerson && !effectivePlan.expired && activeSlots.length > dailyCallCap;
+  const reminderCap = effectivePlan.remindersPerDay || 4;
+  const reminderCapExceeded = isOwner && waPerson && effectivePlan.channel === 'whatsapp' && !effectivePlan.expired && activeSlots.length > reminderCap;
+  // Every person on this account gets WhatsApp reminders (Remind): the family header counts reminders, not calls.
+  const allWhatsApp = parentsList.length > 0 && parentsList.every(p => (detailsById[p.id]?.channel ?? (p.reminderChannel === 'whatsapp' || effectivePlan.channel === 'whatsapp' ? 'whatsapp' : 'call')) === 'whatsapp');
+  const trialDaysLeft = isOwner && effectivePlan.id === 'free' && !effectivePlan.expired ? freeTrialDaysLeft(user?.createdAt) : null;
   const openAlerts = (parentData?.alerts || []).filter(a => a.status !== 'resolved' && a.level >= 2).length;
 
   const handleExportCallHistory = () => {
@@ -503,18 +544,30 @@ function DashboardContent() {
         c.summary.replace(/\s+/g, ' ')
       ])
     ];
-    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+    // A cell starting with = + - @ would run as a formula when opened in Excel, and call summaries come from what was said on the call.
+    const safeCell = (v: unknown) => (/^[=+\-@\t\r]/.test(String(v)) ? `'${String(v)}` : String(v));
+    const csv = rows.map(r => r.map(v => `"${safeCell(v).replace(/"/g, '""')}"`).join(',')).join('\n');
     downloadFile(`aaptha_${safeFileName(currentParent.name)}_calls.csv`, csv, 'text/csv');
   };
 
-  const TABS: { id: TabId; label: string; count?: number }[] = [
+  const WHATSAPP_TABS: TabId[] = ['overview', 'medicines', 'alerts', 'records', 'settings'];
+  const ALL_TABS: { id: TabId; label: string; count?: number }[] = [
     { id: 'overview', label: 'Today' },
+    { id: 'timeline', label: 'Timeline' },
     { id: 'trends', label: 'Trends' },
     { id: 'calls', label: 'Calls' },
     { id: 'medicines', label: 'Medicines' },
     { id: 'alerts', label: 'Alerts', count: openAlerts },
+    { id: 'family', label: 'Family & emergency' },
+    { id: 'records', label: 'Records' },
     { id: 'settings', label: 'Settings' }
   ];
+  // WhatsApp reminders: no calls, so no call history, timeline, trends or emergency ladder.
+  // Solo: no Timeline (a Family / Extended feature).
+  const TABS = waPerson
+    ? ALL_TABS.filter(t => WHATSAPP_TABS.includes(t.id))
+    : premium ? ALL_TABS : ALL_TABS.filter(t => t.id !== 'timeline');
+  const shownTab: TabId = TABS.some(t => t.id === activeTab) ? activeTab : 'overview';
 
   const ToastIcon = toastMessage?.type === 'error' ? AlertTriangle : toastMessage?.type === 'info' ? Info : CheckCircle2;
 
@@ -556,6 +609,7 @@ function DashboardContent() {
           setActiveTab('overview');
         }}
         canAddMore={canAddParents(effectivePlan) && parentsList.length < effectivePlan.parentsIncluded}
+        whatsappOnly={allWhatsApp}
         upgradeHref={upgradeForParent ? `/checkout/confirm?plan=${upgradeForParent.id}` : undefined}
       />
 
@@ -566,6 +620,9 @@ function DashboardContent() {
           <div style={{ minWidth: 0 }}>
             <h1 className="dash-title">
               {displayName(currentParent.name)}
+              {!isOwner && listed.ownerName && (
+                <span className="badge badge-neutral"><Users size={12} /> Shared by {listed.ownerName.split(' ')[0]}</span>
+              )}
               {currentParent.isPaused ? (
                 <span className="badge badge-amber"><Pause size={12} /> Paused</span>
               ) : parentsList.length === 1 ? (
@@ -579,40 +636,78 @@ function DashboardContent() {
             </h1>
             <div className="dash-meta">
               <span><Phone size={14} /> {formatPhone(currentParent.phone)}</span>
-              <span><Languages size={14} /> {currentParent.language}</span>
-              <span><CalendarClock size={14} /> {activeSlots.length > 0 ? formatScheduleSummary(activeSlots) : 'No calls scheduled'}</span>
+              {waPerson ? (
+                <>
+                  <span><MessageCircle size={14} /> WhatsApp reminders, no calls</span>
+                  <span><CalendarClock size={14} /> {formatReminderSummary(activeSlots)}</span>
+                </>
+              ) : (
+                <>
+                  <span><Languages size={14} /> {currentParent.language}</span>
+                  <span><CalendarClock size={14} /> {activeSlots.length > 0 ? formatScheduleSummary(activeSlots) : 'No calls scheduled'}</span>
+                </>
+              )}
             </div>
           </div>
         </div>
-        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowEditModal(true)}>
-          <Pencil size={14} /> Edit details
-        </button>
+        {manage && (
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowEditModal(true)}>
+            <Pencil size={14} /> Edit details
+          </button>
+        )}
       </header>
+
+      {liveEscalation && (
+        <div className="banner red" role="alert">
+          <Siren size={20} />
+          <div>
+            <strong>Urgent: {liveEscalation.title}</strong>
+            <span>
+              We are phoning {currentParent.name}&apos;s contacts until someone says they are on it.
+              {' '}If it may be serious, call 112 or someone near {currentParent.name}.
+            </span>
+          </div>
+          <button onClick={() => handleOnIt(liveEscalation.id)} className="btn btn-primary btn-sm">I&apos;m on it</button>
+          <button onClick={() => setActiveTab('alerts')} className="btn btn-ghost btn-sm">Details</button>
+        </div>
+      )}
+
+      {nudge && !liveEscalation && (
+        <div className="banner gold" role="status">
+          <Heart size={20} />
+          <div>
+            <strong>Today might be a good day to call {currentParent.name.split(' ')[0]}</strong>
+            <span>{nudge.message}</span>
+          </div>
+          <button onClick={() => dismissNudge(nudge.id)} className="btn btn-quiet btn-sm">Got it</button>
+        </div>
+      )}
 
       {/* BANNERS */}
       {currentParent.isPaused && (
         <div className="banner amber" role="status">
           <Pause size={20} />
           <div>
-            <strong>Calls are paused{currentParent.pauseReason ? `: ${currentParent.pauseReason}` : ''}</strong>
+            <strong>{waPerson ? 'Reminders are paused' : 'Calls are paused'}{currentParent.pauseReason ? `: ${currentParent.pauseReason}` : ''}</strong>
             <span>
               {currentParent.pauseUntil
                 ? `They restart on ${new Date(currentParent.pauseUntil).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}.`
                 : 'They restart when you resume them.'}
             </span>
           </div>
-          <button onClick={() => handleTogglePause(false)} className="btn btn-primary btn-sm">Resume now</button>
+          {manage && <button onClick={() => handleTogglePause(false)} className="btn btn-primary btn-sm">Resume now</button>}
         </div>
       )}
 
-      <WhatsAppOptInBanner />
+      {/* Call updates only exist on calling plans (Remind has its own caretaker messages). */}
+      {!waPerson && <WhatsAppOptInBanner />}
 
-      {effectivePlan.expired && (
+      {isOwner && effectivePlan.expired && (
         <div className="banner amber" role="status">
           <AlertTriangle size={20} />
           <div>
             <strong>Your free trial has ended</strong>
-            <span>Daily check-in calls are paused. Choose a plan to restart them. Your parents&apos; details and history are safe.</span>
+            <span>{waPerson ? 'WhatsApp reminders are paused. Choose a plan to restart them.' : 'Daily check-in calls are paused. Choose a plan to restart them.'} Your details and history are safe.</span>
           </div>
           <Link href="/account/billing" className="btn btn-primary btn-sm">Choose a plan</Link>
         </div>
@@ -642,7 +737,19 @@ function DashboardContent() {
         </div>
       )}
 
-      {pendingSuggestion && (
+      {reminderCapExceeded && (
+        <div className="banner amber" role="status">
+          <AlertTriangle size={20} />
+          <div>
+            <strong>{effectivePlan.name} sends up to {reminderCap} reminder times a day</strong>
+            <span>
+              {currentParent.name} has {activeSlots.length}, so only {activeSlots.slice(0, reminderCap).map(s => s.time).join(', ')} are sent.
+            </span>
+          </div>
+        </div>
+      )}
+
+      {manage && pendingSuggestion && (
         <div className="banner gold">
           <span className="icon-tile gold"><Sparkles size={20} /></span>
           <div>
@@ -668,11 +775,11 @@ function DashboardContent() {
           <button
             key={tab.id}
             role="tab"
-            aria-selected={activeTab === tab.id}
+            aria-selected={shownTab === tab.id}
             className="tab"
             onClick={() => setActiveTab(tab.id)}
           >
-            {activeTab === tab.id && <motion.span layoutId="dash-tab-line" className="tab-line" />}
+            {shownTab === tab.id && <motion.span layoutId="dash-tab-line" className="tab-line" />}
             {tab.label}
             {!!tab.count && <span className="count">{tab.count}</span>}
           </button>
@@ -680,13 +787,51 @@ function DashboardContent() {
       </nav>
 
       <motion.div
-        key={`${currentParent.id}-${activeTab}`}
+        key={`${currentParent.id}-${shownTab}`}
         role="tabpanel"
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ type: 'spring', stiffness: 300, damping: 30 }}
       >
-        {activeTab === 'overview' && (
+        {shownTab === 'overview' && waPerson && (
+          <RemindersPanel
+            parent={currentParent}
+            reminders={parentData?.reminders || []}
+            start={parentData?.reminderStart}
+            medicines={parentData?.medicines || []}
+            manage={manage}
+            perDay={reminderCap}
+            onOpenMedicines={() => setActiveTab('medicines')}
+            onOpenSettings={() => setActiveTab('settings')}
+            caretakerIsMe={!!currentParent.caretakerPhone && currentParent.caretakerPhone === user?.phone}
+            onToast={toast}
+          />
+        )}
+
+        {shownTab === 'overview' && waPerson && (
+          <div style={{ marginTop: '20px' }}>
+            <AppointmentsCard key={`appt-${currentParent.id}`} parentId={currentParent.id} parentName={currentParent.name} manage={manage} onToast={toast} whatsapp />
+          </div>
+        )}
+
+        {shownTab === 'overview' && !waPerson && manage && parentData && (
+          <SetupChecklist
+            parent={currentParent}
+            familyName={user?.name || ''}
+            contacts={parentData.emergencyContacts}
+            saathiNumber={parentData.saathiNumber}
+            firstCallTime={activeSlots[0]?.time || null}
+            onChanged={refresh}
+            onToast={toast}
+            onOpenFamily={() => {
+              setActiveTab('family');
+              // The Family tab renders on the next frame; then bring the emergency plan into view.
+              setTimeout(() => document.getElementById('emergency-plan')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 120);
+            }}
+          />
+        )}
+
+        {shownTab === 'overview' && !waPerson && (
           <OverviewPanel
             parent={currentParent}
             medicines={parentData?.medicines || []}
@@ -698,40 +843,130 @@ function DashboardContent() {
             onInvite={() => setShowInviteModal(true)}
             onAddMedicine={() => setShowAddMedModal(true)}
             onOpenMedicines={() => setActiveTab('medicines')}
+            manage={manage}
+            isOwner={isOwner}
           />
         )}
 
-        {activeTab === 'trends' && (
-          <TrendsPanel parentName={currentParent.name} stats={stats} onExport={handleExportCallHistory} />
+        {shownTab === 'overview' && !waPerson && (
+          <div style={{ marginTop: '20px' }}>
+            <AppointmentsCard key={`appt-${currentParent.id}`} parentId={currentParent.id} parentName={currentParent.name} manage={manage} onToast={toast} />
+          </div>
         )}
 
-        {activeTab === 'calls' && (
+        {shownTab === 'overview' && !waPerson && (
+          <div style={{ marginTop: '20px' }}>
+            <AskPanel parentId={currentParent.id} parentName={currentParent.name} />
+          </div>
+        )}
+
+        {shownTab === 'timeline' && (
+          <TimelinePanel parentName={currentParent.name} callLogs={parentData?.callLogs || []} alerts={parentData?.alerts || []} insights={parentData?.insights || []} />
+        )}
+
+        {shownTab === 'trends' && (
+          <TrendsPanel parentName={currentParent.name} stats={stats} insights={parentData?.insights || []} onExport={handleExportCallHistory} />
+        )}
+
+        {shownTab === 'trends' && healthMonitor && (
+          <div style={{ marginTop: '20px' }}>
+            <ReadingsPanel key={`rd-${currentParent.id}`} parent={currentParent} manage={manage} onToast={toast} onOpenSettings={() => setActiveTab('settings')} />
+          </div>
+        )}
+
+        {shownTab === 'trends' && !healthMonitor && (
+          <div style={{ marginTop: '20px' }}>
+            <HealthMonitorCard parent={currentParent} enabled={false} vitalsCall={null} planId={addonPlanId} price={parentData?.ownerPlan?.healthMonitorPrice ?? 0} isOwner={isOwner} onChanged={refresh} onToast={toast} />
+          </div>
+        )}
+
+        {shownTab === 'calls' && (
           <CallHistoryPanel parentName={currentParent.name} callLogs={parentData?.callLogs || []} onExport={handleExportCallHistory} />
         )}
 
-        {activeTab === 'medicines' && (
+        {shownTab === 'medicines' && (
           <MedicinesPanel
+            parentId={currentParent.id}
             parentName={currentParent.name}
+            parent={currentParent}
+            familyName={user?.name || ''}
             medicines={parentData?.medicines || []}
+            callLogs={parentData?.callLogs || []}
+            whatsapp={waPerson}
+            reminders={parentData?.reminders || []}
+            manage={manage}
             onUpload={() => setShowUploadModal(true)}
             onAdd={() => setShowAddMedModal(true)}
             onToggle={handleToggleMed}
+            onChanged={refresh}
+            onToast={toast}
           />
         )}
 
-        {activeTab === 'alerts' && <AlertsPanel parentName={currentParent.name} alerts={parentData?.alerts || []} />}
+        {shownTab === 'alerts' && (
+          <AlertsPanel parentId={currentParent.id} parentName={currentParent.name} alerts={parentData?.alerts || []} onChanged={refresh} onToast={toast} manage={manage} />
+        )}
 
-        {activeTab === 'settings' && (
-          <SettingsPanel
+        {shownTab === 'family' && parentData && (
+          <FamilyPanel
             parent={currentParent}
-            stats={stats}
-            caregivers={parentData?.caregivers || []}
-            contacts={parentData?.emergencyContacts || []}
+            role={role}
+            caregivers={parentData.caregivers}
+            contacts={parentData.emergencyContacts}
+            cardUrl={parentData.cardUrl}
+            onInvite={() => setShowInviteModal(true)}
+            onChanged={refresh}
+            onLeft={() => { setSelectedParentId(''); fetchParents(); }}
+            onToast={toast}
+          />
+        )}
+
+        {shownTab === 'records' && (
+          <RecordsPanel parentId={currentParent.id} parentName={currentParent.name} manage={manage} onToast={toast} />
+        )}
+
+        {shownTab === 'settings' && waPerson && (
+          <ReminderSettings
+            parent={currentParent}
+            role={role}
+            start={parentData?.reminderStart}
+            canUseCalls={parentData?.ownerPlanChannel === 'call'}
+            caretakerIsMe={!!currentParent.caretakerPhone && currentParent.caretakerPhone === user?.phone}
             onPause={() => setShowPauseModal(true)}
             onResume={() => handleTogglePause(false)}
-            onInvite={() => setShowInviteModal(true)}
             onDelete={() => setShowDeleteModal(true)}
             onEdit={() => setShowEditModal(true)}
+            onChanged={refresh}
+            onToast={toast}
+          />
+        )}
+
+        {shownTab === 'settings' && !waPerson && manage && parentData?.ownerPlanChannel === 'call' && (
+          <div style={{ marginBottom: '20px' }}>
+            <ReminderChannelSwitch parent={currentParent} onChanged={refresh} onToast={toast} />
+          </div>
+        )}
+
+        {shownTab === 'settings' && !waPerson && (
+          <SettingsPanel
+            parent={currentParent}
+            role={role}
+            stats={stats}
+            companionAllowed={isOwner ? effectivePlan.weeklyChat && !effectivePlan.expired : true}
+            premium={premium}
+            planId={addonPlanId}
+            monitorPrice={parentData?.ownerPlan?.healthMonitorPrice ?? 0}
+            touchesPrice={parentData?.ownerPlan?.dailyTouchesPrice ?? 0}
+            healthMonitor={healthMonitor}
+            dailyTouches={dailyTouches}
+            vitalsCall={parentData?.vitalsCall ?? null}
+            callTogetherCandidates={parentData?.callTogetherCandidates || []}
+            onPause={() => setShowPauseModal(true)}
+            onResume={() => handleTogglePause(false)}
+            onDelete={() => setShowDeleteModal(true)}
+            onEdit={() => setShowEditModal(true)}
+            onChanged={refresh}
+            onToast={toast}
           />
         )}
       </motion.div>
@@ -749,6 +984,8 @@ function DashboardContent() {
         setTiming={setNewMedTiming}
         food={newMedFoodRelation}
         setFood={setNewMedFoodRelation}
+        purpose={newMedPurpose}
+        setPurpose={setNewMedPurpose}
         onSubmit={handleAddMedicineSubmit}
       />
 
@@ -766,12 +1003,9 @@ function DashboardContent() {
       <InviteModal
         open={showInviteModal}
         onClose={() => setShowInviteModal(false)}
+        parentId={currentParent.id}
         parentName={currentParent.name}
-        name={caregiverName}
-        setName={setCaregiverName}
-        email={caregiverEmail}
-        setEmail={setCaregiverEmail}
-        onSubmit={handleInviteCaregiver}
+        onCreated={refresh}
       />
 
       <EditParentModal
@@ -808,6 +1042,9 @@ function DashboardContent() {
         }}
         confirming={confirmingUpload}
         onConfirm={handleConfirmDashboardExtraction}
+        currentMedicines={parentData?.medicines || []}
+        stopIds={stopIds}
+        setStopIds={setStopIds}
       />
     </div>
   );

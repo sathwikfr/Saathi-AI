@@ -1,0 +1,374 @@
+/* The /brag film: 360x640 CSS px, captured at DPR 3. Tokens from globals.css; phone styles from
+   components/landing/liveCallPhone.module.css. */
+
+.film {
+  --ios-green: #30d158;
+  --ios-red: #ff453a;
+  --ios-red-end: #ff3b30;
+  --ios-red-text: #ff7a70;
+  --grad: linear-gradient(90deg, #e0452a 0%, #9b4dff 50%, #2f5fe8 100%);
+  position: fixed;
+  inset: 0 auto auto 0;
+  width: 360px;
+  height: 640px;
+  overflow: hidden;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+}
+
+.bg {
+  position: absolute;
+  inset: -60px;
+  background:
+    radial-gradient(60% 34% at 12% 8%, rgba(0, 107, 170, 0.12), transparent 70%),
+    radial-gradient(55% 32% at 92% 96%, rgba(242, 163, 58, 0.16), transparent 70%),
+    radial-gradient(40% 26% at 90% 30%, rgba(0, 107, 170, 0.05), transparent 70%);
+}
+
+.cam {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+/* ---------- Captions ---------- */
+
+.capWrap {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 178px;
+  z-index: 20;
+  padding: 44px 26px 0;
+  background: linear-gradient(to bottom, var(--paper) 0%, var(--paper) 70%, rgba(248, 245, 239, 0) 100%);
+  pointer-events: none;
+}
+
+.caption {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 31px;
+  font-weight: 650;
+  line-height: 1.04;
+  letter-spacing: -0.04em;
+  text-align: center;
+  color: var(--ink);
+  text-wrap: balance;
+}
+
+.caption span {
+  color: var(--teal);
+}
+
+/* ---------- WhatsApp screen (sizes in iOS points, like the call screen) ---------- */
+
+.wa {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  font-family: var(--font-sans);
+}
+
+.waTop {
+  padding-top: calc(var(--pt) * 59);
+  background: #f7f5f3;
+  border-bottom: calc(var(--pt) * 0.75) solid rgba(17, 27, 33, 0.1);
+}
+
+.waHead {
+  height: calc(var(--pt) * 52);
+  display: flex;
+  align-items: center;
+  gap: calc(var(--pt) * 10);
+  padding: 0 calc(var(--pt) * 14) 0 calc(var(--pt) * 6);
+}
+
+.waBack {
+  width: calc(var(--pt) * 26);
+  height: calc(var(--pt) * 26);
+}
+
+.waAvatar {
+  width: calc(var(--pt) * 36);
+  height: calc(var(--pt) * 36);
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: linear-gradient(145deg, #0a7cc4, #003860);
+}
+
+.waAvatar svg {
+  width: 46%;
+  height: 46%;
+}
+
+.waName {
+  flex: 1;
+  font-size: calc(var(--pt) * 17);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.waIcon {
+  width: calc(var(--pt) * 22);
+  height: calc(var(--pt) * 22);
+  margin-left: calc(var(--pt) * 14);
+}
+
+.waChat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: calc(var(--pt) * 10);
+  padding: calc(var(--pt) * 12) calc(var(--pt) * 12);
+  overflow: hidden;
+}
+
+.waDate {
+  align-self: center;
+  padding: calc(var(--pt) * 4) calc(var(--pt) * 12);
+  border-radius: calc(var(--pt) * 8);
+  background: rgba(255, 255, 255, 0.92);
+  font-size: calc(var(--pt) * 12.5);
+  font-weight: 500;
+  color: #54656f;
+  box-shadow: 0 calc(var(--pt) * 1) calc(var(--pt) * 0.5) rgba(11, 20, 26, 0.08);
+}
+
+.waMsg {
+  width: 88%;
+  border-radius: calc(var(--pt) * 12);
+  border-top-left-radius: calc(var(--pt) * 3);
+  background: #fff;
+  box-shadow: 0 calc(var(--pt) * 1) calc(var(--pt) * 0.5) rgba(11, 20, 26, 0.13);
+  overflow: hidden;
+  transform-origin: 0 0;
+}
+
+.waBody {
+  padding: calc(var(--pt) * 9) calc(var(--pt) * 11) calc(var(--pt) * 7);
+  font-size: calc(var(--pt) * 16);
+  line-height: 1.38;
+  white-space: pre-wrap;
+}
+
+.waTime {
+  float: right;
+  margin: calc(var(--pt) * 6) 0 0 calc(var(--pt) * 8);
+  font-size: calc(var(--pt) * 11);
+  color: #667781;
+}
+
+.hl {
+  color: inherit;
+  background-color: transparent;
+  background-image: linear-gradient(rgba(242, 163, 58, 0.5), rgba(242, 163, 58, 0.5));
+  background-repeat: no-repeat;
+  border-radius: calc(var(--pt) * 3);
+  padding: 0 calc(var(--pt) * 1);
+  font-weight: 600;
+}
+
+.waBtn {
+  position: relative;
+  height: calc(var(--pt) * 44);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--pt) * 6);
+  border-top: calc(var(--pt) * 0.75) solid #e9edef;
+  font-size: calc(var(--pt) * 15.5);
+  font-weight: 500;
+  color: #027eb5;
+  overflow: hidden;
+}
+
+.waBtn svg {
+  width: calc(var(--pt) * 17);
+  height: calc(var(--pt) * 17);
+}
+
+.tap {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: calc(var(--pt) * 120);
+  height: calc(var(--pt) * 120);
+  margin: calc(var(--pt) * -60) 0 0 calc(var(--pt) * -60);
+  border-radius: 50%;
+  background: #027eb5;
+}
+
+.waInput {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--pt) * 12);
+  padding: calc(var(--pt) * 8) calc(var(--pt) * 14) calc(var(--pt) * 34);
+  background: #f7f5f3;
+  color: #111b21;
+}
+
+.waInput svg {
+  width: calc(var(--pt) * 22);
+  height: calc(var(--pt) * 22);
+}
+
+.waField {
+  flex: 1;
+  height: calc(var(--pt) * 34);
+  border-radius: calc(var(--pt) * 17);
+  background: #fff;
+  border: calc(var(--pt) * 0.75) solid #e3e1de;
+}
+
+/* ---------- Languages ---------- */
+
+.langs {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0 22px 20px;
+}
+
+.langTitle {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 40px;
+  font-weight: 650;
+  line-height: 1;
+  letter-spacing: -0.045em;
+  text-align: center;
+}
+
+.langSub {
+  margin: 12px 0 0;
+  font-size: 16px;
+  color: var(--ink-muted);
+}
+
+.langGrid {
+  margin-top: 30px;
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.langCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 13px 6px 11px;
+  border-radius: 16px 16px 16px 5px;
+  background: var(--green-soft);
+  border: 1px solid var(--green-border);
+}
+
+.langCard b {
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--ink);
+}
+
+.langCard small {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--green);
+}
+
+/* ---------- Outro ---------- */
+
+.outro {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0 30px 30px;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  font-family: var(--font-serif);
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+}
+
+.brandHeart {
+  width: 42px;
+  height: 42px;
+  border-radius: 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(145deg, #0a7cc4, #003860);
+  box-shadow: 0 6px 16px -6px var(--teal-glow), 0 1px 0 rgba(255, 255, 255, 0.15) inset;
+}
+
+.brandHeart svg {
+  width: 20px;
+  height: 20px;
+}
+
+.brandWord {
+  color: var(--ink);
+}
+
+.outroH1 {
+  margin: 34px 0 0;
+  display: flex;
+  flex-direction: column;
+  font-family: var(--font-serif);
+  font-size: 44px;
+  font-weight: 650;
+  line-height: 0.98;
+  letter-spacing: -0.045em;
+  color: var(--ink);
+}
+
+.outroH1 span {
+  display: block;
+}
+
+.outroH1 em {
+  font-style: normal;
+  white-space: nowrap;
+  background: var(--grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.tagline {
+  margin: 30px 0 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.ring {
+  width: 13px;
+  height: 13px;
+  flex: none;
+  border: 1.5px solid #e0452a;
+  border-radius: 50%;
+}
