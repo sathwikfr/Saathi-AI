@@ -171,7 +171,7 @@ export const PLANS: Record<PlanId, Plan> = {
   essential: {
     id: 'essential',
     name: 'Remind',
-    tagline: 'WhatsApp medicine reminders for yourself or someone you care about. No calls, no spam',
+    tagline: 'WhatsApp medicine reminders for you or someone you love. No calls',
     priceMonthly: 99,
     listPrice: 149,
     currency: '₹',

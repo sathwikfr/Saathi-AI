@@ -31,7 +31,7 @@
 
 .tagline {
   margin-top: 6px;
-  min-height: 2.9em;
+  min-height: 4.35em; /* 3 lines, so every price sits on one row */
   font-size: 0.9rem;
   line-height: 1.45;
   color: var(--ink-muted);
@@ -40,13 +40,14 @@
 .price {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 4px;
   margin-top: 22px;
+  white-space: nowrap;
 }
 
 .price b {
   font-family: var(--font-serif);
-  font-size: clamp(2.6rem, 4vw, 3.2rem);
+  font-size: clamp(2.3rem, 3.2vw, 2.8rem);
   font-weight: 600;
   letter-spacing: -0.04em;
   line-height: 1;
@@ -58,18 +59,15 @@
   color: var(--ink-muted);
 }
 
-/* Launch offer: the old price, struck through, before the real one. */
-.price s {
-  font-size: 1.15rem;
+/* Launch offer: the old price, struck through, quietly under the real one. */
+.perDay {
+  margin-top: 6px;
+  font-size: 0.84rem;
   color: var(--ink-muted);
-  text-decoration-thickness: 1.5px;
 }
 
-.perDay {
-  margin-top: 8px;
-  font-size: 0.84rem;
-  font-weight: 600;
-  color: var(--teal-text);
+.perDay s {
+  text-decoration-thickness: 1.5px;
 }
 
 .facts {
@@ -85,23 +83,17 @@
 
 .facts li {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  font-size: 0.95rem;
-  font-weight: 600;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 0.93rem;
+  line-height: 1.45;
   color: var(--ink);
 }
 
-.factIcon {
+.facts li svg {
   flex-shrink: 0;
-  width: 30px;
-  height: 30px;
-  border-radius: 10px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--teal-light);
-  color: var(--teal-text);
+  margin-top: 3px;
+  color: var(--teal);
 }
 
 .cta {
@@ -133,11 +125,55 @@
   box-shadow: var(--shadow-sm);
 }
 
+/* ---------- Health Monitor: the one add-on, shown once ---------- */
+
+.addon {
+  max-width: 1080px;
+  margin: 28px auto 0;
+  padding: 18px 24px;
+  border-radius: 22px;
+  border: 1px solid var(--line-subtle);
+  background: var(--panel-elevated);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.addon strong {
+  display: block;
+  font-size: 1rem;
+}
+
+.addon p {
+  margin: 2px 0 0;
+  font-size: 0.88rem;
+  color: var(--ink-muted);
+}
+
+.addonIcon {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--teal-light);
+  color: var(--teal-text);
+}
+
+.addonPrice {
+  margin-left: auto;
+  font-size: 0.88rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 /* ---------- Every plan includes ---------- */
 
 .every {
   max-width: 1080px;
-  margin: 28px auto 0;
+  margin: 12px auto 0;
   padding: 20px 24px;
   border-radius: 22px;
   background: var(--panel);
@@ -194,6 +230,16 @@
 
   .tagline {
     min-height: 0;
+  }
+
+  .addon {
+    max-width: 460px;
+    flex-wrap: wrap;
+  }
+
+  .addonPrice {
+    margin-left: 0;
+    white-space: normal;
   }
 
   .every {
