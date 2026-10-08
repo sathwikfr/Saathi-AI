@@ -4,6 +4,7 @@ import { createSubscriptionServer, PaymentsUnavailableError } from '@/lib/razorp
 import { PlanId } from '@/lib/types';
 import { PLANS } from '@/lib/plans';
 import { getParentsForUser } from '@/lib/db';
+import { consumeRateLimit } from '@/lib/security';
 
 export async function POST(req: Request) {
   const auth = await requireUser();
@@ -32,12 +33,16 @@ export async function POST(req: Request) {
       );
     }
 
-    const subResult = await createSubscriptionServer(planId as PlanId, {
-      userId: user.id,
-      email: user.email,
-      name: user.name,
-      phone: user.phone || undefined
-    });
+    // Every Razorpay subscription made here is real (and notifies the customer): keep one account from filling it.
+    if (!consumeRateLimit(`rzp-create:${user.id}`, 10, 60 * 60 * 1000).allowed) {
+      return NextResponse.json({ error: 'Too many checkout attempts. Please try again in a little while.' }, { status: 429 });
+    }
+    // The 7-day free trial is for the first paid plan only: anyone who has had a Razorpay subscription before pays from day one.
+    const subResult = await createSubscriptionServer(
+      planId as PlanId,
+      { userId: user.id, email: user.email, name: user.name, phone: user.phone || undefined },
+      { noTrial: !!user.subscription?.razorpaySubscriptionId }
+    );
 
     return NextResponse.json({
       success: true,

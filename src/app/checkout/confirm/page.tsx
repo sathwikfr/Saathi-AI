@@ -3,7 +3,7 @@
 import React, { useState, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { PLANS, getPlan } from '@/lib/plans';
+import { PLANS, PAID_PLAN_IDS, getPlan } from '@/lib/plans';
 import { PlanId } from '@/lib/types';
 import { Check, AlertCircle, ArrowRight, ShieldCheck } from 'lucide-react';
 import { CheckoutShell, PageTitle, CheckRow, SummaryRow } from '@/components/checkout/CheckoutUI';
@@ -13,7 +13,7 @@ function ConfirmContent() {
   const searchParams = useSearchParams();
   // Only paid plans are offered: each starts with a 7-day trial once AutoPay is set up (old ?plan=free links land on Family).
   const requestedPlan = searchParams.get('plan');
-  const initialPlan: PlanId = requestedPlan === 'solo' || requestedPlan === 'extended' ? requestedPlan : 'family';
+  const initialPlan: PlanId = requestedPlan === 'essential' || requestedPlan === 'solo' || requestedPlan === 'extended' ? requestedPlan : 'family';
 
   const [selectedPlanId, setSelectedPlanId] = useState<PlanId>(initialPlan);
   const [parentConsentChecked, setParentConsentChecked] = useState(false);
@@ -56,7 +56,7 @@ function ConfirmContent() {
         {/* PLAN */}
         <section className="panel" aria-labelledby="plan-title">
           <div className="plan-options" role="radiogroup" aria-label="Plan" style={{ marginBottom: '24px' }}>
-            {(['solo', 'family', 'extended'] as PlanId[]).map((pid) => {
+            {PAID_PLAN_IDS.map((pid) => {
               const p = PLANS[pid];
               return (
                 <button
@@ -99,6 +99,12 @@ function ConfirmContent() {
               </li>
             ))}
           </ul>
+
+          {plan.channel === 'whatsapp' && (
+            <p className="notice teal" style={{ marginTop: '16px', marginBottom: 0, fontSize: '0.86rem' }}>
+              {plan.name} sends WhatsApp reminders only: Saathi does not call. For check-in calls to a parent, choose {PLANS.solo.name} or bigger.
+            </p>
+          )}
         </section>
 
         {/* SUMMARY + CONSENT */}
@@ -127,9 +133,15 @@ function ConfirmContent() {
             </p>
           )}
 
-          <CheckRow checked={parentConsentChecked} onChange={(v) => { setParentConsentChecked(v); setErrorNotice(''); }} title="My parent knows and has agreed">
-            I&apos;ve told my parent(s) about Saathi and they&apos;re happy to receive check-in calls on their phone.
-          </CheckRow>
+          {plan.channel === 'whatsapp' ? (
+            <CheckRow checked={parentConsentChecked} onChange={(v) => { setParentConsentChecked(v); setErrorNotice(''); }} title="Whoever gets the reminders agrees">
+              The reminders are for me, or the person they are for knows about them. They start them by sending START on WhatsApp and can stop them any time.
+            </CheckRow>
+          ) : (
+            <CheckRow checked={parentConsentChecked} onChange={(v) => { setParentConsentChecked(v); setErrorNotice(''); }} title="My parent knows and has agreed">
+              I&apos;ve told my parent(s) about Saathi and they&apos;re happy to receive check-in calls on their phone.
+            </CheckRow>
+          )}
           <CheckRow checked={termsChecked} onChange={(v) => { setTermsChecked(v); setErrorNotice(''); }} title="Not a medical service">
             I understand Aaptha is a family check-in companion, not a doctor or an emergency service.
             {' '}By continuing I agree to the <Link href="/terms" target="_blank">Terms of Service</Link> and <Link href="/privacy" target="_blank">Privacy Policy</Link>.

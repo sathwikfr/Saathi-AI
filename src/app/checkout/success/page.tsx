@@ -63,7 +63,9 @@ function SuccessContent() {
           You&apos;re on <strong style={{ color: 'var(--ink)' }}>{plan.name}</strong>.{' '}
           {hasParents
             ? `It covers up to ${plan.parentsIncluded} parent${plan.parentsIncluded === 1 ? '' : 's'}.`
-            : 'One last step: tell us about your parent so Saathi can start calling.'}
+            : plan.channel === 'whatsapp'
+              ? 'One last step: add the medicines and times, then start the WhatsApp reminders.'
+              : 'One last step: tell us about your parent so Saathi can start calling.'}
         </p>
       </div>
 
@@ -73,11 +75,13 @@ function SuccessContent() {
         </span>
         {roomForMore ? (
           <>
-            <h2 style={{ fontSize: '1.35rem', marginBottom: '6px' }}>{hasParents ? 'Add another parent' : 'Add your first parent'}</h2>
+            <h2 style={{ fontSize: '1.35rem', marginBottom: '6px' }}>{plan.channel === 'whatsapp' ? 'Set up the reminders' : hasParents ? 'Add another parent' : 'Add your first parent'}</h2>
             <p style={{ fontSize: '0.92rem', color: 'var(--ink-muted)', maxWidth: '42ch', margin: '0 auto 22px' }}>
               {hasParents
                 ? `You've added ${parentCount} of ${plan.parentsIncluded}. Their name, phone number, language and medicines take a few minutes.`
-                : 'Their name, phone number, language and medicines. It takes a few minutes.'}
+                : plan.channel === 'whatsapp'
+                  ? 'For you or someone in your family: the medicines and the times. It takes a few minutes.'
+                  : 'Their name, phone number, language and medicines. It takes a few minutes.'}
             </p>
             <Link href="/onboarding" className="btn btn-primary btn-lg">
               {hasParents ? 'Add a parent' : 'Start setup'} <ArrowRight size={18} className="arrow" />

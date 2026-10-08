@@ -41,7 +41,8 @@ export async function POST(req: Request) {
       }
       await cancelRazorpaySubscription(user.subscription.razorpaySubscriptionId, true);
       const ok = await cancelSubscription(user.id, typeof reason === 'string' ? reason : null);
-      console.log(`User ${user.id} cancelled subscription. Reason: ${reason || 'Not specified'}`);
+      const safeReason = typeof reason === 'string' && reason ? [...reason].map(c => (c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127 ? ' ' : c)).join('').slice(0, 200) : 'Not specified';
+      console.log(`User ${user.id} cancelled subscription. Reason: ${safeReason}`);
 
       const plan = PLANS[user.subscription.planId];
       const accessUntil = new Date(user.subscription.currentPeriodEnd).toLocaleDateString('en-IN', {

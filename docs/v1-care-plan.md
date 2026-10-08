@@ -134,3 +134,32 @@ trust and companion fields; `Medicine.purpose`; `EmergencyContact.role/isLocal/p
 `SARVAM_ALERT_APP_ID`, `SARVAM_ALERT_APP_VERSION` (alert agent) · `ANTHROPIC_API_KEY` (+ optional `ANTHROPIC_MODEL`) ·
 `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, optional `SUPABASE_STORAGE_BUCKET` · `NEXT_PUBLIC_SUPPORT_PHONE` ·
 optional `TRANSCRIPT_RETENTION_DAYS`. New WhatsApp templates: `aaptha_alert_handled`, `aaptha_care_summary`.
+
+## v1.1 extras (2026-10-04, same branch)
+
+Built after v1 when the user asked for "all" of a second list. Decisions: siblings split the bill with **UPI links**
+(Aaptha never holds money); **no SMS** for now. Partner-dependent items stay out (pharmacy ordering, doctor booking).
+
+| Feature | How it works | Where |
+|---|---|---|
+| BP / sugar readings | Also in the daily / weekly / monthly WhatsApp summary (`readingsLine()` in `lib/digests.ts`: averages, highest, previous week, fasting and after-food sugar apart, how many outside the limits; numbers only). Family ticks BP and/or sugar and optional limits; Saathi asks once a day (not on the weekly chat) and never comments on the numbers. Readings outside the family's limits, or past fixed safety limits (180/120, top under 90, sugar under 70 or over 300), raise a level-3 alert that says "check with their doctor". Family can also type readings in. Chart + list on the Trends tab | `lib/readings.ts`, `HealthReading`, `/api/parents/[id]/readings`, `ReadingsPanel` + `LineChart` |
+| Family messages | Anyone in the family circle sends a short message (200 chars, 10/day); Saathi reads up to 2 per call, oldest first, on any answered call. What the parent wants passed back (`feedback`) shows in the same thread | `FamilyMessage`, `/messages`, `MessagesCard` |
+| Appointments | Family adds a doctor visit / lab test (+ "empty stomach"); Saathi reminds the day before and on the day, then asks "how did it go?" 2 h–4 days after; the answer is kept on the appointment | `lib/appointments.ts`, `Appointment`, `/appointments`, `AppointmentsCard` |
+| Couple on one phone | Owner links two parents who share a number; once both have said yes on their own first call, one call covers both (`partner_*` variables). The partner gets their own linked call log, readings, alerts and follow-ups. The second parent's family messages and appointments ride along labelled ("From Ravi (for Appa)", "Appa's blood test"); household things (helper, weather, festivals, hearing mode, a special day) come from either parent | `coupleOf()` in `callDispatch.ts`, `applyPartner()` in `callResults.ts`, Settings switch |
+| Weather note | Town looked up once (Open-Meteo geocoding); on very hot / cold / heavy-rain days Saathi adds one line, at most once a day | `lib/weather.ts` |
+| Festivals and special days | Google's public India holiday calendar; Saathi greets only the festivals the family ticks. Family-added days (anniversary, puja, fasting day: no food talk that day) | `lib/festivals.ts`, `/api/festivals`, Settings |
+| Bill split | Payer adds a UPI ID and switches on which family members share; each sees their equal share (rounded up), a `upi://pay` link and "I've paid". Aaptha only records the note | `lib/familyMoney.ts`, `lib/billShare.ts`, `BillShare`, `/api/account/bill-share` |
+| Life stories | When the parent tells a memory and agrees the family may keep it, it's saved; Stories tab + printable book (`/dashboard/stories/[parentId]`); family can leave a story out | `LifeStory`, `/stories`, `StoriesPanel` |
+| Chemist refill list | WhatsApp text for the family's own chemist (ticks what the parent said was running low); the family sends it themselves | `chemistMessage()`, `RefillListModal` |
+| Hearing-friendly mode | Slower, shorter sentences, repeat once | `hearing_mode` variable |
+| Paid-helper check | "Did Lakshmi come today?" on the last call of the helper's days; "no" → level-2 alert | `helper_question`, `helper_visited` |
+
+Schema (applied 2026-10-04 as reviewed additive SQL; copy in `D:/sathwik/aaptha-db-backups/applied-2026-10-04-v11-extras.sql`):
+new tables `HealthReading`, `FamilyMessage`, `Appointment`, `LifeStory`, `BillShare`; new columns `User.upiId`,
+`ParentProfile` readingsToAsk / readingRanges / callTogetherWithId / city / latitude / longitude / festivals /
+specialDaysJson / chemistName / chemistPhone / hearingMode / helperName / helperDays / lastWeatherNoteAt,
+`CallLog.pairedCallLogId`, `CaregiverInvite.sharesBill`. No new env keys.
+
+Tests: `npx tsx scripts/test-care-extras.ts` (98 checks: pure logic + couple call, readings, messages, appointment
+reminder and follow-up, helper, weather, festival, life story, bill share on throwaway `extras-test-*` rows with a
+fake Sarvam and fake weather; nothing hits the network). The agent prompt and variables are in `docs/sarvam-agent.md` §3, §4 and §6.

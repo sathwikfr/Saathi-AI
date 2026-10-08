@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { PlanId } from './types';
-import { PLANS } from './plans';
+import { PLANS, PAID_PLAN_IDS } from './plans';
+import { isLocalDevRequest } from './devMode';
 
 /**
  * Razorpay configuration.
@@ -27,8 +28,11 @@ export function isRazorpayConfigured(): boolean {
 }
 
 /** Test keys alone can't take a subscription, so under `next dev` the sandbox stays until the plan ids exist too. */
-export function isSandboxAllowed(): boolean {
-  return process.env.NODE_ENV === 'development' && !(isRazorpayConfigured() && hasAllRazorpayPlanIds());
+export async function isSandboxAllowed(): Promise<boolean> {
+  if (process.env.NODE_ENV !== 'development') return false;
+  if (isRazorpayConfigured() && hasAllRazorpayPlanIds()) return false;
+  // A dev server shared through a tunnel is not a laptop: sandbox "payments" would give paid plans away.
+  return isLocalDevRequest();
 }
 
 const SANDBOX_PREFIX = 'sub_sandbox_';
@@ -67,7 +71,8 @@ export function describeRazorpayPaymentMethod(payment: {
  */
 function getRazorpayPlanId(planId: PlanId): string | undefined {
   const id =
-    planId === 'solo' ? process.env.RAZORPAY_PLAN_ID_SOLO
+    planId === 'essential' ? process.env.RAZORPAY_PLAN_ID_ESSENTIAL
+    : planId === 'solo' ? process.env.RAZORPAY_PLAN_ID_SOLO
     : planId === 'family' ? process.env.RAZORPAY_PLAN_ID_FAMILY
     : planId === 'extended' ? process.env.RAZORPAY_PLAN_ID_EXTENDED
     : undefined;
@@ -75,7 +80,7 @@ function getRazorpayPlanId(planId: PlanId): string | undefined {
 }
 
 function hasAllRazorpayPlanIds(): boolean {
-  return (['solo', 'family', 'extended'] as PlanId[]).every(id => Boolean(getRazorpayPlanId(id)));
+  return PAID_PLAN_IDS.every(id => Boolean(getRazorpayPlanId(id)));
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -98,7 +103,8 @@ export class PaymentsUnavailableError extends Error {}
 
 export async function createSubscriptionServer(
   planId: PlanId,
-  customer: { userId: string; email: string; name: string; phone?: string }
+  customer: { userId: string; email: string; name: string; phone?: string },
+  opts: { noTrial?: boolean } = {}
 ): Promise<CreateSubscriptionResult> {
   const plan = PLANS[planId];
   if (!plan || plan.priceMonthly === 0) {
@@ -106,13 +112,13 @@ export async function createSubscriptionServer(
   }
 
   const rzpPlanId = isRazorpayConfigured() ? getRazorpayPlanId(planId) : undefined;
-  if (rzpPlanId && !isSandboxAllowed()) {
+  if (rzpPlanId && !(await isSandboxAllowed())) {
     const response = await getClient().subscriptions.create({
       plan_id: rzpPlanId,
       total_count: 120,
       quantity: 1,
       customer_notify: 1,
-      ...(plan.hasTrial ? { start_at: Math.floor(Date.now() / 1000) + plan.trialDays * 86400 } : {}),
+      ...(plan.hasTrial && !opts.noTrial ? { start_at: Math.floor(Date.now() / 1000) + plan.trialDays * 86400 } : {}),
       notes: {
         carecircle_user_id: customer.userId,
         carecircle_plan_id: planId,
@@ -130,7 +136,7 @@ export async function createSubscriptionServer(
     };
   }
 
-  if (isSandboxAllowed()) {
+  if (await isSandboxAllowed()) {
     // Sandbox ids are bound to the user so they can't be replayed for another account.
     const tag = crypto
       .createHmac('sha256', 'carecircle-dev-sandbox')
@@ -173,7 +179,7 @@ export async function verifySubscriptionPayment(params: {
   const { paymentId, subscriptionId, signature, userId, planId } = params;
 
   if (subscriptionId.startsWith(SANDBOX_PREFIX)) {
-    if (!isSandboxAllowed()) return { ok: false, error: 'Sandbox payments are disabled.' };
+    if (!(await isSandboxAllowed())) return { ok: false, error: 'Sandbox payments are disabled.' };
     const expected = crypto
       .createHmac('sha256', 'carecircle-dev-sandbox')
       .update(`${userId}|${planId}`)
@@ -202,6 +208,15 @@ export async function verifySubscriptionPayment(params: {
   const sub = await getClient().subscriptions.fetch(subscriptionId);
   if (sub?.notes?.carecircle_user_id !== userId || sub?.notes?.carecircle_plan_id !== planId) {
     return { ok: false, error: 'This subscription does not belong to your account.' };
+  }
+  // The signature never expires, so an old checkout could be replayed after cancelling to get a new trial.
+  // Only a subscription that is still live in Razorpay, on the plan's real Razorpay plan, can activate.
+  if (['cancelled', 'completed', 'expired', 'halted'].includes(String(sub?.status))) {
+    return { ok: false, error: 'This subscription has ended. Please start a new checkout.' };
+  }
+  const expectedPlan = getRazorpayPlanId(planId);
+  if (expectedPlan && sub?.plan_id && sub.plan_id !== expectedPlan) {
+    return { ok: false, error: 'This subscription is for a different plan.' };
   }
 
   return { ok: true, isSandbox: false };

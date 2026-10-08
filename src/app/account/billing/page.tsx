@@ -2,9 +2,10 @@
 
 import React, { useState, useEffect } from 'react';
 import { AccountShell } from '@/components/account/AccountUI';
+import { BillShare } from '@/components/account/BillShare';
 import { Modal } from '@/components/ui/Modal';
 import { useAuth } from '@/context/AuthContext';
-import { PLANS, getEffectivePlan } from '@/lib/plans';
+import { PLANS, PAID_PLAN_IDS, getEffectivePlan } from '@/lib/plans';
 import { PlanId, Invoice, UserSubscription } from '@/lib/types';
 import { CreditCard, AlertTriangle, CheckCircle, Download, ArrowUpRight, Shield, X, HeartCrack } from 'lucide-react';
 
@@ -195,12 +196,12 @@ export default function AccountBillingPage() {
 
               <div className="summary">
                 <div className="summary-row">
-                  <span>Parents</span>
+                  <span>{currentPlan.channel === 'whatsapp' ? 'People' : 'Parents'}</span>
                   <b>Up to {currentPlan.parentsIncluded}</b>
                 </div>
                 <div className="summary-row">
-                  <span>Calls per parent</span>
-                  <b>Up to {currentPlan.callsPerDay} a day</b>
+                  <span>{currentPlan.channel === 'whatsapp' ? 'WhatsApp medicine checks' : 'Calls per parent'}</span>
+                  <b>Up to {currentPlan.channel === 'whatsapp' ? currentPlan.remindersPerDay : currentPlan.callsPerDay} a day</b>
                 </div>
                 {!isFree && periodEnd && (
                   <div className="summary-row">
@@ -316,6 +317,8 @@ export default function AccountBillingPage() {
         </>
       )}
 
+      <BillShare onNotify={(type, message) => setNotification({ type, message })} />
+
       {/* CHANGE PLAN */}
       <Modal open={showSwitchModal} onClose={() => setShowSwitchModal(false)} labelledBy="switch-title">
         <h2 id="switch-title" style={{ fontSize: '1.45rem', letterSpacing: '-0.02em', marginBottom: '6px', paddingRight: '32px' }}>Change your plan</h2>
@@ -324,7 +327,7 @@ export default function AccountBillingPage() {
         </p>
 
         <div role="radiogroup" aria-label="Plans" style={{ display: 'grid', gap: '8px', marginBottom: '22px' }}>
-          {(['free', 'solo', 'family', 'extended'] as PlanId[]).map((pid) => {
+          {(['free', ...PAID_PLAN_IDS] as PlanId[]).map((pid) => {
             const p = PLANS[pid];
             const isCurrent = currentPlan.id === pid;
             return (
@@ -342,7 +345,11 @@ export default function AccountBillingPage() {
                     {p.name}
                     {isCurrent && <span className="badge badge-neutral" style={{ fontSize: '0.7rem' }}>Current</span>}
                   </strong>
-                  <span>{p.parentsIncluded} parent{p.parentsIncluded === 1 ? '' : 's'} · up to {p.callsPerDay} call{p.callsPerDay === 1 ? '' : 's'} a day</span>
+                  <span>
+                    {p.channel === 'whatsapp'
+                      ? `1 person · WhatsApp medicine checks, up to ${p.remindersPerDay} a day, caretaker told, no calls`
+                      : `${p.parentsIncluded} parent${p.parentsIncluded === 1 ? '' : 's'} · up to ${p.callsPerDay} call${p.callsPerDay === 1 ? '' : 's'} a day`}
+                  </span>
                 </div>
                 <strong style={{ fontSize: '1rem' }}>{p.priceMonthly === 0 ? 'Free' : `₹${p.priceMonthly}/mo`}</strong>
               </button>

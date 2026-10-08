@@ -16,7 +16,7 @@ import { config } from 'dotenv';
 // Same order as Next.js: .env.local wins over .env.
 config({ path: '.env.local', quiet: true });
 config({ path: '.env', quiet: true });
-import { PLANS } from '../src/lib/plans';
+import { PLANS, PAID_PLAN_IDS } from '../src/lib/plans';
 
 const PLACEHOLDER = /demo|CareCircle|xxxx|your_/i;
 
@@ -56,7 +56,7 @@ async function main() {
   }
 
   const results: Record<string, string> = {};
-  for (const plan of [PLANS.solo, PLANS.family, PLANS.extended]) {
+  for (const plan of PAID_PLAN_IDS.map(id => PLANS[id])) {
     const amountPaise = plan.priceMonthly * 100;
     const name = `Aaptha ${plan.name} (monthly)`;
     const found = existing.find(
@@ -89,6 +89,7 @@ async function main() {
 
   if (results.solo || results.family || results.extended) {
     console.log('\nAdd these to .env (and to your hosting environment):');
+    if (results.essential) console.log(`RAZORPAY_PLAN_ID_ESSENTIAL=${results.essential}`);
     if (results.solo) console.log(`RAZORPAY_PLAN_ID_SOLO=${results.solo}`);
     if (results.family) console.log(`RAZORPAY_PLAN_ID_FAMILY=${results.family}`);
     if (results.extended) console.log(`RAZORPAY_PLAN_ID_EXTENDED=${results.extended}`);
