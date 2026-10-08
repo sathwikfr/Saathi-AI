@@ -217,6 +217,11 @@ export function planCallExtras(input: {
   family?: FamilyAsks;
   /** Which part of the health bundle this call carries; unset = the old rule (first answered call of the day). */
   healthCarry?: HealthCarry;
+  /**
+   * The family has the Health Monitor add-on (user, 2026-10-08): only then "How are you feeling?", the daily health
+   * question, the weekly refill check and "is it better?" ride along. false = tablets only. Unset = allowed (old callers).
+   */
+  healthQuestions?: boolean;
 }): CallExtras {
   const { callType, rhythm, now, family } = input;
   const extras: CallExtras = { ...NO_EXTRAS, refillMedicines: [] };
@@ -243,7 +248,9 @@ export function planCallExtras(input: {
   if (callType === 'followup') return extras;
 
   // "How are you feeling today?" once a day, on the call chosen by chooseHealthSlot (legacy: the first one answered).
-  const carry: HealthCarry = input.healthCarry ?? (input.answeredToday ? 'none' : 'full');
+  // Not on a permission call: permission + safety line + tablets already fill it (a live first call with everything
+  // ran past 60 s = 2 billed minutes, 2026-10-08). The feeling isn't marked asked, so a later call takes it over.
+  const carry: HealthCarry = extras.askConsent || input.healthQuestions === false ? 'none' : input.healthCarry ?? (input.answeredToday ? 'none' : 'full');
   if (carry !== 'none') extras.askFeeling = true;
 
   if (family) {
@@ -287,7 +294,8 @@ export function planCallExtras(input: {
     extras.refillMedicines = input.activeMedicineNames.map(cleanMedicineNameForSpeech).slice(0, 6);
     slots -= 1;
   }
-  // The safety line is short, and the first call always has it.
+  // The safety line is short, and the first call always has it. Weekly after that only with Health Monitor (it rides
+  // with the health questions); without it, only on the first call (user, 2026-10-08).
   if ((slots > 0 || extras.askConsent) && olderThan(rhythm.lastSafetyLineAt, SAFETY_LINE_EVERY_DAYS, now)) {
     extras.saySafetyLine = true;
   }

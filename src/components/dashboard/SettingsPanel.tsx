@@ -15,12 +15,10 @@ type Props = {
   companionAllowed: boolean;
   /** Family / Extended features unlocked (the owner's plan). */
   premium: boolean;
-  /** The owner's plan, what the add-ons cost on it, and which add-ons are on. */
+  /** The owner's plan, what the Health Monitor costs on it, and whether it is on. */
   planId: string;
   monitorPrice: number;
-  touchesPrice: number;
   healthMonitor: boolean;
-  dailyTouches: boolean;
   /** The time of the short readings call, if one is set. */
   vitalsCall: string | null;
   callTogetherCandidates: { id: string; name: string }[];
@@ -127,7 +125,7 @@ function CompanionSettings({ parent, companionAllowed, onChanged, onToast }: Pic
   );
 }
 
-export function SettingsPanel({ parent, role, stats, companionAllowed, premium, planId, monitorPrice, touchesPrice, healthMonitor, dailyTouches, vitalsCall, callTogetherCandidates, onPause, onResume, onDelete, onEdit, onChanged, onToast }: Props) {
+export function SettingsPanel({ parent, role, stats, companionAllowed, premium, planId, monitorPrice, healthMonitor, vitalsCall, callTogetherCandidates, onPause, onResume, onDelete, onEdit, onChanged, onToast }: Props) {
   const manage = canManage(role);
   return (
     <div style={{ display: 'grid', gap: '20px' }}>
@@ -184,7 +182,7 @@ export function SettingsPanel({ parent, role, stats, companionAllowed, premium, 
       </section>
 
       {manage && (
-        <SaathiPreferences parent={parent} isOwner={role === 'owner'} premium={premium} touches={dailyTouches} planId={planId} touchesPrice={touchesPrice} callTogetherCandidates={callTogetherCandidates} onChanged={onChanged} onToast={onToast} />
+        <SaathiPreferences parent={parent} isOwner={role === 'owner'} premium={premium} callTogetherCandidates={callTogetherCandidates} onChanged={onChanged} onToast={onToast} />
       )}
 
       {manage && (

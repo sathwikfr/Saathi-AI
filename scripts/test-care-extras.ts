@@ -24,7 +24,7 @@ import { planCallExtras, FamilyAsks } from '../src/lib/callPlanning';
 import { buildAgentVariables, SarvamConfig } from '../src/lib/sarvam';
 import { interpretCallResult, decideAlerts, partnerPayload, ALERT_TITLES } from '../src/lib/callInterpretation';
 import { describeAnsweredCall } from '../src/lib/familyMessages';
-import { runDispatch, coupleOf, partnerSpecialDay } from '../src/lib/callDispatch';
+import { runDispatch, coupleOf } from '../src/lib/callDispatch';
 import { processSarvamWebhook } from '../src/lib/callResults';
 import { ownerView, memberView, setUpiId, setSharesBill, markSharePaid } from '../src/lib/billShare';
 import { LinkedMedicineDetail } from '../src/lib/types';
@@ -94,8 +94,6 @@ function partA() {
   check('greets only festivals they celebrate', specialDayFor({ birthDate: null, festivals: ['Diwali/Deepavali'], specialDays: [], holidays }, diwaliDay) === 'Diwali/Deepavali' &&
     specialDayFor({ birthDate: null, festivals: [], specialDays: [], holidays }, diwaliDay) === null);
   check('birthday comes first', specialDayFor({ birthDate: '11-08', festivals: ['Diwali/Deepavali'], specialDays: [], holidays }, diwaliDay) === 'birthday');
-  check('the other parent\'s day says whose', partnerSpecialDay('birthday', 'Appa (Ramesh)') === 'birthday of Appa' &&
-    partnerSpecialDay('fasting day (Ekadashi)', 'Appa') === 'fasting day (Ekadashi) for Appa' && partnerSpecialDay('Wedding anniversary', 'Appa') === 'Wedding anniversary (Appa)' && partnerSpecialDay(null, 'Appa') === null);
   check('family-added fasting day', specialDayFor({ birthDate: null, festivals: [], specialDays: [{ date: '11-07', label: 'Ekadashi', kind: 'fast' }], holidays }, now) === 'fasting day (Ekadashi)');
 
   console.log('\nA4. Money and chemist (Aaptha never handles either)');
@@ -222,7 +220,6 @@ async function partB() {
     calls.push({ vars: body.app_config.agent_variables, attemptId, to: body.user_config.user_phone_number });
     return new Response(JSON.stringify({ attempt_id: attemptId }), { status: 200 });
   }) as unknown as typeof fetch;
-  const weatherFetch = (async () => new Response(JSON.stringify({ daily: { temperature_2m_max: [41], temperature_2m_min: [29], precipitation_sum: [0] } }), { status: 200 })) as unknown as typeof fetch;
   const emails: string[] = [];
   const alertDeps = {
     whatsapp: null, config: null, alertAgent: null,
@@ -276,7 +273,7 @@ async function partB() {
 
     console.log('\nB2. One call for both, with everything the family set up (Diwali eve, 7 Nov)');
     // Diwali is 8 Nov; make the greeting test on 8 Nov morning instead.
-    const s1 = await runDispatch({ now: at(8, 3, 30), fetchImpl: sarvamFetch, config: cfg, alertDeps, parentIds: scope, weatherFetch, holidays, baseSecondsOverride: 10 });
+    const s1 = await runDispatch({ now: at(8, 3, 30), fetchImpl: sarvamFetch, config: cfg, alertDeps, parentIds: scope, baseSecondsOverride: 10 });
     check('one call placed, not two', s1.placed === 1 && calls.length === 1, s1);
     const v = calls[0]?.vars || {};
     check('the first parent is called, about both', v.parent_name === primary.name && v.partner_name === secondary.name, { p: v.parent_name, q: v.partner_name });
@@ -285,10 +282,8 @@ async function partB() {
     check('the other parent\'s appointment (tomorrow, empty stomach)', v.appointment_note.startsWith(`Tomorrow at 10 AM: ${secWho}'s blood test at Vijaya Labs.`) && v.appointment_note.includes('not to eat'), v.appointment_note);
     const ammaFirst = primary.id === amma.id;
     check('readings asked per person', ammaFirst ? (v.ask_readings === 'blood pressure (BP)' && v.partner_ask_readings === 'blood sugar') : (v.ask_readings === 'blood sugar' && v.partner_ask_readings === 'blood pressure (BP)'), v);
-    // Set on Amma; the household gets them whichever parent is rung.
-    check('weather note on a hot day', v.weather_note.includes('very hot'), v.weather_note);
-    check('Diwali greeting (they celebrate it)', v.special_day === 'Diwali/Deepavali', v.special_day);
-    check('helper question', v.helper_question === 'Did Lakshmi come today?', v.helper_question);
+    // Daily Touches was removed (2026-10-08): set on Amma, but no weather, wish or helper question goes on the call.
+    check('Daily Touches removed: no weather note, festival wish or helper question', v.weather_note === 'none' && v.special_day === 'none' && v.helper_question === 'none', { w: v.weather_note, s: v.special_day, h: v.helper_question });
 
     console.log('\nB3. Both answer');
     const primaryVars = ammaFirst
@@ -313,16 +308,16 @@ async function partB() {
     check('sugar saved for Appa', (await prisma.healthReading.findFirst({ where: { parentId: appa.id, kind: 'sugar' } }))?.value === 140);
     check('BP above the family range → level 3 for Amma', !!(await prisma.alertRecord.findFirst({ where: { parentId: amma.id, title: ALERT_TITLES.reading, level: 3 } })));
     const helperAlert = await prisma.alertRecord.findFirst({ where: { parentId: primary.id, title: ALERT_TITLES.helperMissed } });
-    check('helper missed → level 2, naming the helper', helperAlert?.level === 2 && helperAlert.message.includes('Lakshmi'), helperAlert?.message);
+    check('no helper alert (the helper check was never asked)', !helperAlert, helperAlert?.message);
     check('and it stays unsent (never delivered)', (await prisma.familyMessage.findFirst({ where: { parentId: secondary.id, direction: 'to_parent' } }))?.status === 'pending');
     check('the parent\'s message back is kept', !!(await prisma.familyMessage.findFirst({ where: { parentId: primary.id, direction: 'from_parent', text: { contains: 'glasses' } } })));
     check('the other parent\'s appointment marked reminded', !!(await prisma.appointment.findFirst({ where: { parentId: secondary.id } }))?.remindedDayBefore);
     check('life stories are retired: nothing is saved', (await prisma.lifeStory.count({ where: { parentId: primary.id } })) === 0);
-    check('weather noted for today', !!(await prisma.parentProfile.findUnique({ where: { id: primary.id } }))?.lastWeatherNoteAt);
+    check('no weather note recorded', !(await prisma.parentProfile.findUnique({ where: { id: primary.id } }))?.lastWeatherNoteAt);
 
     console.log('\nB4. Follow-up about the partner\'s "later" tablet');
     const before = calls.length;
-    const s4 = await runDispatch({ now: at(8, 4, 15), fetchImpl: sarvamFetch, config: cfg, alertDeps, parentIds: scope, weatherFetch, holidays, baseSecondsOverride: 10 });
+    const s4 = await runDispatch({ now: at(8, 4, 15), fetchImpl: sarvamFetch, config: cfg, alertDeps, parentIds: scope, baseSecondsOverride: 10 });
     const f = calls[before];
     check('one follow-up placed', s4.followUps === 1 && !!f, s4);
     check('only the partner\'s tablet, nothing else', f?.vars.call_type === 'followup' && f.vars.has_medicines === 'no' && f.vars.partner_has_medicines === 'yes' && f.vars.appointment_note === 'none', f?.vars);
@@ -330,9 +325,9 @@ async function partB() {
     console.log('\nB5. "How did the blood test go?" the day after');
     await processSarvamWebhook({ attempt_id: f.attemptId, status: 'connected', final_agent_variables: { partner_all_medicines_taken: 'yes' }, interaction_transcript: [{ role: 'user', en_text: 'yes took it' }] }, { now: at(8, 4, 17), deps: alertDeps });
     const before5 = calls.length;
-    await runDispatch({ now: at(9, 9, 0), fetchImpl: sarvamFetch, config: cfg, alertDeps, parentIds: scope, weatherFetch, holidays, baseSecondsOverride: 10 });
+    await runDispatch({ now: at(9, 9, 0), fetchImpl: sarvamFetch, config: cfg, alertDeps, parentIds: scope, baseSecondsOverride: 10 });
     // 9 Nov 08:30 IST slot isn't due at 14:30 IST; use the next morning instead.
-    await runDispatch({ now: at(10, 3, 30), fetchImpl: sarvamFetch, config: cfg, alertDeps, parentIds: scope, weatherFetch, holidays, baseSecondsOverride: 10 });
+    await runDispatch({ now: at(10, 3, 30), fetchImpl: sarvamFetch, config: cfg, alertDeps, parentIds: scope, baseSecondsOverride: 10 });
     const c5 = calls.slice(before5).find(c => c.vars.appointment_question !== 'none');
     check('asks how the other parent\'s test went', c5?.vars.appointment_question === `How did ${secWho}'s blood test go?`, calls.slice(before5).map(c => c.vars.appointment_question));
     if (c5) {
@@ -346,7 +341,7 @@ async function partB() {
 
     console.log('\nB6. Nobody answers a couple call');
     const before6 = calls.length;
-    await runDispatch({ now: at(11, 3, 30), fetchImpl: sarvamFetch, config: cfg, alertDeps, parentIds: scope, weatherFetch, holidays, baseSecondsOverride: 10 });
+    await runDispatch({ now: at(11, 3, 30), fetchImpl: sarvamFetch, config: cfg, alertDeps, parentIds: scope, baseSecondsOverride: 10 });
     const c6 = calls[before6];
     await processSarvamWebhook({ attempt_id: c6.attemptId, status: 'no_answer' }, { now: at(11, 3, 32), deps: alertDeps });
     const p6 = await prisma.callLog.findUnique({ where: { providerAttemptId: c6.attemptId } });
@@ -354,13 +349,13 @@ async function partB() {
     check('partner\'s log shows the missed call too', s6?.status === 'unanswered' && s6.parentId === secondary.id);
     check('retry stays a couple call', !!p6?.nextRetryAt);
     const before6b = calls.length;
-    await runDispatch({ now: at(11, 4, 5), fetchImpl: sarvamFetch, config: cfg, alertDeps, parentIds: scope, weatherFetch, holidays, baseSecondsOverride: 10 });
+    await runDispatch({ now: at(11, 4, 5), fetchImpl: sarvamFetch, config: cfg, alertDeps, parentIds: scope, baseSecondsOverride: 10 });
     check('retry asks about both', calls[before6b]?.vars.partner_name === secondary.name);
 
     console.log('\nB7. Unlinking: separate calls again');
     await setCallTogether(amma.id, null);
     const before7 = calls.length;
-    await runDispatch({ now: at(12, 3, 30), fetchImpl: sarvamFetch, config: cfg, alertDeps, parentIds: scope, weatherFetch, holidays, baseSecondsOverride: 10 });
+    await runDispatch({ now: at(12, 3, 30), fetchImpl: sarvamFetch, config: cfg, alertDeps, parentIds: scope, baseSecondsOverride: 10 });
     check('two separate calls', calls.length - before7 === 2 && calls.slice(before7).every(c => c.vars.partner_name === 'none'));
 
     console.log('\nB8. Siblings share the bill');

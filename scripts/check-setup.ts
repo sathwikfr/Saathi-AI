@@ -118,6 +118,12 @@ const GROUPS: Group[] = [
     ]
   },
   {
+    title: 'Scheduler heartbeat',
+    why: 'Emails you when the 5-minute cron stops running (no calls, no reminders). Optional, but set it before real families.',
+    optional: true,
+    checks: [{ name: 'CRON_HEARTBEAT_URL', hint: 'healthchecks.io → new check, period 5 min, grace 15 min → its ping URL', valid: v => (/^https:\/\//.test(v) ? null : 'must start with https://') }]
+  },
+  {
     title: 'Support phone',
     why: 'A human number parents can call to check Saathi is real or to stop the calls.',
     optional: true,

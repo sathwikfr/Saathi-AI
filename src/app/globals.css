@@ -3503,6 +3503,14 @@ a.link:hover {
   font-size: 1.05rem;
 }
 
+/* Launch offer: the old price struck through next to the real one. */
+.was-price {
+  text-decoration: line-through;
+  color: var(--ink-muted);
+  font-weight: 400;
+  margin-right: 0.3em;
+}
+
 .fine-print {
   display: flex;
   gap: 10px;

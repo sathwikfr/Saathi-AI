@@ -58,6 +58,13 @@
   color: var(--ink-muted);
 }
 
+/* Launch offer: the old price, struck through, before the real one. */
+.price s {
+  font-size: 1.15rem;
+  color: var(--ink-muted);
+  text-decoration-thickness: 1.5px;
+}
+
 .perDay {
   margin-top: 8px;
   font-size: 0.84rem;

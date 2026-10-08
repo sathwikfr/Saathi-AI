@@ -21,8 +21,8 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from './prisma';
 import { newId } from './db';
-import { getEffectivePlan, reminderChannelFor, healthMonitorAvailable } from './plans';
-import { ownerHasHealthMonitor, ownerHasDailyTouches } from './planAccess';
+import { getEffectivePlan, reminderChannelFor, healthMonitorAvailable, firmCallLimit } from './plans';
+import { ownerHasHealthMonitor, ownerPlanFor } from './planAccess';
 import { normalizePhone } from './phone';
 import { generateMedicineCheckinQuestion } from './scheduleGenerator';
 import { istDateString, istMinutesOfDay, isSlotDue, parseClockTime } from './ist';
@@ -36,8 +36,6 @@ import {
   CallExtras, NO_EXTRAS, CallSnapshot, PartnerSnapshot, FamilyAsks, planCallExtras, readSnapshot, NON_RETRY_SLOTS,
   HealthCarry, SlotLoad, healthCarryFor, MIN_SAMPLES_FOR_TYPICAL, HEALTH_BUNDLE_SECONDS, FEELING_SECONDS, CALL_BASE_SECONDS, PER_MEDICINE_SECONDS, slotSeconds
 } from './callPlanning';
-import { todayForecast, weatherNote } from './weather';
-import { getHolidays, Holiday, parseSpecialDays, specialDayFor } from './festivals';
 import { parentRoleFor, roleAllows } from './familyAccess';
 
 /** A slot stays "due" for this long after its scheduled time (covers cron gaps and outages). */
@@ -54,10 +52,7 @@ export interface DispatchDeps {
   alertDeps?: AlertDeps;
   /** Restrict the run to these parents (used by tests so they never touch real data). */
   parentIds?: string[];
-  /** Tests: the weather service and the holiday list (default: the real ones, only used when set up). */
-  weatherFetch?: typeof fetch;
-  holidays?: Holiday[];
-  /** Tests: pretend every call is this many seconds long before the daily touches (default: the real estimate). */
+  /** Tests: pretend every call is this many seconds long (default: the real estimate). */
   baseSecondsOverride?: number;
 }
 
@@ -151,6 +146,7 @@ interface ParentForCall {
   birthDate: string | null;
   companionTopics?: string | null;
   readingsToAsk: string[];
+  readingsEveryDays?: number;
   latitude: number | null;
   longitude: number | null;
   lastWeatherNoteAt: Date | null;
@@ -229,6 +225,7 @@ async function placeClaimedCall(
   summary: DispatchSummary
 ): Promise<PlaceOutcome> {
   const extras: CallExtras = snapshot.asked || NO_EXTRAS;
+  const ownerPlan = await ownerPlanFor(parent.userId, now);
   const input: OutboundCallInput = {
     callLogId: log.id,
     parentId: parent.id,
@@ -257,6 +254,7 @@ async function placeClaimedCall(
     askReadings: extras.askReadings,
     weatherNote: extras.weatherNote,
     hearingMode: extras.hearingMode,
+    firmTimeLimit: firmCallLimit(ownerPlan.id),
     helperQuestion: extras.helperQuestion,
     partner: snapshot.partner
       ? { name: snapshot.partner.name, medicines: snapshot.partner.medicines, askReadings: snapshot.partner.askReadings }
@@ -418,9 +416,13 @@ async function laterToday(parentId: string, today: string): Promise<LinkedMedici
   return [...state.values()].filter(v => v.status === 'later').map(v => v.detail);
 }
 
-/** Kinds of reading already recorded today (from a call or typed in by the family). */
-async function readingsTakenToday(parentId: string, now: Date): Promise<string[]> {
-  const rows = await prisma.healthReading.findMany({ where: { parentId, takenAt: { gte: istDayStart(now) } }, select: { kind: true } });
+/**
+ * Kinds of reading that are not due: recorded (from a call or typed in by the family) today, or within the family's
+ * gap (every 3 days = today and the 2 days before). A missed day is asked again the next day, not 3 days later.
+ */
+async function readingsTakenToday(parentId: string, now: Date, everyDays = 1): Promise<string[]> {
+  const since = new Date(istDayStart(now).getTime() - (Math.max(1, everyDays) - 1) * 86400000);
+  const rows = await prisma.healthReading.findMany({ where: { parentId, takenAt: { gte: since } }, select: { kind: true } });
   return [...new Set(rows.map(r => r.kind))];
 }
 
@@ -429,22 +431,13 @@ const nearbyAppointments = (parentId: string, now: Date) =>
     where: { parentId, cancelledAt: null, startsAt: { gte: new Date(now.getTime() - 4 * 86400000), lte: new Date(now.getTime() + 2 * 86400000) } }
   });
 
-/** "birthday" -> "birthday of Appa", "fasting day (Ekadashi)" -> "fasting day (Ekadashi) for Appa". */
-export function partnerSpecialDay(day: string | null, partnerName: string): string | null {
-  if (!day) return null;
-  const who = partnerName.split(' ')[0];
-  if (day === 'birthday') return `birthday of ${who}`;
-  if (day.startsWith('fasting day')) return `${day} for ${who}`;
-  return `${day} (${who})`;
-}
-
 /** What each reading asked for costs in call time (seconds): the question, the number, repeating it back. */
 const READING_SECONDS = 12;
 
 /**
  * What the household set up for this parent, by what the account bought (2026-10-08): appointment reminders on every
- * plan; BP / sugar with Health Monitor; festivals, birthdays, weather and the helper check with Daily Touches; hearing-
- * friendly mode always (it is accessibility). Family messages were removed. On a couple call the second parent's
+ * plan; BP / sugar with Health Monitor; hearing-friendly mode always (it is accessibility). Family messages and the
+ * Daily Touches (festival wishes, weather, the helper check) were removed on 2026-10-08. On a couple call the second parent's
  * appointments ride along, labelled with their name, and household things come from either parent.
  */
 async function familyAsksFor(
@@ -454,44 +447,14 @@ async function familyAsksFor(
   deps: DispatchDeps,
   lastCallOfDay: boolean,
   partner: ParentForCall | undefined,
-  access: { monitor: boolean; touches: boolean; readingsHere: boolean; baseSeconds?: number }
+  access: { monitor: boolean; readingsHere: boolean; baseSeconds?: number }
 ): Promise<FamilyAsks> {
-  const today = istDateString(now);
-  const [appointments, taken, todaysAnswered, partnerAppointments] = await Promise.all([
+  const [appointments, taken, partnerAppointments] = await Promise.all([
     nearbyAppointments(parent.id, now),
-    access.monitor ? readingsTakenToday(parent.id, now) : Promise.resolve([] as string[]),
-    access.touches ? prisma.callLog.findMany({ where: { parentId: parent.id, callDate: today, status: 'answered' }, select: { resultJson: true } }) : Promise.resolve([]),
+    access.monitor ? readingsTakenToday(parent.id, now, parent.readingsEveryDays) : Promise.resolve([] as string[]),
     partner ? nearbyAppointments(partner.id, now) : Promise.resolve([])
   ]);
   const who = partner?.name.split(' ')[0] || '';
-
-  let note: string | null = null;
-  let specialDay: string | null = null;
-  let helper: { name: string | null; days: number[] } = { name: null, days: [] };
-  let helperAskedToday = false;
-
-  if (access.touches) {
-    helperAskedToday = todaysAnswered.some(c => !!readSnapshot(c.resultJson).asked?.helperQuestion);
-    // Weather: the household's town (either parent's), once a day.
-    const place = parent.latitude != null && parent.longitude != null ? parent : partner?.latitude != null && partner.longitude != null ? partner : null;
-    const notedToday = [parent.lastWeatherNoteAt, partner?.lastWeatherNoteAt].some(d => d && istDateString(d) === today);
-    if (callType !== 'followup' && place && !notedToday) {
-      note = weatherNote(await todayForecast(place.latitude!, place.longitude!, now, deps.weatherFetch));
-    }
-
-    // Festivals: either parent's ticks count for the household. Only fetch the calendar when someone celebrates something.
-    const festivals = [...new Set([...parent.festivals, ...(partner?.festivals || [])])];
-    const holidays = festivals.length ? deps.holidays ?? (await getHolidays()) : [];
-    const ownDay = specialDayFor({ birthDate: parent.birthDate, festivals, specialDays: parseSpecialDays(parent.specialDaysJson), holidays }, now);
-    const partnerDay = partner && !ownDay
-      ? partnerSpecialDay(specialDayFor({ birthDate: partner.birthDate, festivals: [], specialDays: parseSpecialDays(partner.specialDaysJson), holidays }, now), partner.name)
-      : null;
-    specialDay = ownDay || partnerDay;
-
-    helper = parent.helperName || !partner?.helperName
-      ? { name: parent.helperName, days: parent.helperDays }
-      : { name: partner.helperName, days: partner.helperDays };
-  }
 
   return {
     messages: [],
@@ -499,10 +462,10 @@ async function familyAsksFor(
     readingsToAsk: access.monitor ? parent.readingsToAsk : [],
     readingsTakenToday: taken,
     readingsHere: access.readingsHere,
-    weatherNote: note,
-    helper: { ...helper, askedToday: helperAskedToday, lastCallOfDay },
+    weatherNote: null,
+    helper: { name: null, days: [], askedToday: false, lastCallOfDay },
     hearingMode: parent.hearingMode || !!partner?.hearingMode,
-    specialDay,
+    specialDay: null,
     baseSeconds: access.baseSeconds
   };
 }
@@ -519,13 +482,13 @@ async function extrasFor(
   carry?: HealthCarry,
   /** Health Monitor: whether THIS call is where readings are asked (false when a separate readings call exists). */
   readingsHere = true,
-  /** Estimated seconds of this call before the daily touches; the touches only go where the call keeps its room. */
+  /** Estimated seconds of this call (tablets + health questions); passed on for the appointment line's room check. */
   baseSeconds?: number
 ): Promise<CallExtras> {
-  const [monitor, touches] = await Promise.all([ownerHasHealthMonitor(parent.userId, now), ownerHasDailyTouches(parent.userId, now)]);
+  const monitor = await ownerHasHealthMonitor(parent.userId, now);
   const [facts, family] = await Promise.all([
     recentCallFacts(parent.id, istDateString(now), now),
-    familyAsksFor(parent, callType, now, deps, lastCallOfDay, partner, { monitor, touches, readingsHere, baseSeconds })
+    familyAsksFor(parent, callType, now, deps, lastCallOfDay, partner, { monitor, readingsHere, baseSeconds })
   ]);
   return planCallExtras({
     callType,
@@ -534,14 +497,15 @@ async function extrasFor(
       lastSafetyLineAt: parent.lastSafetyLineAt,
       lastWellbeingAt: parent.lastWellbeingAt,
       lastRefillCheckAt: parent.lastRefillCheckAt,
-      birthDate: touches ? parent.birthDate : null
+      birthDate: null
     },
     lastAnswered: facts.lastAnswered,
     activeMedicineNames: activeNames,
     answeredToday: facts.answeredToday,
     now,
     family,
-    healthCarry: carry
+    healthCarry: carry,
+    healthQuestions: monitor
   });
 }
 
@@ -577,7 +541,7 @@ async function partnerPart(partner: LoadedParent, slotType: string, now: Date, r
   const slot = partner.callSchedule.find(s => s.isActive && s.slot === slotType);
   if (!slot) return null;
   const { inactiveNames, purposes } = medicineMaps(partner.medicines, istDateString(now));
-  const taken = readings.monitor && readings.here ? await readingsTakenToday(partner.id, now) : [];
+  const taken = readings.monitor && readings.here ? await readingsTakenToday(partner.id, now, partner.readingsEveryDays) : [];
   return {
     parentId: partner.id,
     name: partner.name,
@@ -731,6 +695,11 @@ export async function runDispatch(deps: DispatchDeps = {}): Promise<DispatchSumm
         // A newly added parent is first called the next day, not about a slot that already passed.
         if (createdToday && (parseClockTime(slot.time) as number) <= createdMinutes) continue;
         if (coveredByPartner.has(slot.slot)) continue;
+        // The tablet-free readings call only rings on days a reading is due (every day, or every 3 days).
+        if (vitalsSlot && slot.id === vitalsSlot.id) {
+          const done = await readingsTakenToday(parent.id, now, parent.readingsEveryDays);
+          if (!parent.readingsToAsk.some(k => !done.includes(k))) continue;
+        }
 
         if (!loads) {
           loads = await healthLoads(parent.id, medCapped, inactiveNames, purposes, now);
@@ -741,7 +710,8 @@ export async function runDispatch(deps: DispatchDeps = {}): Promise<DispatchSumm
         const carried = (await laterToday(parent.id, today)).filter(m => !inactiveNames.has(m.name) && !own.some(o => o.name.trim().toLowerCase() === m.name.trim().toLowerCase()));
         const medicines = [...own, ...carried];
         const lastCallOfDay = slot.id === medCapped[medCapped.length - 1]?.id;
-        const carry = healthCarryFor({ loads, slotId: slot.id, feelingAskedToday: feelingAsked, nowMinutes: istMinutesOfDay(now) });
+        // The health questions are Health Monitor only (2026-10-08); without it nothing is reserved for them.
+        const carry = hasMonitor ? healthCarryFor({ loads, slotId: slot.id, feelingAskedToday: feelingAsked, nowMinutes: istMinutesOfDay(now) }) : 'none';
         const readingsHere = !vitalsSlot || slot.id === vitalsSlot.id;
         const partner = couple?.primary ? await partnerPart(couple.partner, slot.slot, now, { monitor: hasMonitor, here: readingsHere }) : null;
         // About how long this call runs before the daily touches: tablets (own, carried "later", the partner's) + the health questions.
@@ -858,7 +828,7 @@ export async function runDispatch(deps: DispatchDeps = {}): Promise<DispatchSumm
         .sort((a, b) => (parseClockTime(a.time) as number) - (parseClockTime(b.time) as number))
         .slice(0, HEALTH_PLAN_SLOTS);
       const retryLoads = await healthLoads(parent.id, todaysSlots, inactiveNames, purposes, now);
-      const retryCarry = healthCarryFor({
+      const retryCarry = !parent.user.subscription?.healthMonitor ? 'none' : healthCarryFor({
         loads: retryLoads,
         slotId: prev.slotId,
         feelingAskedToday: await feelingAskedToday(parent.id, today),

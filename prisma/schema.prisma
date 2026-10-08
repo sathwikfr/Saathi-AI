@@ -171,6 +171,7 @@ model ParentProfile {
 
   // v1.1 (2026-10-04)
   readingsToAsk      String[]  @default([]) // "bp", "sugar": Saathi asks for today's reading once a day
+  readingsEveryDays  Int       @default(1) // 1 = every day, 3 = every 3 days (family's choice, 2026-10-08)
   readingRanges      String? // JSON {bpSysMax, bpSysMin, bpDiaMax, sugarMax, sugarMin} set by the family / doctor
   callTogetherWithId String? // the other parent on the same phone: one call for both
   city               String? // for weather notes
@@ -678,3 +679,12 @@ model AskUsage {
   updatedAt DateTime @updatedAt
 }
 
+/// The scheduler's last visit to /api/cron/dispatch (2026-10-08): one row per job name ("dispatch").
+/// /admin turns amber when it is more than 15 minutes old, i.e. no calls or reminders are going out.
+model CronRun {
+  name       String   @id
+  lastRunAt  DateTime
+  ok         Boolean
+  failed     String?
+  durationMs Int
+}

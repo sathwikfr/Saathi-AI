@@ -13,7 +13,7 @@ export async function POST(req: Request) {
   const { user } = auth;
 
   try {
-    const { razorpay_payment_id, razorpay_subscription_id, razorpay_signature, planId, paymentMethodBrand, healthMonitor: wantsMonitor, dailyTouches: wantsTouches } = await req.json();
+    const { razorpay_payment_id, razorpay_subscription_id, razorpay_signature, planId, paymentMethodBrand, healthMonitor: wantsMonitor } = await req.json();
 
     if (!razorpay_payment_id || !razorpay_subscription_id) {
       return NextResponse.json({ error: 'Missing payment or subscription identifiers.' }, { status: 400 });
@@ -24,9 +24,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Invalid plan.' }, { status: 400 });
     }
 
-    const { healthMonitor, dailyTouches } = cleanAddons(planId as PlanId, { healthMonitor: wantsMonitor === true, dailyTouches: wantsTouches === true });
-    const price = monthlyPrice(planId as PlanId, healthMonitor, dailyTouches);
-    const planLabel = `${plan.name}${healthMonitor ? ' + Health Monitor' : ''}${dailyTouches ? ' + Daily Touches' : ''}`;
+    const { healthMonitor } = cleanAddons(planId as PlanId, { healthMonitor: wantsMonitor === true });
+    const price = monthlyPrice(planId as PlanId, healthMonitor);
+    const planLabel = `${plan.name}${healthMonitor ? ' + Health Monitor' : ''}`;
 
     const verification = await verifySubscriptionPayment({
       paymentId: String(razorpay_payment_id),
@@ -34,8 +34,7 @@ export async function POST(req: Request) {
       signature: String(razorpay_signature || ''),
       userId: user.id,
       planId: planId as PlanId,
-      healthMonitor,
-      dailyTouches
+      healthMonitor
     });
 
     if (!verification.ok) {
@@ -53,7 +52,7 @@ export async function POST(req: Request) {
 
     const previousSubscriptionId = user.subscription?.razorpaySubscriptionId;
     // Already activated (a double submit or a replay): don't restart the trial dates.
-    if (previousSubscriptionId === String(razorpay_subscription_id) && user.subscription?.planId === planId && !!user.subscription?.healthMonitor === healthMonitor && !!user.subscription?.dailyTouches === dailyTouches) {
+    if (previousSubscriptionId === String(razorpay_subscription_id) && user.subscription?.planId === planId && !!user.subscription?.healthMonitor === healthMonitor) {
       return NextResponse.json({ success: true, message: 'Subscription is already active.', subscription: user.subscription });
     }
     const invoiceNumber = invoiceNumberForPayment(String(razorpay_payment_id));
@@ -68,7 +67,6 @@ export async function POST(req: Request) {
       // Same rule as at checkout: only the first paid subscription gets the free trial.
       noTrial: !!previousSubscriptionId,
       healthMonitor,
-      dailyTouches,
       carry
     });
 

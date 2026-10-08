@@ -16,7 +16,7 @@ import { config } from 'dotenv';
 // Same order as Next.js: .env.local wins over .env.
 config({ path: '.env.local', quiet: true });
 config({ path: '.env', quiet: true });
-import { PLANS, PAID_PLAN_IDS, HEALTH_MONITOR, DAILY_TOUCHES, monthlyPrice } from '../src/lib/plans';
+import { PLANS, PAID_PLAN_IDS, HEALTH_MONITOR, monthlyPrice } from '../src/lib/plans';
 
 const PLACEHOLDER = /demo|CareCircle|xxxx|your_/i;
 
@@ -87,15 +87,15 @@ async function main() {
     results[plan.id] = created.id;
   }
 
-  // Add-on combinations: a Razorpay plan is a fixed amount (add-ons are one-time charges), so Solo / Family / Extended each
-  // get a plan for Health Monitor, Daily Touches and both. Env: RAZORPAY_PLAN_ID_<PLAN>_MONITOR / _TOUCHES / _MONITOR_TOUCHES.
+  // Health Monitor: a Razorpay plan is a fixed amount (add-ons are one-time charges), so Solo / Family / Extended each
+  // get a plan with it. Env: RAZORPAY_PLAN_ID_<PLAN>_MONITOR.
   for (const planId of ['solo', 'family', 'extended'] as const) {
-    for (const add of [{ healthMonitor: true, dailyTouches: false }, { healthMonitor: false, dailyTouches: true }, { healthMonitor: true, dailyTouches: true }]) {
-      const price = monthlyPrice(planId, add);
+    {
+      const price = monthlyPrice(planId, true);
       const amountPaise = price * 100;
-      const label = [add.healthMonitor ? HEALTH_MONITOR.name : '', add.dailyTouches ? DAILY_TOUCHES.name : ''].filter(Boolean).join(' + ');
+      const label = HEALTH_MONITOR.name;
       const name = `Aaptha ${PLANS[planId].name} + ${label} (monthly)`;
-      const key = `${planId}${add.healthMonitor ? '_MONITOR' : ''}${add.dailyTouches ? '_TOUCHES' : ''}`;
+      const key = `${planId}_MONITOR`;
       const found = existing.find(
         p => p.item.name === name && p.item.amount === amountPaise && p.item.currency === 'INR' && p.period === 'monthly' && p.interval === 1
       );
@@ -109,7 +109,7 @@ async function main() {
           period: 'monthly',
           interval: 1,
           item: { name, amount: amountPaise, currency: 'INR', description: `${PLANS[planId].tagline}, plus ${label.toLowerCase()}.` },
-          notes: { carecircle_plan_id: planId, carecircle_addon: [add.healthMonitor ? HEALTH_MONITOR.id : '', add.dailyTouches ? DAILY_TOUCHES.id : ''].filter(Boolean).join(',') }
+          notes: { carecircle_plan_id: planId, carecircle_addon: HEALTH_MONITOR.id }
         });
         console.log(`+ ${PLANS[planId].name} + ${label}: created ₹${price}/month → ${created.id}`);
         results[key] = created.id;

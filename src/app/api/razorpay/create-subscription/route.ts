@@ -12,7 +12,7 @@ export async function POST(req: Request) {
   const { user } = auth;
 
   try {
-    const { planId, healthMonitor, dailyTouches } = await req.json();
+    const { planId, healthMonitor } = await req.json();
 
     if (!planId || !PLANS[planId as PlanId]) {
       return NextResponse.json({ error: 'Invalid plan selected.' }, { status: 400 });
@@ -44,7 +44,6 @@ export async function POST(req: Request) {
       {
         noTrial: !!user.subscription?.razorpaySubscriptionId,
         healthMonitor: healthMonitor === true,
-        dailyTouches: dailyTouches === true,
         // Paid days left on the current plan are not charged twice: the new plan's first charge waits for them.
         startAt: carriedPeriod(user.subscription)?.periodEnd
       }

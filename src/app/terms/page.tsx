@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { LegalPage, ContactLine } from '@/components/LegalPage';
-import { PLANS, FREE_TRIAL_DAYS, HEALTH_MONITOR, healthMonitorPrice, DAILY_TOUCHES } from '@/lib/plans';
+import { PLANS, FREE_TRIAL_DAYS, HEALTH_MONITOR, healthMonitorPrice } from '@/lib/plans';
 
 export const metadata: Metadata = {
   title: 'Terms of Service — Aaptha',
@@ -79,8 +79,8 @@ export default function TermsPage() {
           {' '}{PLANS.extended.whatsappPeople} on {PLANS.extended.name}; urgent alerts reach everyone in the family circle who turned WhatsApp on.
           The timeline and one call for a couple sharing a phone are part of {PLANS.family.name} and {PLANS.extended.name}. On any calling plan
           {' '}you can add {HEALTH_MONITOR.name} (BP and sugar by voice, charts and health trends, with a short extra call a day for the readings;
-          {' '}₹{healthMonitorPrice('solo')} a month on {PLANS.solo.name}, ₹{healthMonitorPrice('family')} on {PLANS.family.name}, ₹{healthMonitorPrice('extended')} on {PLANS.extended.name})
-          {' '}and {DAILY_TOUCHES.name} (festival and birthday wishes, weather notes and the helper check, ₹{DAILY_TOUCHES.priceMonthly} a month, only on calls that have room).
+          {' '}₹{healthMonitorPrice('solo')} a month on {PLANS.solo.name}, ₹{healthMonitorPrice('family')} on {PLANS.family.name}, ₹{healthMonitorPrice('extended')} on {PLANS.extended.name}).
+          {' '}On {PLANS.family.name} and {PLANS.extended.name} Saathi keeps every call under two minutes: if a call runs long, it says it will let you know and ends the call.
         </li>
         <li>
           &quot;Ask about your parent&quot; is limited each month by plan ({PLANS.solo.askPerMonth} questions on {PLANS.solo.name},

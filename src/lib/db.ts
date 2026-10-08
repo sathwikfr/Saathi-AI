@@ -84,8 +84,7 @@ function toSubscription(s: NonNullable<PrismaUserFull['subscription']>): UserSub
     paymentMethodBrand: s.paymentMethodBrand || undefined,
     razorpaySubscriptionId: s.razorpaySubscriptionId || undefined,
     razorpayPaymentId: s.razorpayPaymentId || undefined,
-    healthMonitor: s.healthMonitor || undefined,
-    dailyTouches: s.dailyTouches || undefined
+    healthMonitor: s.healthMonitor || undefined
   };
 }
 
@@ -382,15 +381,14 @@ export async function updateUserSubscription(
     noTrial?: boolean;
     /** Add-ons (ignored where the plan doesn't offer them). */
     healthMonitor?: boolean;
-    dailyTouches?: boolean;
     /** A plan change inside a paid period: keep that period (the new plan's first charge is on its last day). */
     carry?: { periodEnd: Date; status: 'active' | 'trialing'; trialEndsAt: Date | null };
   }
 ): Promise<UserSubscription> {
   const plan = PLANS[details.planId];
-  const { healthMonitor, dailyTouches } = cleanAddons(details.planId, details);
-  const price = monthlyPrice(details.planId, healthMonitor, dailyTouches);
-  const addonLabel = `${healthMonitor ? ' + Health Monitor' : ''}${dailyTouches ? ' + Daily Touches' : ''}`;
+  const { healthMonitor } = cleanAddons(details.planId, details);
+  const price = monthlyPrice(details.planId, healthMonitor);
+  const addonLabel = healthMonitor ? ' + Health Monitor' : '';
   const now = new Date();
   const carry = plan.priceMonthly > 0 ? details.carry : undefined;
   const hasTrial = !carry && plan.hasTrial && !details.noTrial;
@@ -414,7 +412,8 @@ export async function updateUserSubscription(
     cancelAtPeriodEnd: false,
     amount: price,
     healthMonitor,
-    dailyTouches,
+    // Daily Touches was removed (2026-10-08); a new subscription row clears an old one.
+    dailyTouches: false,
     paymentMethodLast4: details.paymentMethodLast4 || null,
     paymentMethodBrand: details.paymentMethodBrand || null,
     razorpaySubscriptionId: details.razorpaySubscriptionId || null,
@@ -568,6 +567,7 @@ function toParent(p: PrismaParentWithSchedule): ParentProfile {
     companionTime: p.companionTime || undefined,
     companionTopics: p.companionTopics || undefined,
     readingsToAsk: p.readingsToAsk,
+    readingsEveryDays: p.readingsEveryDays,
     readingRanges: parseRanges(p.readingRanges),
     callTogetherWithId: p.callTogetherWithId || undefined,
     city: p.city || undefined,
@@ -728,6 +728,7 @@ export interface ParentDetailsUpdate {
   companionTopics?: string | null;
   // v1.1
   readingsToAsk?: string[];
+  readingsEveryDays?: number;
   readingRanges?: Record<string, number | null | undefined> | null;
   festivals?: string[];
   specialDays?: { date: string; label: string; kind?: string }[];
@@ -789,6 +790,10 @@ export function cleanParentDetails(d: ParentDetailsUpdate): Prisma.ParentProfile
   }
   // v1.1
   if (Array.isArray(d.readingsToAsk)) out.readingsToAsk = d.readingsToAsk.filter(k => (READING_KINDS as string[]).includes(k));
+  if (d.readingsEveryDays !== undefined) {
+    if (d.readingsEveryDays !== 1 && d.readingsEveryDays !== 3) throw new Error('Readings can be every day or every 3 days.');
+    out.readingsEveryDays = d.readingsEveryDays;
+  }
   if (d.readingRanges !== undefined) {
     if (!d.readingRanges) out.readingRanges = null;
     else {

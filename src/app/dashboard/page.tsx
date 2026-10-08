@@ -494,9 +494,8 @@ function DashboardContent() {
     ?? (rawParent.reminderChannel === 'whatsapp' || (isOwner && getEffectivePlan(user?.subscription, user?.createdAt).channel === 'whatsapp') ? 'whatsapp' : 'call')) === 'whatsapp';
   // Family / Extended features follow the OWNER's plan (a shared viewer's own plan doesn't matter).
   const premium = parentData?.ownerPlan?.premium ?? (isOwner ? getEffectivePlan(user?.subscription, user?.createdAt).premium : true);
-  // Add-ons (any calling plan): Health Monitor = BP / sugar / trends, Daily Touches = festivals, weather, helper.
+  // The Health Monitor add-on (any calling plan): how they feel, BP / sugar, trends.
   const healthMonitor = parentData?.ownerPlan?.healthMonitor ?? (isOwner && !!user?.subscription?.healthMonitor);
-  const dailyTouches = parentData?.ownerPlan?.dailyTouches ?? (isOwner && !!user?.subscription?.dailyTouches);
   const addonPlanId = parentData?.ownerPlan?.id ?? getEffectivePlan(user?.subscription, user?.createdAt).id;
   const toast = (text: string, type: Toast['type'] = 'info') => setToastMessage({ text, type });
   const refresh = () => fetchParentDetails(currentParent.id);
@@ -956,9 +955,7 @@ function DashboardContent() {
             premium={premium}
             planId={addonPlanId}
             monitorPrice={parentData?.ownerPlan?.healthMonitorPrice ?? 0}
-            touchesPrice={parentData?.ownerPlan?.dailyTouchesPrice ?? 0}
             healthMonitor={healthMonitor}
-            dailyTouches={dailyTouches}
             vitalsCall={parentData?.vitalsCall ?? null}
             callTogetherCandidates={parentData?.callTogetherCandidates || []}
             onPause={() => setShowPauseModal(true)}

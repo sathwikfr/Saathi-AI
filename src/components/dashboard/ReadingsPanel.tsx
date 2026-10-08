@@ -175,7 +175,7 @@ export function ReadingsPanel({ parent, manage, onToast, onOpenSettings }: Props
           <h3 id="readings-title"><Activity size={18} style={{ verticalAlign: '-3px', marginRight: '6px' }} />BP and sugar</h3>
           <p>
             {asking
-              ? `Saathi asks ${name} for ${parent.readingsToAsk.map(k => (k === 'bp' ? 'BP' : 'sugar')).join(' and ')} once a day. Saathi never comments on the numbers.`
+              ? `Saathi asks ${name} for ${parent.readingsToAsk.map(k => (k === 'bp' ? 'BP' : 'sugar')).join(' and ')} ${parent.readingsEveryDays === 3 ? 'every 3 days' : 'once a day'}. Saathi never comments on the numbers.`
               : `Readings you type in from a home machine.`}
             {' '}Self-reported, not checked by a doctor.
           </p>
