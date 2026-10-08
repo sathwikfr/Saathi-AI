@@ -678,12 +678,3 @@ model AskUsage {
   updatedAt DateTime @updatedAt
 }
 
-/// The scheduler's last visit to /api/cron/dispatch (2026-10-08): one row per job name ("dispatch").
-/// /admin turns amber when it is more than 15 minutes old, i.e. no calls or reminders are going out.
-model CronRun {
-  name       String   @id
-  lastRunAt  DateTime
-  ok         Boolean
-  failed     String?
-  durationMs Int
-}
