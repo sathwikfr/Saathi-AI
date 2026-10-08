@@ -1,4 +1,4 @@
-export type PlanId = 'free' | 'solo' | 'family' | 'extended';
+export type PlanId = 'free' | 'essential' | 'solo' | 'family' | 'extended';
 
 export interface Plan {
   id: PlanId;
@@ -11,8 +11,13 @@ export interface Plan {
   popular?: boolean;
   features: string[];
   parentsIncluded: number;
-  /** Max scheduled Saathi calls per parent per day (controls call cost). */
+  channel: 'call' | 'whatsapp';
   callsPerDay: number;
+  remindersPerDay: number;
+  weeklyChat: boolean;
+  askPerMonth: number;
+  whatsappPeople: number;
+  premium: boolean;
   /** Free plan only: it lasts this many days from account creation, then calls stop. */
   expiresAfterDays?: number;
   /** True for the synthetic "trial ended" plan returned once a free trial is over. */

@@ -6,10 +6,10 @@
 
 .plans {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
   align-items: stretch;
-  max-width: 1080px;
+  max-width: 1200px;
   margin: 0 auto;
 }
 
@@ -171,7 +171,14 @@
   color: var(--teal);
 }
 
-@media (max-width: 960px) {
+@media (max-width: 1180px) and (min-width: 701px) {
+  .plans {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    max-width: 720px;
+  }
+}
+
+@media (max-width: 700px) {
   .plans {
     grid-template-columns: 1fr;
     max-width: 460px;
