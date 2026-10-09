@@ -46,7 +46,7 @@ const STATUS_WORD: Record<MedicineResult['status'], string> = {
   taken: 'taken',
   missed: 'missed',
   unknown: 'not sure',
-  later: 'will take later (Saathi will call back)',
+  later: 'will take later (Saathi will ask again on the next call)',
   stopped: 'stopped taking it'
 };
 

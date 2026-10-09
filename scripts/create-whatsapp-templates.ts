@@ -62,7 +62,7 @@ function buildTemplate(kind: WhatsAppTemplateKind, appUrl: string) {
     category: 'UTILITY',
     components: [
       { type: 'BODY', text: tpl.body, example: { body_text: [EXAMPLES[kind]] } },
-      { type: 'BUTTONS', buttons }
+      ...(buttons.length ? [{ type: 'BUTTONS', buttons }] : []) // Meta rejects an empty button list (aaptha_caretaker_update has none)
     ]
   };
 }

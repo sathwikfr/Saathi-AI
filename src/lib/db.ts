@@ -54,6 +54,12 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
   minimumAlertLevel: 1
 };
 
+/** "nana" -> "Nana". Only touches names typed entirely in lower case, so "D'Souza" or "Rao ji" stay as typed. */
+export function tidyName(name: string): string {
+  const n = name.trim();
+  return n === n.toLowerCase() ? n.replace(/(^|\s)(\p{L})/gu, (_, sp, ch) => sp + ch.toUpperCase()) : n;
+}
+
 /** Collision-resistant, prefixed ids (e.g. `parent_3f9a1c0b7d2e`). */
 export function newId(prefix: string): string {
   return `${prefix}_${crypto.randomBytes(6).toString('hex')}`;
@@ -701,7 +707,7 @@ export async function createParent(data: {
     data: {
       id: newId('parent'),
       userId: data.userId,
-      name: data.name,
+      name: tidyName(data.name),
       relationship: data.relationship,
       phone: data.phone,
       language: data.language || 'Hindi & English',
@@ -934,7 +940,7 @@ export async function updateParent(id: string, updates: ParentUpdates): Promise<
   if (!existing || existing.isDeleted) return null;
 
   const data: Prisma.ParentProfileUpdateInput = {};
-  if (typeof updates.name === 'string' && updates.name.trim()) data.name = updates.name.trim();
+  if (typeof updates.name === 'string' && updates.name.trim()) data.name = tidyName(updates.name);
   if (typeof updates.relationship === 'string' && updates.relationship.trim()) data.relationship = updates.relationship.trim();
   if (typeof updates.phone === 'string' && updates.phone.trim()) data.phone = updates.phone.trim();
   if (typeof updates.language === 'string' && updates.language.trim()) data.language = updates.language.trim();
