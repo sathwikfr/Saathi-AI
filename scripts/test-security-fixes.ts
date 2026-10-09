@@ -10,6 +10,7 @@ import { getEffectivePlan, PAID_GRACE_DAYS } from '../src/lib/plans';
 import { vouches, fixedScamReply } from '../src/lib/scamCheck';
 import { ladderRounds, MAX_EMERGENCY_CONTACTS } from '../src/lib/escalation';
 import { pausedPastToday } from '../src/lib/reminders';
+import { cleanParam } from '../src/lib/whatsapp';
 
 let failed = 0;
 let passed = 0;
@@ -89,6 +90,11 @@ check('paused with no end (family) → kept', pausedPastToday({ isPaused: true, 
 check('paused for a week → kept', pausedPastToday({ isPaused: true, pauseUntil: new Date(noon.getTime() + 7 * dayMs) }, noon));
 check('paused until later today → replaced by "until tomorrow"', !pausedPastToday({ isPaused: true, pauseUntil: new Date(noon.getTime() + 3600000) }, noon));
 
+
+console.log('\nText cut in the middle of an emoji (audit run 2, wave 2)');
+const cutEmoji = cleanParam('a'.repeat(698) + '😀 chest pain', 700);
+check('a WhatsApp parameter never ends in half an emoji', cutEmoji.isWellFormed(), cutEmoji.slice(-4));
+check('a 200-character excerpt made well-formed', ('a'.repeat(199) + '😀').slice(0, 200).toWellFormed().isWellFormed());
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
