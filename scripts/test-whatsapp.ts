@@ -17,7 +17,7 @@ import {
 import { describeAnsweredCall, planFamilyMessage, WA_REPLIES } from '../src/lib/familyMessages';
 import { processSarvamWebhook, raiseToolEscalation } from '../src/lib/callResults';
 import { runDispatch } from '../src/lib/callDispatch';
-import { processWhatsAppWebhook, InboundDeps } from '../src/lib/whatsappInbound';
+import { processWhatsAppWebhook, InboundDeps, PARENT_EMERGENCY_TITLE } from '../src/lib/whatsappInbound';
 import { whatsappRecipient } from '../src/lib/familyNotify';
 import { SarvamConfig } from '../src/lib/sarvam';
 import { LinkedMedicineDetail } from '../src/lib/types';
@@ -357,6 +357,16 @@ async function partB() {
     const r13c = await processWhatsAppWebhook(text(strangerPhone.slice(1), `wamid.in.${stamp}.14`, 'hi'), inboundDeps);
     check('unknown number: stored, never answered', r13c.messages === 1 && r13c.replies === 0 && graph.requests.length === sent13);
 
+    // ---- B13b (audit 2026-10-09): a parent's number typed into an account must not swallow their emergency ----------
+    console.log("\nB13b. Parent's number set as an account's WhatsApp number (no proof): their emergency still raises the alert");
+    await prisma.notificationPreferences.update({ where: { userId: user.id }, data: { whatsappNumber: parentPhone, whatsappVerifiedAt: null } });
+    const sent13b = graph.requests.length;
+    await processWhatsAppWebhook(text(parentPhone.slice(1), `wamid.in.${stamp}.15`, 'I have chest pain, please help'), inboundDeps);
+    const em13b = await prisma.alertRecord.findFirst({ where: { parentId: parent.id, title: PARENT_EMERGENCY_TITLE } });
+    check('level-4 emergency alert for the parent', em13b?.level === 4, em13b);
+    check('the parent got the 108 / 112 reply', graph.requests.slice(sent13b).some(q => (q.body.text?.body || '').includes('108')));
+    await prisma.notificationPreferences.update({ where: { userId: user.id }, data: { whatsappNumber: null, whatsappVerifiedAt: new Date() } });
+
     // ---- B14 the webhook route itself -------------------------------------------------------
     console.log('\nB14. Webhook route');
     process.env.WHATSAPP_VERIFY_TOKEN = 'verify-me-please-123';
@@ -376,10 +386,10 @@ async function partB() {
     }));
     check('signed POST → 200', signed.status === 200);
   } finally {
-    await prisma.whatsAppMessage.deleteMany({ where: { OR: [{ userId: user.id }, { phone: { in: [ownerPhone, strangerPhone] } }] } });
+    await prisma.whatsAppMessage.deleteMany({ where: { OR: [{ userId: user.id }, { phone: { in: [ownerPhone, strangerPhone, parentPhone] } }] } });
     await prisma.user.delete({ where: { id: user.id } });
     const left = (await prisma.user.count({ where: { email: { startsWith: 'whatsapp-test-' } } }))
-      + (await prisma.whatsAppMessage.count({ where: { phone: { in: [ownerPhone, strangerPhone] } } }));
+      + (await prisma.whatsAppMessage.count({ where: { phone: { in: [ownerPhone, strangerPhone, parentPhone] } } }));
     console.log(`\nCleanup: test rows removed (${left === 0 ? 'clean' : 'LEFTOVER ROWS!'})`);
   }
 }

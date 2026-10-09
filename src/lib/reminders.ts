@@ -53,6 +53,8 @@ export const CARETAKER_ALERTS_PER_DAY = 2;
 export const DEFAULT_REMINDERS_PER_DAY = 4;
 /** Words that may mean an emergency: one warm reply and one caretaker alert, then quiet for this many hours. */
 export const EMERGENCY_REPLY_GAP_HOURS = 6;
+/** Check-up reminder messages sent per person in one cron run. */
+const APPOINTMENT_SENDS_PER_RUN = 2;
 export const REMINDER_EMERGENCY_TITLE = 'Possible emergency in a WhatsApp reply';
 export const REMINDER_MISSED_TITLE = 'Medicine not confirmed';
 export const REMINDER_UNWELL_TITLE = 'Not feeling well (WhatsApp reply)';
@@ -271,6 +273,11 @@ export function parsePauseToday(text: string): boolean {
 /** Midnight IST at the start of tomorrow: when a "pause today" ends. */
 export function tomorrowStartIst(now: Date): Date {
   return new Date(`${istDateString(new Date(now.getTime() + 86400000))}T00:00:00+05:30`);
+}
+
+/** Already paused beyond today (no end date, or ending tomorrow or later): "pause today" must not shorten it. */
+export function pausedPastToday(p: { isPaused: boolean; pauseUntil: Date | null }, now: Date): boolean {
+  return p.isPaused && (!p.pauseUntil || p.pauseUntil.getTime() >= tomorrowStartIst(now).getTime());
 }
 
 /**
@@ -505,8 +512,9 @@ async function messageCaretaker(
 /** The dashboard alert says who was asked to call, once the caretaker's message went out. */
 async function noteCaretakerAsked(alertId: string | undefined, person: { caretakerName: string | null }) {
   if (!alertId) return;
-  const a = await prisma.alertRecord.findUnique({ where: { id: alertId }, select: { message: true } });
-  if (a) await prisma.alertRecord.update({ where: { id: alertId }, data: { message: `${a.message} ${firstName(person.caretakerName || 'The caretaker')} was asked to call.` } });
+  const a = await prisma.alertRecord.findUnique({ where: { id: alertId }, select: { message: true, channel: true } });
+  // Telling the caretaker counts as delivering it (a later emergency in the quiet gap then sends nothing more).
+  if (a) await prisma.alertRecord.update({ where: { id: alertId }, data: { message: `${a.message} ${firstName(person.caretakerName || 'The caretaker')} was asked to call.`, ...(a.channel === 'dashboard' ? { channel: 'whatsapp' } : {}) } });
 }
 
 /** Caretaker "please call" alerts already sent to this person's caretaker today (IST). */
@@ -611,10 +619,13 @@ export async function runReminders(deps: ReminderDeps = {}): Promise<ReminderSum
 
       // Check-up reminders (doctor, scan, lab): the evening before and the morning of. Claimed once each.
       const appts = await prisma.appointment.findMany({
-        where: { parentId: p.id, cancelledAt: null, startsAt: { gte: new Date(now.getTime() - 3600000), lte: new Date(now.getTime() + 2 * 86400000) } }
+        where: { parentId: p.id, cancelledAt: null, startsAt: { gte: new Date(now.getTime() - 3600000), lte: new Date(now.getTime() + 2 * 86400000) } },
+        orderBy: { startsAt: 'asc' }
       });
       const lang = waLang(p.language);
-      for (const due of dueWhatsappAppointments(appts, now, appointmentWords(lang))) {
+      // A few per person per run: one family's long list must not hold up everyone else's medicine checks (the rest
+      // go out on the next runs).
+      for (const due of dueWhatsappAppointments(appts, now, appointmentWords(lang)).slice(0, APPOINTMENT_SENDS_PER_RUN)) {
         const res = await sendClaimedTemplate(
           cfg,
           { kind: 'appointment', refKey: `${due.id}:${due.which}`, parentId: p.id, phone: p.reminderWhatsapp! },
@@ -791,7 +802,8 @@ async function stopFamilyUpdates(phone: string) {
  */
 export async function handleReminderInbound(input: ReminderInbound, cfg: WhatsAppConfig | null, deps: ReminderDeps = {}): Promise<number | null> {
   const now = deps.now || new Date();
-  const word = input.text.toLowerCase().replace(/[.!]+$/, '').trim();
+  // `text` can be a photo caption (read for warning words only); STOP / START and answers must be typed.
+  const word = input.type === 'text' ? input.text.toLowerCase().replace(/[.!]+$/, '').trim() : '';
 
   // ---- "START <code>" from a wa.me link: the person's or the caretaker's own opt-in.
   const code = input.type === 'text' ? parseStartCode(input.text) : null;
@@ -828,7 +840,7 @@ export async function handleReminderInbound(input: ReminderInbound, cfg: WhatsAp
 
   const person = await prisma.parentProfile.findFirst({
     where: { reminderWhatsapp: input.phone, isDeleted: false, reminderOptInAt: { not: null } },
-    include: { callSchedule: { where: { isActive: true } }, medicines: true, user: { include: { notificationPreferences: true } } },
+    include: PERSON_INCLUDE,
     orderBy: { createdAt: 'asc' }
   });
   const plan = person ? await planFor(person.userId, now) : null;
@@ -856,7 +868,8 @@ export async function handleReminderInbound(input: ReminderInbound, cfg: WhatsAp
     return 0;
   }
   if (STOP_WORDS.has(word)) {
-    await prisma.parentProfile.update({ where: { id: caredFor.id }, data: { caretakerOptOutAt: now } });
+    // STOP is about the number: every person this number is caretaker for stops sending to it.
+    await prisma.parentProfile.updateMany({ where: { caretakerWhatsapp: input.phone, caretakerOptOutAt: null }, data: { caretakerOptOutAt: now } });
     await stopFamilyUpdates(input.phone);
     return replyTo(cfg, input, caredFor.id, REMINDER_REPLIES.caretakerStopped(caredFor.name), deps);
   }
@@ -864,10 +877,20 @@ export async function handleReminderInbound(input: ReminderInbound, cfg: WhatsAp
     await prisma.parentProfile.update({ where: { id: caredFor.id }, data: { caretakerOptOutAt: null, caretakerOptInAt: now } });
     return replyTo(cfg, input, caredFor.id, REMINDER_REPLIES.caretakerRestarted(caredFor.name), deps);
   }
+  // A caretaker who is also a parent we call (a husband caring for his wife): their own messages still get the
+  // parent's emergency and symptom check, so hand them back to the caller.
+  if (await prisma.parentProfile.count({ where: { phone: input.phone, isDeleted: false } })) return null;
   return 0;
 }
 
+const PERSON_INCLUDE = {
+  callSchedule: { where: { isActive: true } },
+  medicines: true,
+  user: { include: { notificationPreferences: true } }
+} as const;
+
 type InboundPerson = PersonRow & {
+  pauseUntil: Date | null;
   userId: string;
   phone: string;
   callSchedule: { time: string; linkedMedicineNames: string[] }[];
@@ -974,8 +997,16 @@ async function personMessage(person: InboundPerson, input: ReminderInbound, cfg:
     const original = input.contextId ? await prisma.whatsAppMessage.findUnique({ where: { providerMessageId: input.contextId } }) : null;
     if (!original || original.kind !== 'reminder' || original.direction !== 'out' || original.phone !== input.phone) return 0;
     const rem = await prisma.medicineReminder.findUnique({ where: { id: original.refKey.split(':')[0] } });
-    if (!rem || rem.parentId !== person.id) return 0;
-    return replyTo(cfg, input, person.id, await answerCheck(cfg, person, rem, isYes, deps, now), deps);
+    if (!rem) return 0;
+    // Two people can get their checks on one phone (a couple): the button answers the check it was tapped on.
+    const who = rem.parentId === person.id
+      ? person
+      : await prisma.parentProfile.findFirst({
+          where: { id: rem.parentId, reminderWhatsapp: input.phone, isDeleted: false, reminderOptInAt: { not: null } },
+          include: PERSON_INCLUDE
+        });
+    if (!who) return 0;
+    return replyTo(cfg, input, who.id, await answerCheck(cfg, who, rem, isYes, deps, now), deps);
   }
 
   // ---- STOP / START
@@ -995,7 +1026,10 @@ async function personMessage(person: InboundPerson, input: ReminderInbound, cfg:
   const scan = input.text ? scanMessage(input.text) : { hit: false, matches: [] as string[] };
   if (scan.hit) {
     const gapStart = new Date(now.getTime() - EMERGENCY_REPLY_GAP_HOURS * 3600000);
-    if ((await prisma.whatsAppMessage.count({ where: { parentId: person.id, kind: 'emergency_reply', createdAt: { gte: gapStart } } })) > 0) return 0;
+    // Within the quiet gap the person and the caretaker get nothing more (no spam), but every emergency is still an
+    // alert and the account holder is still told: a real emergency after a false alarm must not vanish, and an
+    // earlier attempt that failed before telling the family (its reply already sent) is made good here.
+    const quiet = (await prisma.whatsAppMessage.count({ where: { parentId: person.id, kind: 'emergency_reply', createdAt: { gte: gapStart } } })) > 0;
     const rec = await recordAlert({
       parentId: person.id,
       callLogId: null,
@@ -1005,27 +1039,35 @@ async function personMessage(person: InboundPerson, input: ReminderInbound, cfg:
         `We asked ${firstName(person.name)} to call 108 if help is needed right away.`
     });
     let caretakerTold = false;
-    if (cfg) {
+    if (cfg && !quiet) {
       caretakerTold = await messageCaretaker(cfg, person, 'emergency', input.inboundId, CARETAKER_TEXT.emergency(person.name, input.text.slice(0, 200), person.reminderWhatsapp || person.phone), deps, now, rec.alertId || null);
       if (caretakerTold) await noteCaretakerAsked(rec.alertId, person);
     }
-    const sent = await replyTo(cfg, input, person.id, R.emergency(person.name, caretakerTold ? person.caretakerName : null), deps, 'emergency_reply');
-    // The account holder too, unless that is the person (they just got the reply) or the caretaker (already told).
+    // The account holder too, unless that is the person (they get the reply) or the caretaker (already told).
+    // Before the reply: the reply starts the quiet gap, so a failure here must leave the retry able to tell them.
+    // In the quiet gap only when no emergency in it has reached them yet (one message, not one per text).
     const ownerNumber = person.user.notificationPreferences?.whatsappNumber || person.user.phone;
-    if (rec.alert && ownerNumber !== input.phone && !(caretakerTold && ownerNumber === person.caretakerWhatsapp)) {
+    const familyAlreadyTold = quiet && (await prisma.alertRecord.count({
+      where: { parentId: person.id, title: REMINDER_EMERGENCY_TITLE, createdAt: { gte: gapStart }, channel: { not: 'dashboard' } }
+    })) > 0;
+    if (rec.alert && !familyAlreadyTold && ownerNumber !== input.phone && !(caretakerTold && ownerNumber === person.caretakerWhatsapp)) {
       await notifyFamily({ parentId: person.id, callLogId: null, alerts: [rec.alert] }, deps);
     }
-    return sent;
+    if (quiet) return 0;
+    return replyTo(cfg, input, person.id, R.emergency(person.name, caretakerTold ? person.caretakerName : null), deps, 'emergency_reply');
   }
 
   const symptoms = input.text ? scanSymptomMessage(input.text) : { hit: false, matches: [] as string[] };
 
   // ---- "pause today": today's open checks stop, everything starts again tomorrow by itself.
   if (input.type === 'text' && parsePauseToday(input.text)) {
-    await prisma.parentProfile.update({
-      where: { id: person.id },
-      data: { isPaused: true, pauseReason: 'Paused for today (asked on WhatsApp)', pauseUntil: tomorrowStartIst(now) }
-    });
+    // A longer pause the family set (or "until further notice") is left alone.
+    if (!pausedPastToday(person, now)) {
+      await prisma.parentProfile.update({
+        where: { id: person.id },
+        data: { isPaused: true, pauseReason: 'Paused for today (asked on WhatsApp)', pauseUntil: tomorrowStartIst(now) }
+      });
+    }
     await prisma.medicineReminder.updateMany({
       where: { parentId: person.id, reminderDate: istDateString(now), OR: [{ answer: null }, { answer: 'not_yet' }] },
       data: { answer: 'paused', nextAskAt: null }

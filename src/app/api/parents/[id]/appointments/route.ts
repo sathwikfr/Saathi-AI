@@ -6,6 +6,7 @@ import { requireParentAccess } from '@/lib/access';
 type Ctx = { params: Promise<{ id: string }> };
 
 const KINDS = ['doctor', 'lab', 'other'];
+const MAX_UPCOMING_APPOINTMENTS = 20;
 
 function toJson(a: Awaited<ReturnType<typeof prisma.appointment.findMany>>[number]) {
   return {
@@ -37,6 +38,11 @@ export async function POST(req: Request, { params }: Ctx) {
   if (!title) return NextResponse.json({ error: 'What is it for? e.g. "eye check-up".' }, { status: 400 });
   if (Number.isNaN(startsAt.getTime()) || startsAt.getTime() < Date.now() - 3600000) {
     return NextResponse.json({ error: 'Choose a date and time that has not passed.' }, { status: 400 });
+  }
+  // Each one is up to two reminder messages: keep the list to what a family really plans.
+  const upcoming = await prisma.appointment.count({ where: { parentId: id, cancelledAt: null, startsAt: { gte: new Date() } } });
+  if (upcoming >= MAX_UPCOMING_APPOINTMENTS) {
+    return NextResponse.json({ error: `Up to ${MAX_UPCOMING_APPOINTMENTS} upcoming appointments. Cancel one you no longer need first.` }, { status: 400 });
   }
   const a = await prisma.appointment.create({
     data: {

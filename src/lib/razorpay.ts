@@ -186,7 +186,7 @@ export async function verifySubscriptionPayment(params: {
   planId: PlanId;
   /** Add-ons bought with the plan. */
   healthMonitor?: boolean;
-}): Promise<{ ok: true; isSandbox: boolean } | { ok: false; error: string }> {
+}): Promise<{ ok: true; isSandbox: boolean; /** Razorpay's first charge, when it is not "now" (trial or carried period). */ startAt?: Date | null } | { ok: false; error: string }> {
   const { paymentId, subscriptionId, signature, userId, planId } = params;
   const add = cleanAddons(planId, params);
   const addonTag = addonSuffix(add).toLowerCase();
@@ -238,7 +238,8 @@ export async function verifySubscriptionPayment(params: {
     return { ok: false, error: 'This subscription is for a different plan.' };
   }
 
-  return { ok: true, isSandbox: false };
+  const startAt = Number((sub as { start_at?: unknown } | undefined)?.start_at);
+  return { ok: true, isSandbox: false, startAt: Number.isFinite(startAt) && startAt > 0 ? new Date(startAt * 1000) : null };
 }
 
 export function verifyWebhookSignature(rawBody: string, signature: string | null): boolean {

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireUser } from '@/lib/access';
 import { cancelRazorpaySubscription, invoiceNumberForPayment, verifySubscriptionPayment } from '@/lib/razorpay';
-import { updateUserSubscription, getParentsForUser } from '@/lib/db';
+import { updateUserSubscription, getParentsForUser, hasHadPaidSubscription } from '@/lib/db';
 import { PlanId } from '@/lib/types';
 import { PLANS, cleanAddons, monthlyPrice, carriedPeriod } from '@/lib/plans';
 import { formatEmailDate, sendSubscriptionActivatedEmail } from '@/lib/email';
@@ -57,15 +57,30 @@ export async function POST(req: Request) {
     }
     const invoiceNumber = invoiceNumberForPayment(String(razorpay_payment_id));
     // Paid days left on the old plan carry over: the new plan's first charge is on the day that period ends.
-    const carry = carriedPeriod(user.subscription) || undefined;
+    let carry = carriedPeriod(user.subscription) || undefined;
+    // Same rule as at checkout: only the first paid subscription gets the free trial.
+    let noTrial = await hasHadPaidSubscription(user.id);
+    // Razorpay's own first-charge date decides, not a re-calculation from our row (which can have changed since
+    // checkout, e.g. a cancel in between): we never record a period as paid that Razorpay hasn't charged yet.
+    if (!verification.isSandbox && verification.startAt !== undefined) {
+      const deferred = !!verification.startAt && verification.startAt.getTime() > Date.now() + 3600000;
+      if (!deferred) {
+        carry = undefined; // charged today: a fresh 30-day period
+        noTrial = true;
+      } else if (carry) {
+        carry = { ...carry, periodEnd: verification.startAt! };
+      } else if (noTrial) {
+        // Deferred, but not as a first trial: the period ends when Razorpay first charges.
+        carry = { periodEnd: verification.startAt!, status: 'active', trialEndsAt: null };
+      }
+    }
     const updatedSub = await updateUserSubscription(user.id, {
       planId: planId as PlanId,
       razorpaySubscriptionId: String(razorpay_subscription_id),
       razorpayPaymentId: String(razorpay_payment_id),
       paymentMethodBrand: verification.isSandbox ? 'Sandbox (no charge)' : (paymentMethodBrand || 'Razorpay').toString().slice(0, 40),
       invoiceNumber,
-      // Same rule as at checkout: only the first paid subscription gets the free trial.
-      noTrial: !!previousSubscriptionId,
+      noTrial,
       healthMonitor,
       carry
     });
@@ -83,7 +98,7 @@ export async function POST(req: Request) {
     // Tell the customer their subscription is active. Awaited (not fire-and-forget) so a
     // serverless host can't cut the request off before the email is handed to Resend.
     const paymentMethod = verification.isSandbox ? 'Sandbox (no charge)' : 'Razorpay';
-    const hasTrial = !carry && plan.hasTrial && !previousSubscriptionId;
+    const hasTrial = !carry && plan.hasTrial && !noTrial;
     // A trial or a carried-over period means nothing is charged today.
     const firstChargeDate = formatEmailDate(carry ? carry.periodEnd : new Date(Date.now() + (hasTrial ? plan.trialDays : 30) * 86400000));
     await sendOnce({ userId: user.id, kind: 'subscription_activated', refKey: String(razorpay_subscription_id), failOpen: true }, () =>

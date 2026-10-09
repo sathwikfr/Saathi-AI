@@ -13,7 +13,7 @@ import { newId } from './db';
 import Anthropic from '@anthropic-ai/sdk';
 import { WhatsAppConfig, getWhatsAppConfig, sendText, downloadMedia, WA_PAYLOAD } from './whatsapp';
 import { checkForScam, fallbackReply } from './scamCheck';
-import { recordAlert, escalateEmergencies } from './alerts';
+import { recordAlert, notifyThenEscalate, RecordAlertResult } from './alerts';
 import { scanMessage, scanSymptomMessage } from './safety';
 import { ALERT_TITLES } from './callInterpretation';
 import { notifyFamily } from './familyNotify';
@@ -21,8 +21,8 @@ import { WA_REPLIES } from './familyMessages';
 import { claimAndEmailFallback, NotifyDeps } from './familyNotify';
 import { placeManualCall, DispatchDeps } from './callDispatch';
 import { escalationForAlert, markHandled } from './escalation';
-import { handleReminderInbound, parsePauseToday, tomorrowStartIst } from './reminders';
-import { parseClockTime } from './ist';
+import { handleReminderInbound, parsePauseToday, pausedPastToday, tomorrowStartIst } from './reminders';
+import { parseClockTime, istDateString } from './ist';
 import { parentRoleFor, roleAllows } from './familyAccess';
 
 export interface InboundDeps extends NotifyDeps {
@@ -75,8 +75,12 @@ function isUniqueViolation(err: unknown): boolean {
   return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
 }
 
-/** The account a WhatsApp number belongs to: its WhatsApp setting first, then the account phone. */
-async function findUserByPhone(e164: string) {
+/**
+ * The account a WhatsApp number belongs to: its WhatsApp setting first, then the account phone.
+ * A number someone merely typed as their WhatsApp number only counts once that number has sent START (proof), except
+ * for the START itself (`forStart`), which is how it gets proven.
+ */
+async function findUserByPhone(e164: string, forStart = false) {
   // The account whose OWN phone this is comes first (unless it deliberately points updates at another number): another
   // account that merely typed this number as its WhatsApp number must not be the one a START or STOP from it lands on.
   const own = await prisma.user.findFirst({
@@ -86,7 +90,11 @@ async function findUserByPhone(e164: string) {
     }
   });
   if (own) return own;
-  const pref = await prisma.notificationPreferences.findFirst({ where: { whatsappNumber: e164 }, select: { userId: true } });
+  const pref = await prisma.notificationPreferences.findFirst({
+    where: { whatsappNumber: e164, ...(forStart ? {} : { whatsappVerifiedAt: { not: null } }) },
+    orderBy: { whatsappVerifiedAt: { sort: 'desc', nulls: 'last' } },
+    select: { userId: true }
+  });
   if (pref) return prisma.user.findUnique({ where: { id: pref.userId } });
   return prisma.user.findFirst({ where: { phone: e164 } });
 }
@@ -177,10 +185,13 @@ async function handleMessageInner(msg: Obj, cfg: WhatsAppConfig | null, deps: In
     : type === 'interactive' ? str(obj(obj(msg.interactive).button_reply).id)
     : '';
   const text = type === 'text' ? str(obj(msg.text).body).trim() : '';
+  // A photo's caption is read for warning words too ("chest pain" under a picture).
+  const caption = type === 'image' ? str(obj(msg.image).caption).trim() : '';
+  const word = text.toLowerCase().replace(/[.!]+$/, '').trim();
 
   // Meta re-delivers messages; the cheap check keeps the unique index (the backstop) out of the error log.
   if (await prisma.whatsAppMessage.findUnique({ where: { providerMessageId: waId }, select: { id: true } })) return 0;
-  const user = await findUserByPhone(phone);
+  const user = await findUserByPhone(phone, START_WORDS.has(word));
   let inbound;
   try {
     inbound = await prisma.whatsAppMessage.create({
@@ -203,23 +214,30 @@ async function handleMessageInner(msg: Obj, cfg: WhatsAppConfig | null, deps: In
   claim.rowId = inbound.id;
   // Medicine reminders on WhatsApp (Remind plan): START codes, Yes / Not yet, STOP, and anything the person writes.
   const reminderReplies = await handleReminderInbound(
-    { inboundId: inbound.id, phone, type, text, payload, contextId: str(obj(msg.context).id) },
+    { inboundId: inbound.id, phone, type, text: text || caption, payload, contextId: str(obj(msg.context).id) },
     cfg,
     deps
   );
   if (reminderReplies !== null) return reminderReplies;
 
-  if (!user) {
-    // A parent forwarding a message they're unsure about: the scam check.
+  // A parent's own messages: the emergency / symptom check, "pause today" and the scam check. This comes before the
+  // account-holder handling, because a parent's number can also be someone's account or WhatsApp number (a parent who
+  // has an account, a child who typed the parent's number, or anyone typing it without proof): their "chest pain"
+  // must never end up as an account holder's message that gets at most an auto-reply. Only family buttons and
+  // STOP / START from an account holder's number stay with the account.
+  const familyCommand = payload === WA_PAYLOAD.ack || payload === WA_PAYLOAD.recall || STOP_WORDS.has(word) || START_WORDS.has(word);
+  if (!user || !familyCommand) {
     const parent = await prisma.parentProfile.findFirst({
       where: { phone, isDeleted: false },
       include: { user: { select: { id: true, name: true } } },
       orderBy: { createdAt: 'asc' }
     });
+    if (parent) {
+      await prisma.whatsAppMessage.update({ where: { id: inbound.id }, data: { parentId: parent.id } });
+      return handleParentMessage(msg, type, text, parent, { id: inbound.id, phone }, cfg, deps);
+    }
     // Numbers we don't know get no reply (keeps the number from answering spam).
-    if (!parent) return 0;
-    await prisma.whatsAppMessage.update({ where: { id: inbound.id }, data: { parentId: parent.id } });
-    return handleParentMessage(msg, type, text, parent, { id: inbound.id, phone }, cfg, deps);
+    if (!user) return 0;
   }
   const target = { id: inbound.id, phone, userId: user.id };
 
@@ -271,7 +289,6 @@ async function handleMessageInner(msg: Obj, cfg: WhatsAppConfig | null, deps: In
   }
 
   // ---- STOP / START
-  const word = text.toLowerCase().replace(/[.!]+$/, '').trim();
   if (STOP_WORDS.has(word)) {
     await prisma.notificationPreferences.upsert({
       where: { userId: user.id },
@@ -311,7 +328,7 @@ async function handleParentMessage(
   msg: Obj,
   type: string,
   text: string,
-  parent: { id: string; name: string; language: string; user: { id: string; name: string } },
+  parent: { id: string; name: string; language: string; isPaused: boolean; pauseUntil: Date | null; user: { id: string; name: string } },
   inbound: { id: string; phone: string },
   cfg: WhatsAppConfig | null,
   deps: InboundDeps
@@ -329,21 +346,33 @@ async function handleParentMessage(
       const sent = await reply(cfg, { id: inbound.id, phone: inbound.phone, userId: null }, PARENT_REPLIES.emergency(familyName), deps, 'reply', parent.id);
       // The parent always gets the 108/112 reply, but one emergency starts one alert and one calling ladder: more
       // messages in the next half hour would otherwise re-ring family and neighbours every time (and cost money).
-      const recentEmergency = await prisma.alertRecord.count({
-        where: { parentId: parent.id, title: PARENT_EMERGENCY_TITLE, createdAt: { gte: new Date(now.getTime() - PARENT_EMERGENCY_GAP_MINUTES * 60000) } }
+      const recentEmergency = await prisma.alertRecord.findFirst({
+        where: { parentId: parent.id, title: PARENT_EMERGENCY_TITLE, createdAt: { gte: new Date(now.getTime() - PARENT_EMERGENCY_GAP_MINUTES * 60000) } },
+        orderBy: { createdAt: 'desc' }
       });
-      if (recentEmergency > 0) return sent ? 1 : 0;
-      const rec = await recordAlert({
-        parentId: parent.id,
-        callLogId: null,
-        level: 4,
-        title: PARENT_EMERGENCY_TITLE,
-        message: `${parent.name} sent Saathi a WhatsApp message with words that may mean an emergency (${emergency.matches.slice(0, 3).join(', ')}): "${scanText.slice(0, 200)}". Please call ${parent.name} right away. If it is serious, call 112 or ask someone nearby to go to them.`
-      });
+      // ...unless that alert never got out (the attempt that recorded it failed before telling anyone): then it is
+      // delivered now. Both steps are safe to repeat (one message per alert and number, one ladder per alert).
+      const rec: RecordAlertResult = recentEmergency
+        ? recentEmergency.channel === 'dashboard'
+          ? { created: false, alertId: recentEmergency.id, alert: { id: recentEmergency.id, level: recentEmergency.level, title: recentEmergency.title, message: recentEmergency.message } }
+          : { created: false, alertId: recentEmergency.id }
+        : await recordAlert({
+            parentId: parent.id,
+            callLogId: null,
+            level: 4,
+            title: PARENT_EMERGENCY_TITLE,
+            message: `${parent.name} sent Saathi a WhatsApp message with words that may mean an emergency (${emergency.matches.slice(0, 3).join(', ')}): "${scanText.slice(0, 200)}". Please call ${parent.name} right away. If it is serious, call 112 or ask someone nearby to go to them.`
+          });
       if (rec.alert) {
-        await notifyFamily({ parentId: parent.id, callLogId: null, alerts: [rec.alert] }, deps);
-        // The same calling ladder as an emergency heard on a call (family, then nearby contacts).
-        await escalateEmergencies(parent.id, [rec], scanText.slice(0, 200), { ...deps, now, config: deps.dispatch?.config });
+        const alert = rec.alert;
+        // The same calling ladder as an emergency heard on a call (family, then nearby contacts), even if the message fails.
+        await notifyThenEscalate(
+          parent.id,
+          () => notifyFamily({ parentId: parent.id, callLogId: null, alerts: [alert] }, deps),
+          [rec],
+          scanText.slice(0, 200),
+          { ...deps, now, config: deps.dispatch?.config }
+        );
       }
       return sent ? 1 : 0;
     }
@@ -353,18 +382,26 @@ async function handleParentMessage(
     if (type === 'text' && parsePauseToday(scanText)) {
       const slots = await prisma.scheduledCallSlot.findMany({ where: { parentId: parent.id, isActive: true }, select: { time: true } });
       const first = slots.map(s => s.time).sort((a, b) => (parseClockTime(a) ?? 0) - (parseClockTime(b) ?? 0))[0] || null;
-      await prisma.parentProfile.update({
-        where: { id: parent.id },
-        data: { isPaused: true, pauseReason: `${parent.name} asked for no calls today (WhatsApp)`, pauseUntil: tomorrowStartIst(now) }
+      // A longer pause the family set is left alone, and the family hears about it once a day, not once per message.
+      if (!pausedPastToday(parent, now)) {
+        await prisma.parentProfile.update({
+          where: { id: parent.id },
+          data: { isPaused: true, pauseReason: `${parent.name} asked for no calls today (WhatsApp)`, pauseUntil: tomorrowStartIst(now) }
+        });
+      }
+      const toldToday = await prisma.alertRecord.count({
+        where: { parentId: parent.id, title: PARENT_PAUSE_TITLE, createdAt: { gte: new Date(`${istDateString(now)}T00:00:00+05:30`) } }
       });
-      const rec = await recordAlert({
-        parentId: parent.id,
-        callLogId: null,
-        level: 2,
-        title: PARENT_PAUSE_TITLE,
-        message: `${parent.name} asked Saathi on WhatsApp not to call again today: "${scanText.slice(0, 200)}". Calls start again tomorrow${first ? ` at ${first}` : ''}.`
-      });
-      if (rec.alert) await notifyFamily({ parentId: parent.id, callLogId: null, alerts: [rec.alert] }, deps);
+      if (!toldToday) {
+        const rec = await recordAlert({
+          parentId: parent.id,
+          callLogId: null,
+          level: 2,
+          title: PARENT_PAUSE_TITLE,
+          message: `${parent.name} asked Saathi on WhatsApp not to call again today: "${scanText.slice(0, 200)}". Calls start again tomorrow${first ? ` at ${first}` : ''}.`
+        });
+        if (rec.alert) await notifyFamily({ parentId: parent.id, callLogId: null, alerts: [rec.alert] }, deps);
+      }
       return (await reply(cfg, { id: inbound.id, phone: inbound.phone, userId: null }, PARENT_REPLIES.pausedToday(first), deps, 'reply', parent.id)) ? 1 : 0;
     }
 

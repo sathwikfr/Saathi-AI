@@ -6,6 +6,7 @@ import { requireParentAccess } from '@/lib/access';
 import { getStorageConfig, uploadObject, storageKeyFor, looksLikeDeclaredType, MAX_DOCUMENT_BYTES, ALLOWED_DOCUMENT_TYPES } from '@/lib/storage';
 import { HealthDocument } from '@/lib/types';
 import { consumeRateLimit } from '@/lib/security';
+import { ownerPlanFor } from '@/lib/planAccess';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -77,7 +78,13 @@ export async function POST(req: Request, { params }: Ctx) {
     return NextResponse.json({ error: 'That is a lot of uploads in an hour. Please try again later.' }, { status: 429 });
   }
   const used = await prisma.healthDocument.aggregate({ where: { parentId: id }, _count: { _all: true }, _sum: { sizeBytes: true } });
-  if ((used._count._all ?? 0) >= VAULT_MAX_FILES || (used._sum.sizeBytes ?? 0) + file.size > VAULT_MAX_BYTES) {
+  // Also across the whole account, removed parents included: removing and re-adding a parent must not give a fresh vault.
+  const people = Math.max(1, (await ownerPlanFor(access.parent.userId)).parentsIncluded);
+  const account = await prisma.healthDocument.aggregate({ where: { parent: { userId: access.parent.userId } }, _count: { _all: true }, _sum: { sizeBytes: true } });
+  if (
+    (used._count._all ?? 0) >= VAULT_MAX_FILES || (used._sum.sizeBytes ?? 0) + file.size > VAULT_MAX_BYTES ||
+    (account._count._all ?? 0) >= VAULT_MAX_FILES * people || (account._sum.sizeBytes ?? 0) + file.size > VAULT_MAX_BYTES * people
+  ) {
     return NextResponse.json(
       { error: `The records vault is full (up to ${VAULT_MAX_FILES} files or ${Math.round(VAULT_MAX_BYTES / 1048576)} MB per person). Please contact support to add more space.`, code: 'VAULT_FULL' },
       { status: 413 }

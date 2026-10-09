@@ -316,6 +316,10 @@ export async function updateUserProfile(
   }
 
   const updated = await prisma.user.update({ where: { id: userId }, data, include: userInclude });
+  // WhatsApp updates going to the account phone were proven for the OLD number: the new one must send START again.
+  if (updates.phone !== undefined && (updated.phone || null) !== (current.phone || null)) {
+    await prisma.notificationPreferences.updateMany({ where: { userId, whatsappNumber: null }, data: { whatsappVerifiedAt: null } });
+  }
   return { user: stripHash(toDBUser(updated)), emailChanged };
 }
 
@@ -447,6 +451,16 @@ export async function updateUserSubscription(
   ]);
 
   return toSubscription(sub);
+}
+
+/**
+ * The 7-day trial is for the first paid subscription only. Every verified checkout writes an invoice (a trial too, at 0)
+ * and invoices are never removed, so this survives a switch to Free (which clears razorpaySubscriptionId).
+ */
+export async function hasHadPaidSubscription(userId: string): Promise<boolean> {
+  const sub = await prisma.userSubscription.findUnique({ where: { userId }, select: { razorpaySubscriptionId: true } });
+  if (sub?.razorpaySubscriptionId) return true;
+  return (await prisma.invoice.count({ where: { userId } })) > 0;
 }
 
 export async function cancelSubscription(userId: string, reason?: string | null): Promise<boolean> {

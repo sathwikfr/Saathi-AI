@@ -25,11 +25,11 @@ import {
 } from './callInterpretation';
 import { parseRanges } from './readings';
 import { Prisma } from '@prisma/client';
-import { raiseAlert, raiseUnreachableAlert, recordAlert, escalateEmergencies, RaiseAlertResult, RecordAlertResult, AlertDeps } from './alerts';
+import { raiseAlert, raiseUnreachableAlert, recordAlert, notifyThenEscalate, RaiseAlertResult, RecordAlertResult, AlertDeps } from './alerts';
 import { notifyFamily } from './familyNotify';
 import { describeAnsweredCall } from './familyMessages';
 import { readSnapshot, CallSnapshot, CallExtras, PartnerSnapshot, NON_RETRY_SLOTS } from './callPlanning';
-import { findAlertAttempt, processAlertCallResult, startEscalation } from './escalation';
+import { findAlertAttempt, processAlertCallResult } from './escalation';
 import { runInsightsForParent } from './insights';
 import { buildAgentVariables, OutboundCallInput } from './sarvam';
 import { slotMedicines } from './callDispatch';
@@ -191,23 +191,28 @@ async function applyPartner(
   })) {
     recorded.push(await recordAlert({ parentId: partner.id, callLogId: partnerLog.id, ...decision }));
   }
-  await notifyFamily(
-    {
-      parentId: partner.id,
-      callLogId: partnerLog.id,
-      alerts: recorded.flatMap(r => (r.alert ? [r.alert] : [])),
-      update: describeAnsweredCall({
-        slotLabel: `${part.slot || 'check-in'} (shared call)`,
-        answeredAt: formatIstClock(opts.now),
-        medicineResults: interp.medicineResults,
-        mood: interp.mood,
-        feedback: interp.feedback,
-        extra: extraFacts(interp)
-      })
-    },
+  await notifyThenEscalate(
+    partner.id,
+    () => notifyFamily(
+      {
+        parentId: partner.id,
+        callLogId: partnerLog.id,
+        alerts: recorded.flatMap(r => (r.alert ? [r.alert] : [])),
+        update: describeAnsweredCall({
+          slotLabel: `${part.slot || 'check-in'} (shared call)`,
+          answeredAt: formatIstClock(opts.now),
+          medicineResults: interp.medicineResults,
+          mood: interp.mood,
+          feedback: interp.feedback,
+          extra: extraFacts(interp)
+        })
+      },
+      opts.deps
+    ),
+    recorded,
+    interp.healthConcern || interp.summary,
     opts.deps
   );
-  await escalateEmergencies(partner.id, recorded, interp.healthConcern || interp.summary, opts.deps);
   try {
     await runInsightsForParent(partner.id, { now: opts.now, deps: opts.deps });
   } catch (err) {
@@ -325,25 +330,29 @@ async function applyAnsweredCall(
   })) {
     recorded.push(await recordAlert({ parentId: parent.id, callLogId: log.id, ...decision }));
   }
-  // One message to the family about the whole call.
-  await notifyFamily(
-    {
-      parentId: parent.id,
-      callLogId: log.id,
-      alerts: recorded.flatMap(r => (r.alert ? [r.alert] : [])),
-      update: describeAnsweredCall({
-        slotLabel,
-        answeredAt: formatIstClock(now),
-        medicineResults: interp.medicineResults,
-        mood: interp.mood,
-        feedback: interp.feedback,
-        extra: extraFacts(interp)
-      })
-    },
+  // One message to the family about the whole call; level 4 then phones the people who can act (even if the message failed).
+  await notifyThenEscalate(
+    parent.id,
+    () => notifyFamily(
+      {
+        parentId: parent.id,
+        callLogId: log.id,
+        alerts: recorded.flatMap(r => (r.alert ? [r.alert] : [])),
+        update: describeAnsweredCall({
+          slotLabel,
+          answeredAt: formatIstClock(now),
+          medicineResults: interp.medicineResults,
+          mood: interp.mood,
+          feedback: interp.feedback,
+          extra: extraFacts(interp)
+        })
+      },
+      deps
+    ),
+    recorded,
+    interp.healthConcern || interp.summary,
     deps
   );
-  // Level 4: phone the people who can act (the WhatsApp above already went to the family).
-  await escalateEmergencies(parent.id, recorded, interp.healthConcern || interp.summary, deps);
 
   if (snapshot.partner && partnerInterp) {
     await applyPartner(log, snapshot.partner, partnerInterp, { now, deps, duration: opts.duration, status: 'answered' });
@@ -569,23 +578,26 @@ export async function raiseToolEscalation(
   if (!parent) return { status: 'unknown_call' };
 
   const cleanReason = reason.replace(/\s+/g, ' ').trim().slice(0, 300);
-  const res = await raiseAlert(
-    {
-      parentId: parent.id,
-      callLogId: log.id,
-      level: 4,
-      title: ALERT_TITLES.emergency,
-      message: `During a check-in call, ${parent.name} may have described an emergency${cleanReason ? `: "${cleanReason}"` : ''}. Please call ${parent.name} right away. If it is serious, call 112 or ask someone nearby to go to them.`
-    },
-    deps
-  );
-  if (res.created && res.alertId) {
-    await startEscalation(
-      { parentId: parent.id, alertId: res.alertId, kind: 'emergency', reason: cleanReason || 'They may have described an emergency on the call.' },
+  // Recorded, then the family told and the ladder started; the ladder starts even if the message fails, and an alert
+  // that was recorded but never delivered (an earlier failed attempt) is delivered now.
+  const rec = await recordAlert({
+    parentId: parent.id,
+    callLogId: log.id,
+    level: 4,
+    title: ALERT_TITLES.emergency,
+    message: `During a check-in call, ${parent.name} may have described an emergency${cleanReason ? `: "${cleanReason}"` : ''}. Please call ${parent.name} right away. If it is serious, call 112 or ask someone nearby to go to them.`
+  });
+  if (rec.alert) {
+    const alert = rec.alert;
+    await notifyThenEscalate(
+      parent.id,
+      () => notifyFamily({ parentId: parent.id, callLogId: log.id, alerts: [alert] }, deps),
+      [rec],
+      cleanReason || 'They may have described an emergency on the call.',
       deps
-    ).catch(err => console.error('[calls] Escalation could not start:', err));
+    );
   }
-  return { status: res.created ? 'raised' : 'already_raised' };
+  return { status: rec.created ? 'raised' : 'already_raised' };
 }
 
 // ---------------------------------------------------------------------------

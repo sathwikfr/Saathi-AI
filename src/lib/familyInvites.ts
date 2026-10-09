@@ -157,7 +157,10 @@ export async function revokeMember(parentId: string, inviteId: string): Promise<
 }
 
 export async function setMemberRole(parentId: string, inviteId: string, role: MemberRole): Promise<boolean> {
+  const before = await prisma.caregiverInvite.findFirst({ where: { id: inviteId, parentId, status: { in: ['pending', 'accepted'] } }, select: { role: true, status: true } });
   const res = await prisma.caregiverInvite.updateMany({ where: { id: inviteId, parentId, status: { in: ['pending', 'accepted'] } }, data: { role } });
+  // A co-manager made view-only no longer manages: the links they could see are replaced, as when one is removed.
+  if (res.count === 1 && before?.status === 'accepted' && before.role === 'co_manager' && role !== 'co_manager') await rotateManagerSecrets(parentId);
   return res.count === 1;
 }
 

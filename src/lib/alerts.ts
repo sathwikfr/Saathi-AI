@@ -27,7 +27,7 @@ export interface RaiseAlertInput {
 export interface RecordAlertResult {
   created: boolean;
   alertId?: string;
-  /** Set only when the alert was newly created. */
+  /** Set when the alert still has to reach the family: newly created, or recorded earlier but never delivered. */
   alert?: NotifyAlert;
 }
 
@@ -35,11 +35,24 @@ export interface RaiseAlertResult extends RecordAlertResult {
   notified?: NotifyResult;
 }
 
-/** Creates the alert once per (call, title). */
+/**
+ * Creates the alert once per (call, title). An alert that already exists but was never delivered (channel still
+ * 'dashboard': the attempt that recorded it failed before telling anyone) is handed back again, so a retry tells the
+ * family and starts the ladder instead of stopping at "already recorded". Repeating is safe: family messages are unique
+ * per call and number, escalations unique per alert.
+ */
 export async function recordAlert(input: RaiseAlertInput): Promise<RecordAlertResult> {
   if (input.callLogId) {
     const existing = await prisma.alertRecord.findFirst({ where: { callLogId: input.callLogId, title: input.title } });
-    if (existing) return { created: false, alertId: existing.id };
+    if (existing) {
+      return {
+        created: false,
+        alertId: existing.id,
+        ...(existing.channel === 'dashboard'
+          ? { alert: { id: existing.id, level: existing.level, title: existing.title, message: existing.message } }
+          : {})
+      };
+    }
   }
 
   const parent = await prisma.parentProfile.findUnique({ where: { id: input.parentId }, select: { id: true } });
@@ -114,7 +127,7 @@ export async function raiseUnreachableAlert(
     deps
   );
   // "Are you OK?" check: a parent who lives alone and can't be reached gets a visit from someone nearby.
-  if (livesAlone && res.alertId && res.created) {
+  if (livesAlone && res.alertId && res.alert) {
     await startEscalation(
       {
         parentId: callLog.parentId,
@@ -128,7 +141,29 @@ export async function raiseUnreachableAlert(
   return res;
 }
 
-/** Starts the escalation ladder for every newly created level-4 alert. */
+/**
+ * Tells the family about the alerts, then starts the ladder for the level-4 ones, even when telling the family
+ * failed: the phone calls must not depend on WhatsApp working. A notify error is re-thrown afterwards so the
+ * caller's retry (Sarvam / Meta) still re-runs it.
+ */
+export async function notifyThenEscalate(
+  parentId: string,
+  notify: () => Promise<unknown>,
+  recorded: RecordAlertResult[],
+  reason: string,
+  deps: AlertDeps = {}
+): Promise<void> {
+  let notifyError: unknown = null;
+  try {
+    await notify();
+  } catch (err) {
+    notifyError = err;
+  }
+  await escalateEmergencies(parentId, recorded, reason, deps);
+  if (notifyError) throw notifyError;
+}
+
+/** Starts the escalation ladder for every level-4 alert that still has to reach the family. */
 export async function escalateEmergencies(parentId: string, created: RecordAlertResult[], reason: string, deps: AlertDeps = {}) {
   for (const r of created) {
     if (!r.alert || r.alert.level < 4) continue;

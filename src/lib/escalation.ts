@@ -23,12 +23,15 @@ import {
 } from './sarvam';
 import { ALERT_TITLES, SarvamWebhookPayload, agentVariables } from './callInterpretation';
 import { recordAlert } from './alerts';
+import { ownerPlanFor } from './planAccess';
 import { notifyFamily, notifyHandled, NotifyDeps } from './familyNotify';
 import { EscalationSummary } from './types';
 
 export const ESCALATION_STEP_MINUTES = 10;
 /** Practice calls per parent per day (each one costs a call). */
 export const MAX_PRACTICE_PER_DAY = 3;
+/** Emergency contacts a parent can have; a ladder never phones more than this many. */
+export const MAX_EMERGENCY_CONTACTS = 6;
 
 export type EscalationKind = 'emergency' | 'wellness_check' | 'practice';
 
@@ -79,7 +82,9 @@ export function ladderRounds(input: {
   practiceContactId?: string | null;
 }): LadderTarget[][] {
   const ownerDigits = input.owner.phone ? digits(input.owner.phone) : '';
-  const contacts = orderContacts(input.contacts).filter(c => c.phone && digits(c.phone) !== digits(input.parent.phone));
+  const contacts = orderContacts(input.contacts)
+    .filter(c => c.phone && digits(c.phone) !== digits(input.parent.phone))
+    .slice(0, MAX_EMERGENCY_CONTACTS);
   const asTarget = (c: LadderContact, callKind: AlertCallKind): LadderTarget => ({
     targetType: 'contact', targetId: c.id, name: c.name, phone: c.phone, callKind
   });
@@ -486,18 +491,24 @@ export async function startPracticeAlert(
   if (!cfg || !agent) {
     return { ok: false, status: 503, error: 'Practice alerts start once emergency calling is connected. Nothing was sent.' };
   }
+  const parent = await prisma.parentProfile.findUnique({ where: { id: input.parentId }, select: { name: true, userId: true } });
+  if (!parent) return { ok: false, status: 404, error: 'Parent profile not found.' };
+  // Each practice alert is a paid call: only on a calling plan that is still running (not Remind, not lapsed).
+  const plan = await ownerPlanFor(parent.userId, now);
+  if (plan.expired || plan.channel === 'whatsapp') {
+    return { ok: false, status: 402, error: 'Practice alerts come with the Solo, Family and Extended plans. Nothing was sent.' };
+  }
   const today = await prisma.escalation.count({
     where: { parentId: input.parentId, kind: 'practice', createdAt: { gte: new Date(now.getTime() - 86400000) } }
   });
   if (today >= MAX_PRACTICE_PER_DAY) return { ok: false, status: 429, error: 'Too many practice alerts today. Please try again tomorrow.' };
 
-  const parent = await prisma.parentProfile.findUnique({ where: { id: input.parentId }, select: { name: true } });
   const esc = await startEscalation(
     {
       parentId: input.parentId,
       alertId: null,
       kind: 'practice',
-      reason: `This is a practice alert for ${parent?.name || 'your family member'}. Nothing is wrong.`,
+      reason: `This is a practice alert for ${parent.name || 'your family member'}. Nothing is wrong.`,
       practiceContactId: contact.id
     },
     deps

@@ -3,7 +3,7 @@ import { requireUser } from '@/lib/access';
 import { createSubscriptionServer, PaymentsUnavailableError } from '@/lib/razorpay';
 import { PlanId } from '@/lib/types';
 import { PLANS, carriedPeriod } from '@/lib/plans';
-import { getParentsForUser } from '@/lib/db';
+import { getParentsForUser, hasHadPaidSubscription } from '@/lib/db';
 import { consumeRateLimit } from '@/lib/security';
 
 export async function POST(req: Request) {
@@ -42,7 +42,7 @@ export async function POST(req: Request) {
       planId as PlanId,
       { userId: user.id, email: user.email, name: user.name, phone: user.phone || undefined },
       {
-        noTrial: !!user.subscription?.razorpaySubscriptionId,
+        noTrial: await hasHadPaidSubscription(user.id),
         healthMonitor: healthMonitor === true,
         // Paid days left on the current plan are not charged twice: the new plan's first charge waits for them.
         startAt: carriedPeriod(user.subscription)?.periodEnd

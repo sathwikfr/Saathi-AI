@@ -678,7 +678,7 @@ function DashboardContent() {
             <strong>Today might be a good day to call {currentParent.name.split(' ')[0]}</strong>
             <span>{nudge.message}</span>
           </div>
-          <button onClick={() => dismissNudge(nudge.id)} className="btn btn-quiet btn-sm">Got it</button>
+          {manage && <button onClick={() => dismissNudge(nudge.id)} className="btn btn-quiet btn-sm">Got it</button>}
         </div>
       )}
 

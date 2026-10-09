@@ -18,6 +18,7 @@ import {
   ParentUpdates,
   ParentDetailsUpdate
 } from '@/lib/db';
+import { MAX_EMERGENCY_CONTACTS } from '@/lib/escalation';
 import { requireParentAccess } from '@/lib/access';
 import { normalizePhone } from '@/lib/phone';
 import { getInsightsForParent } from '@/lib/insights';
@@ -346,7 +347,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
       if (!Array.isArray(list) || list.length === 0) {
         return NextResponse.json({ error: 'Please keep at least one emergency contact.' }, { status: 400 });
       }
-      if (list.length > 6) return NextResponse.json({ error: 'Up to 6 emergency contacts.' }, { status: 400 });
+      if (list.length > MAX_EMERGENCY_CONTACTS) return NextResponse.json({ error: `Up to ${MAX_EMERGENCY_CONTACTS} emergency contacts.` }, { status: 400 });
       const clean = [];
       for (const [i, raw] of list.entries()) {
         const c = (raw || {}) as Record<string, unknown>;

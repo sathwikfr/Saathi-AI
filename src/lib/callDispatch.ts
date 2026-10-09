@@ -809,8 +809,14 @@ export async function runDispatch(deps: DispatchDeps = {}): Promise<DispatchSumm
         include: { callSchedule: true, medicines: true, user: { include: { subscription: true } } }
       });
       if (!parent || parent.isDeleted || parent.isPaused || consentBlocksCalls(parent.parentConsent)) continue;
-      // Switched to WhatsApp reminders since the first attempt: no more calls.
-      if (parent.reminderChannel === 'whatsapp') continue;
+      // The plan lapsed, or moved to WhatsApp reminders (Remind, or this parent switched) since the first attempt: no more calls.
+      const retrySub = parent.user.subscription;
+      const retryPlan = getEffectivePlan(
+        retrySub ? { planId: retrySub.planId as PlanId, status: retrySub.status, currentPeriodEnd: retrySub.currentPeriodEnd.toISOString() } : null,
+        parent.user.createdAt,
+        now
+      );
+      if (retryPlan.expired || reminderChannelFor(retryPlan, parent) === 'whatsapp') continue;
       const phone = normalizePhone(parent.phone);
       if (!phone.ok) continue;
 
@@ -1005,27 +1011,6 @@ export async function placeManualCall(
     return { ok: false, status: 422, code: 'BAD_PHONE', error: phone.reason };
   }
 
-  const hourAgo = new Date(now.getTime() - 60 * 60000);
-  const dayAgo = new Date(now.getTime() - 24 * 60 * 60000);
-  // Attempts Sarvam refused (no attempt id, the phone never rang) don't use up the limit.
-  const manualCalls = {
-    parentId: parent.id,
-    slot: { in: ['test', 'manual'] },
-    NOT: { status: 'failed', providerAttemptId: null }
-  };
-  const [lastHour, lastDay] = await Promise.all([
-    prisma.callLog.count({ where: { ...manualCalls, createdAt: { gte: hourAgo } } }),
-    prisma.callLog.count({ where: { ...manualCalls, createdAt: { gte: dayAgo } } })
-  ]);
-  if (lastHour >= MAX_MANUAL_PER_HOUR || lastDay >= MAX_MANUAL_PER_DAY) {
-    return {
-      ok: false,
-      status: 429,
-      code: 'RATE_LIMITED',
-      error: 'Too many test calls to this number recently. Please try again later.'
-    };
-  }
-
   const slots = [...parent.callSchedule]
     .filter(s => parseClockTime(s.time) !== null)
     .sort((a, b) => (parseClockTime(a.time) as number) - (parseClockTime(b.time) as number));
@@ -1050,6 +1035,34 @@ export async function placeManualCall(
   });
   if (!log) {
     return { ok: false, status: 409, code: 'DUPLICATE', error: 'A call is already being placed.' };
+  }
+
+  // The limit is counted AFTER this attempt is recorded, so requests sent at the same moment can't all slip under it
+  // (they all see each other and are refused), and by phone number across every profile with it, deleted ones too,
+  // so removing and re-adding the parent doesn't start a fresh count. Attempts Sarvam refused (no attempt id, the
+  // phone never rang) and attempts refused here don't use up the limit.
+  const hourAgo = new Date(now.getTime() - 60 * 60000);
+  const dayAgo = new Date(now.getTime() - 24 * 60 * 60000);
+  const manualCalls = {
+    parent: { phone: { in: [...new Set([parent.phone, phone.e164])] } },
+    slot: { in: ['test', 'manual'] },
+    NOT: { status: 'failed', providerAttemptId: null }
+  };
+  const [lastHour, lastDay] = await Promise.all([
+    prisma.callLog.count({ where: { ...manualCalls, createdAt: { gte: hourAgo } } }),
+    prisma.callLog.count({ where: { ...manualCalls, createdAt: { gte: dayAgo } } })
+  ]);
+  if (lastHour > MAX_MANUAL_PER_HOUR || lastDay > MAX_MANUAL_PER_DAY) {
+    await prisma.callLog.update({
+      where: { id: log.id },
+      data: { status: 'failed', failureReason: 'rate_limited', processedAt: now, endedAt: now, summary: 'Not placed: too many test calls to this number recently.' }
+    });
+    return {
+      ok: false,
+      status: 429,
+      code: 'RATE_LIMITED',
+      error: 'Too many test calls to this number recently. Please try again later.'
+    };
   }
 
   const summary = emptySummary(true);

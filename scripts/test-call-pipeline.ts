@@ -15,7 +15,7 @@ import { getEffectivePlan, freeTrialDaysLeft, freeTrialEnd, FREE_TRIAL_DAYS } fr
 import { toSarvamLanguage, buildOutboundRequest, getSarvamConfig, SarvamConfig } from '../src/lib/sarvam';
 import { istDateString, istMinutesOfDay, isSlotDue, parseClockTime, formatIstClock } from '../src/lib/ist';
 import { scanForEmergency } from '../src/lib/safety';
-import { interpretCallResult, decideAlerts } from '../src/lib/callInterpretation';
+import { interpretCallResult, decideAlerts, ALERT_TITLES } from '../src/lib/callInterpretation';
 import { runDispatch, placeManualCall, slotMedicines } from '../src/lib/callDispatch';
 import { processSarvamWebhook, raiseToolEscalation, RESULT_NOT_RECEIVED } from '../src/lib/callResults';
 import { LinkedMedicineDetail } from '../src/lib/types';
@@ -310,6 +310,32 @@ async function partB() {
     check('one critical email', emails.length === emailsBefore + 1 && emails[emails.length - 1].alertLevel === 'level_3');
     check('escalate again is a no-op', (await raiseToolEscalation(log4!.id, 'again', alertDeps)).status === 'already_raised');
     check('escalate unknown call', (await raiseToolEscalation('nope', 'x', alertDeps)).status === 'unknown_call');
+
+    // ---- B4b (audit 2026-10-09): an alert saved by an attempt that then crashed is delivered on the retry ---------
+    console.log('\nB4b. Emergency alert saved but never delivered (first try crashed) → the retry tells the family');
+    const log4b = await prisma.callLog.create({
+      data: {
+        id: newId('call'), parentId: parent.id, slot: 'manual', callDate: '2026-10-05', attemptNumber: 1,
+        providerAttemptId: `att-4b-${stamp}`, status: 'placed', createdAt: day1(8, 0), scheduledTime: day1(8, 0).toISOString(),
+        durationSeconds: 0, medicationConfirmed: false, mood: 'neutral', summary: 'Call is being placed.',
+        resultJson: JSON.stringify({ medicines: [], callType: 'reminder' })
+      }
+    });
+    await prisma.alertRecord.create({
+      data: {
+        id: newId('alt'), parentId: parent.id, callLogId: log4b.id, level: 4, title: ALERT_TITLES.emergency,
+        message: 'Saved by an attempt that crashed before telling anyone.', channel: 'dashboard', timestamp: day1(8, 1).toISOString(), status: 'sent'
+      }
+    });
+    const emails4b = emails.length;
+    await processSarvamWebhook({
+      attempt_id: log4b.providerAttemptId, status: 'connected', duration: 30,
+      final_agent_variables: { all_medicines_taken: 'yes', emergency: 'yes', mood: 'calm' },
+      interaction_transcript: [{ role: 'user', en_text: 'I have severe chest pain' }]
+    }, { now: day1(8, 5), deps: alertDeps });
+    const alerts4b = await prisma.alertRecord.findMany({ where: { callLogId: log4b.id, level: 4 } });
+    check('still exactly one level-4 alert', alerts4b.length === 1, alerts4b.length);
+    check('this time the family is told (critical email, alert marked delivered)', emails.length === emails4b + 1 && alerts4b[0]?.channel === 'email', { emails: emails.length - emails4b, channel: alerts4b[0]?.channel });
 
     // ---- B5 no answer → retries → final alert ---------------------------------
     console.log('\nB5. No answer → retry after 30 min → busy → retry → final alert');

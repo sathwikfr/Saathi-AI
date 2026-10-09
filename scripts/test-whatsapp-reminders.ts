@@ -443,7 +443,8 @@ async function partB() {
     check('level-4 alert on the dashboard', (await prisma.alertRecord.findFirst({ where: { parentId: person.id, title: REMINDER_EMERGENCY_TITLE } }))?.level === 4);
     b = graph.requests.length;
     await say(selfPhone, 'still bleeding', ist(12, 9, 20));
-    check('emergency words again within 6 hours: nothing more sent', graph.requests.length === b && (await prisma.alertRecord.count({ where: { parentId: person.id, title: REMINDER_EMERGENCY_TITLE } })) === 1);
+    // Quiet for 6 hours (nothing more sent), but a second emergency is still its own alert on the dashboard (audit 2026-10-09).
+    check('emergency words again within 6 hours: nothing more sent, still on the dashboard', graph.requests.length === b && (await prisma.alertRecord.count({ where: { parentId: person.id, title: REMINDER_EMERGENCY_TITLE } })) === 2);
     b = graph.requests.length;
     await say(selfPhone, 'I have fever and a headache since morning', ist(12, 9, 30));
     check('symptoms: kind reply that names the caretaker', graph.requests.slice(b).some(q => q.body.text?.body === REMINDER_REPLIES.unwell('Ravi Kumar')));

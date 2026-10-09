@@ -5,6 +5,7 @@ import { canAddParents, getEffectivePlan, smallestPlanFor } from '@/lib/plans';
 import { Medicine, EmergencyContact, MedicineTimingSlot, FoodRelation } from '@/lib/types';
 import { normalizePhone } from '@/lib/phone';
 import { prisma } from '@/lib/prisma';
+import { MAX_EMERGENCY_CONTACTS } from '@/lib/escalation';
 
 const TIMING_SLOTS: MedicineTimingSlot[] = ['morning', 'afternoon', 'evening', 'bedtime', 'as_needed', 'unspecified'];
 const FOOD_RELATIONS: FoodRelation[] = ['before_food', 'after_food', 'with_food', 'not_specified'];
@@ -134,6 +135,9 @@ export async function POST(req: Request) {
             { error: `Emergency contact ${i + 1}: ${!contactName ? 'name is required' : norm.ok ? '' : norm.reason}` },
             { status: 400 }
           );
+        }
+        if (formattedContacts.length >= MAX_EMERGENCY_CONTACTS) {
+          return NextResponse.json({ error: `You can add up to ${MAX_EMERGENCY_CONTACTS} emergency contacts.` }, { status: 400 });
         }
         formattedContacts.push({
           id: newId('emg'),

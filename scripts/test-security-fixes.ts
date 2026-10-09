@@ -1,5 +1,5 @@
 /**
- * Pure regression checks for the 2026-10-05 security pass (no database, no network):
+ * Pure regression checks for the 2026-10-05 and 2026-10-09 security passes (no database, no network):
  *   npx tsx scripts/test-security-fixes.ts
  */
 import { scanMessage, scanForEmergency, scanSymptomMessage } from '../src/lib/safety';
@@ -7,6 +7,9 @@ import { isLocalDevHeaders } from '../src/lib/devMode';
 import { isCrossSiteRequest, hashToken } from '../src/lib/security';
 import { looksLikeDeclaredType } from '../src/lib/storage';
 import { getEffectivePlan, PAID_GRACE_DAYS } from '../src/lib/plans';
+import { vouches, fixedScamReply } from '../src/lib/scamCheck';
+import { ladderRounds, MAX_EMERGENCY_CONTACTS } from '../src/lib/escalation';
+import { pausedPastToday } from '../src/lib/reminders';
 
 let failed = 0;
 let passed = 0;
@@ -61,6 +64,30 @@ check('paid period still running → Family', getEffectivePlan(subOf(-10), creat
 check('period ended a day ago (renewal pending) → still Family', getEffectivePlan(subOf(1), createdAt, nowDate).id === 'family');
 check(`period ended more than ${PAID_GRACE_DAYS} days ago, no renewal → not Family any more`, getEffectivePlan(subOf(PAID_GRACE_DAYS + 1), createdAt, nowDate).id !== 'family');
 check('a lapsed past_due plan is also closed', getEffectivePlan(subOf(PAID_GRACE_DAYS + 1, 'past_due'), createdAt, nowDate).id !== 'family');
+
+// ---- 2026-10-09 audit (run 2)
+console.log('\nScam check never vouches');
+check('"This message is genuine" counts as vouching', vouches('This message is genuine.'));
+check('"The link is safe" counts as vouching', vouches('The link is safe.'));
+check('"can\'t be sure it is genuine" does not', !vouches("I can't be sure it is genuine."));
+check('fixed Telugu reply for no clear signs (not the model text), names the family', fixedScamReply('no_clear_signs', 'Telugu', 'Ravi').includes('OTP') && fixedScamReply('no_clear_signs', 'Telugu', 'Ravi').includes('Ravi') && /[ఀ-౿]/.test(fixedScamReply('no_clear_signs', 'Telugu', 'Ravi')));
+check('every language has both fixed replies with the OTP rule', ['English', 'Hindi', 'Telugu', 'Tamil', 'Kannada', 'Malayalam', 'Bengali', 'Marathi', 'Gujarati']
+  .every(l => fixedScamReply('no_clear_signs', l, 'X').includes('OTP') && fixedScamReply('not_a_check', l, 'X').includes('OTP')));
+
+console.log('\nEmergency ladder size');
+const manyContacts = Array.from({ length: 20 }, (_, i) => ({ id: `c${i}`, name: `C${i}`, phone: `+9198765${String(i).padStart(5, '0')}`, isLocal: false, priority: 'secondary', createdAt: new Date(i) }));
+const ladderTargets = (kind: 'emergency' | 'wellness_check') => ladderRounds({
+  kind, owner: { id: 'o', name: 'O', phone: '+919999999999', wake: true }, parent: { id: 'p', name: 'P', phone: '+918888888888' }, contacts: manyContacts
+}).flat().filter(t => t.targetType === 'contact').length;
+check(`an emergency ladder phones at most ${MAX_EMERGENCY_CONTACTS} contacts`, ladderTargets('emergency') === MAX_EMERGENCY_CONTACTS);
+check(`a wellness check phones at most ${MAX_EMERGENCY_CONTACTS} contacts`, ladderTargets('wellness_check') === MAX_EMERGENCY_CONTACTS);
+
+console.log('\n"Pause today" keeps a longer pause');
+const noon = new Date('2026-11-01T06:30:00Z'); // 12:00 IST
+check('not paused → pause today applies', !pausedPastToday({ isPaused: false, pauseUntil: null }, noon));
+check('paused with no end (family) → kept', pausedPastToday({ isPaused: true, pauseUntil: null }, noon));
+check('paused for a week → kept', pausedPastToday({ isPaused: true, pauseUntil: new Date(noon.getTime() + 7 * dayMs) }, noon));
+check('paused until later today → replaced by "until tomorrow"', !pausedPastToday({ isPaused: true, pauseUntil: new Date(noon.getTime() + 3600000) }, noon));
 
 
 console.log(`\n${passed} passed, ${failed} failed`);
