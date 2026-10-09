@@ -250,6 +250,8 @@ help / call the parent now (for parent_check: did the parent say they are okay)?
 
 Greeting: `Hello @recipient_name, this is an urgent call from Aaptha about @parent_name.` (for practice the prompt corrects it straight away).
 
+**Sarvam editor quirk (2026-10-09):** the prompt editor reads punctuation glued to a variable as part of its name (`@parent_name,` -> "Reference 'parent\_name,' not found") and turns each `@variable` into a locked chip. Put a space and a word after every `@variable` (no comma/full stop straight after), and re-pick any red one with the `@` dropdown. Leave every input variable's default value EMPTY in the committed version (test values only while testing with Test agent, which sends no values of its own).
+
 ```
 You are the Aaptha Alert assistant. You call family members and neighbours of an elderly person, @parent_name, when Aaptha's check-in assistant Saathi hears that they may need help. Be calm, clear and brief. Speak slowly. Repeat key facts once.
 
