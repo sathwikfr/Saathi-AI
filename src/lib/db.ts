@@ -463,6 +463,16 @@ export async function hasHadPaidSubscription(userId: string): Promise<boolean> {
   return (await prisma.invoice.count({ where: { userId } })) > 0;
 }
 
+/**
+ * The current subscription has been charged at least once since it started: a paid invoice from then on (the
+ * checkout's own charge, or the webhook's). Trial and carried-period checkouts only write 0-rupee lines.
+ */
+export async function subscriptionHasCharged(userId: string): Promise<boolean> {
+  const sub = await prisma.userSubscription.findUnique({ where: { userId }, select: { startDate: true } });
+  if (!sub) return false;
+  return (await prisma.invoice.count({ where: { userId, amount: { gt: 0 }, createdAt: { gte: sub.startDate } } })) > 0;
+}
+
 export async function cancelSubscription(userId: string, reason?: string | null): Promise<boolean> {
   const res = await prisma.userSubscription.updateMany({
     where: { userId },

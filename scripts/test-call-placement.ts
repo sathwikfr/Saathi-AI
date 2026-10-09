@@ -98,6 +98,8 @@ function partA() {
   check('paid and running: the new plan\'s first charge waits for the end of the period', c?.periodEnd.toISOString() === '2026-10-25T06:00:00.000Z' && c.status === 'active' && c.trialEndsAt === null, c);
   const ct = carriedPeriod(sub({ status: 'trialing', trialEndsAt: '2026-10-14T06:00:00.000Z', currentPeriodEnd: '2026-10-14T06:00:00.000Z' }), nowD);
   check('still on the 7-day trial: the trial is kept, not restarted or charged now', ct?.status === 'trialing' && ct.trialEndsAt?.toISOString() === '2026-10-14T06:00:00.000Z', ct);
+  check('never charged yet (a switch before its first charge): no carry, so switching back and forth cannot keep a bigger plan unpaid', carriedPeriod(sub(), nowD, false) === null);
+  check('the 7-day trial is still carried before its first charge', carriedPeriod(sub({ status: 'trialing', trialEndsAt: '2026-10-14T06:00:00.000Z', currentPeriodEnd: '2026-10-14T06:00:00.000Z' }), nowD, false)?.status === 'trialing');
   check('nothing to carry: no subscription, no Razorpay id, cancelled, failing, free, or under a day left', [
     carriedPeriod(null, nowD), carriedPeriod(sub({ razorpaySubscriptionId: undefined }), nowD), carriedPeriod(sub({ cancelAtPeriodEnd: true }), nowD),
     carriedPeriod(sub({ status: 'cancelled' }), nowD), carriedPeriod(sub({ status: 'past_due' }), nowD), carriedPeriod(sub({ planId: 'free', status: 'free' }), nowD),

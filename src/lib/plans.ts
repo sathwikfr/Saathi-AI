@@ -90,11 +90,18 @@ export interface CarriedPeriod {
 
 export function carriedPeriod(
   sub: { planId: PlanId; status: string; currentPeriodEnd: string; trialEndsAt?: string; cancelAtPeriodEnd: boolean; razorpaySubscriptionId?: string } | null | undefined,
-  now: Date = new Date()
+  now: Date = new Date(),
+  /**
+   * Has the current subscription been charged at least once (`subscriptionHasCharged`)? A paid period is only carried
+   * from one that was: otherwise switching to a bigger plan and back before its first charge would keep the bigger
+   * plan's days unpaid, month after month. The 7-day trial is carried either way (it is free and its end never moves).
+   */
+  charged = true
 ): CarriedPeriod | null {
   if (!sub || !sub.razorpaySubscriptionId || sub.cancelAtPeriodEnd) return null;
   if (!PLANS[sub.planId] || PLANS[sub.planId].priceMonthly === 0) return null;
   if (sub.status !== 'active' && sub.status !== 'trialing') return null;
+  if (sub.status === 'active' && !charged) return null;
   const end = new Date(sub.currentPeriodEnd);
   if (Number.isNaN(end.getTime()) || end.getTime() - now.getTime() < 86400000) return null;
   return {

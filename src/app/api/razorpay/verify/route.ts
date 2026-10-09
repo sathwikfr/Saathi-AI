@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireUser } from '@/lib/access';
 import { cancelRazorpaySubscription, invoiceNumberForPayment, verifySubscriptionPayment } from '@/lib/razorpay';
-import { updateUserSubscription, getParentsForUser, hasHadPaidSubscription } from '@/lib/db';
+import { updateUserSubscription, getParentsForUser, hasHadPaidSubscription, subscriptionHasCharged } from '@/lib/db';
 import { PlanId } from '@/lib/types';
 import { PLANS, cleanAddons, monthlyPrice, carriedPeriod } from '@/lib/plans';
 import { formatEmailDate, sendSubscriptionActivatedEmail } from '@/lib/email';
@@ -57,7 +57,7 @@ export async function POST(req: Request) {
     }
     const invoiceNumber = invoiceNumberForPayment(String(razorpay_payment_id));
     // Paid days left on the old plan carry over: the new plan's first charge is on the day that period ends.
-    let carry = carriedPeriod(user.subscription) || undefined;
+    let carry = carriedPeriod(user.subscription, new Date(), await subscriptionHasCharged(user.id)) || undefined;
     // Same rule as at checkout: only the first paid subscription gets the free trial.
     let noTrial = await hasHadPaidSubscription(user.id);
     // Razorpay's own first-charge date decides, not a re-calculation from our row (which can have changed since
