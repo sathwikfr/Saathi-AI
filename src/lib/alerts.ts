@@ -64,8 +64,9 @@ export async function recordAlert(input: RaiseAlertInput): Promise<RecordAlertRe
       parentId: parent.id,
       callLogId: input.callLogId || null,
       level: input.level,
-      title: input.title,
-      message: input.message,
+      // Text cut with .slice() can end in half an emoji, which the database refuses: the alert would fail every time.
+      title: input.title.toWellFormed(),
+      message: input.message.toWellFormed(),
       channel: 'dashboard', // updated to whatsapp / email once delivered
       timestamp: new Date().toISOString(),
       status: 'sent'
@@ -165,12 +166,16 @@ export async function notifyThenEscalate(
 
 /** Starts the escalation ladder for every level-4 alert that still has to reach the family. */
 export async function escalateEmergencies(parentId: string, created: RecordAlertResult[], reason: string, deps: AlertDeps = {}) {
+  let failure: unknown = null;
   for (const r of created) {
     if (!r.alert || r.alert.level < 4) continue;
-    await startEscalation({ parentId, alertId: r.alert.id, kind: 'emergency', reason }, deps).catch(err =>
-      console.error('[alerts] Escalation could not start:', err)
-    );
+    await startEscalation({ parentId, alertId: r.alert.id, kind: 'emergency', reason }, deps).catch(err => {
+      console.error('[alerts] Escalation could not start:', err);
+      failure = err;
+    });
   }
+  // Up to the caller, so its retry starts the ladder (one ladder per alert: a retry never starts a second one).
+  if (failure) throw failure;
 }
 
 /**

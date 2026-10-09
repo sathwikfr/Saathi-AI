@@ -353,6 +353,10 @@ async function dispatchEmail({
       pushOutbox(emailRecord);
       return { success: false, error: errMsg };
     }
+  } else if (IS_PRODUCTION) {
+    // No email service in production is a failure, not a success: callers would otherwise mark alerts as delivered.
+    console.error('[email] RESEND_API_KEY is not set: email not sent.');
+    return { success: false, error: 'Email is not configured.' };
   } else {
     // Development fallback without Resend key
     console.log(`  [Notice]: RESEND_API_KEY is not set in environment.`);

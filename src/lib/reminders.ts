@@ -824,6 +824,9 @@ export async function handleReminderInbound(input: ReminderInbound, cfg: WhatsAp
       return replyTo(cfg, input, person.id, repliesFor(person.language).started(person.name, times, caretakerReady(person) ? person.caretakerName : null), deps);
     }
     const caredFor = await prisma.parentProfile.findFirst({ where: { caretakerStartCode: code, isDeleted: false } });
+    // The caretaker's code only works from the caretaker's own number (the family can see the link, and a used code
+    // would otherwise leave someone else's number receiving the caretaker alerts with nothing on the dashboard).
+    if (caredFor && caredFor.caretakerPhone !== input.phone) return replyTo(cfg, input, null, REMINDER_REPLIES.badCode, deps);
     if (caredFor) {
       await prisma.parentProfile.update({
         where: { id: caredFor.id },

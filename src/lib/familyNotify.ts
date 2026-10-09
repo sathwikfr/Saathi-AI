@@ -143,7 +143,9 @@ async function notifyPerson(
         callLogId: input.callLogId,
         alertId: plan.alertId,
         kind: plan.kind,
-        refKey: `${input.callLogId || plan.alertId || newId('ref')}:${to}`,
+        // One message per call (or alert) and number; a call's later result with a different top alert (e.g. a late
+        // result after "no result received") is its own message rather than a silent duplicate.
+        refKey: `${input.callLogId ? `${input.callLogId}${plan.alertId ? `:${plan.alertId}` : ''}` : plan.alertId || newId('ref')}:${to}`,
         phone: to,
         templateName: WHATSAPP_TEMPLATES[plan.kind].name,
         body: plan.body,
@@ -196,6 +198,7 @@ export async function notifyFamily(
   const emergency = input.alerts.some(a => a.level >= 4);
   const allowed = emergency ? null : whatsappAllowed(people, (await ownerPlanFor(fam.parent.userId)).whatsappPeople);
   let emailed = 0;
+  let seriousFailure: unknown = null;
   const outcomes: { userId: string; whatsapp: WhatsAppOutcome }[] = [];
   for (const person of people) {
     try {
@@ -206,8 +209,15 @@ export async function notifyFamily(
       // One person's failure must not stop the rest of the family hearing about it.
       console.error(`[notify] Notifying ${person.id} failed:`, err);
       outcomes.push({ userId: person.id, whatsapp: 'failed' });
+      // A serious alert: email them instead, and let the caller's retry (Sarvam / Meta) try them again afterwards
+      // (people already sent are skipped then: one message per call / alert and number).
+      if (input.alerts.some(a => a.level >= 3)) {
+        emailed += await emailSafetyFallback(person, fam.parent.name, input.alerts, deps).catch(() => 0);
+        seriousFailure = err;
+      }
     }
   }
+  if (seriousFailure) throw seriousFailure;
   return { whatsapp: outcomes[0]?.whatsapp || 'not_wanted', emailed, people: outcomes };
 }
 
@@ -231,7 +241,12 @@ export async function claimAndEmailFallback(messageId: string, deps: NotifyDeps 
   const alerts = await prisma.alertRecord.findMany({
     where: msg.callLogId ? { callLogId: msg.callLogId, level: { gte: 3 } } : { id: msg.alertId || '', level: { gte: 3 } }
   });
-  return emailSafetyFallback(person, parent.name, alerts, deps);
+  const sent = await emailSafetyFallback(person, parent.name, alerts, deps);
+  // Nothing went out though email is allowed (the email service failed): release the claim so it can be tried again.
+  if (sent === 0 && alerts.length && person.notificationPreferences?.email !== false) {
+    await prisma.whatsAppMessage.update({ where: { id: messageId }, data: { fallbackEmailedAt: null } });
+  }
+  return sent;
 }
 
 /**

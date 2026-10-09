@@ -219,7 +219,7 @@ async function handleMessageInner(msg: Obj, cfg: WhatsAppConfig | null, deps: In
         kind: 'inbound',
         refKey: waId,
         phone,
-        body: (payload ? `[button] ${str(obj(msg.button).text) || payload}` : text || `[${type || 'message'}]`).slice(0, 2000),
+        body: (payload ? `[button] ${str(obj(msg.button).text) || payload}` : text || `[${type || 'message'}]`).slice(0, 2000).toWellFormed(),
         providerMessageId: waId,
         status: 'received'
       }

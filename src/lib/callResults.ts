@@ -668,7 +668,8 @@ export async function buildInboundContext(callerPhone: string, now: Date = new D
     medicines,
     callType: 'callback',
     asked: {
-      askConsent: parent.parentConsent !== 'given',
+      // Only a parent who hasn't been asked yet: a call-back (caller ID is all we know) never overturns a "no".
+      askConsent: !parent.parentConsent || parent.parentConsent === 'pending',
       saySafetyLine: false,
       lastCallNote: null,
       wellbeingTopic: null,
@@ -763,17 +764,26 @@ export async function processInboundCall(
   });
   if (claimed.count !== 1) return { status: 'duplicate', callLogId: log.id };
 
-  const parent = await prisma.parentProfile.findUnique({ where: { id: log.parentId } });
-  if (!parent) return { status: 'invalid', reason: 'parent not found' };
-  const snapshot = readSnapshot(log.resultJson);
-  const interp = interpretCallResult(payload, snapshot.medicines, parent.name);
-  const duration = typeof payload.duration === 'number' && payload.duration > 0 ? Math.round(payload.duration) : 0;
-  return applyAnsweredCall(log, parent, payload, interp, { ...snapshot, callType: 'callback' }, {
-    now,
-    deps: opts.deps || {},
-    duration,
-    interactionId
-  });
+  // As for outbound results: if applying it fails half-way, the claim is released so Sarvam's retry runs the alert
+  // steps again (an emergency described on a call-back must not be marked "done" with no alert).
+  try {
+    const parent = await prisma.parentProfile.findUnique({ where: { id: log.parentId } });
+    if (!parent) return { status: 'invalid', reason: 'parent not found' };
+    const snapshot = readSnapshot(log.resultJson);
+    const interp = interpretCallResult(payload, snapshot.medicines, parent.name);
+    const duration = typeof payload.duration === 'number' && payload.duration > 0 ? Math.round(payload.duration) : 0;
+    return await applyAnsweredCall(log, parent, payload, interp, { ...snapshot, callType: 'callback' }, {
+      now,
+      deps: opts.deps || {},
+      duration,
+      interactionId
+    });
+  } catch (err) {
+    await prisma.callLog.updateMany({ where: { id: log.id }, data: { processedAt: null } }).catch(releaseErr =>
+      console.error('[calls] Could not release the call-back claim after a failure:', releaseErr)
+    );
+    throw err;
+  }
 }
 
 export { parseTranscript };

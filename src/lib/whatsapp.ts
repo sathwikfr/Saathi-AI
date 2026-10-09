@@ -138,7 +138,8 @@ export function waDigits(phone: string): string {
 export function cleanParam(text: string, max = 700): string {
   const flat = text.replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
   const cut = flat.length > max ? `${flat.slice(0, max - 1).trimEnd()}…` : flat;
-  return cut || '-';
+  // An emoji cut in half leaves half a character, which the database and Meta refuse.
+  return cut.toWellFormed() || '-';
 }
 
 /** The template text with its parameters filled in (stored for the admin view and tests). */

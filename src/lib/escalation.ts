@@ -30,7 +30,7 @@ import { EscalationSummary } from './types';
 export const ESCALATION_STEP_MINUTES = 10;
 /** A round in progress holds its escalation this long; a run killed half-way is picked up again after it. */
 const ESCALATION_LEASE_MINUTES = 3;
-/** Practice calls per parent per day (each one costs a call). */
+/** Practice calls per parent per day, counted across the account (each one costs a call). */
 export const MAX_PRACTICE_PER_DAY = 3;
 /** Emergency contacts a parent can have; a ladder never phones more than this many. */
 export const MAX_EMERGENCY_CONTACTS = 6;
@@ -219,6 +219,11 @@ async function runRound(escalationId: string, round: number, deps: EscalationDep
   const now = deps.now || new Date();
   const esc = await loadContext(escalationId);
   if (!esc || esc.status !== 'active') return;
+  // The family removed this parent: nobody can stop the calls from the dashboard any more, so they stop here.
+  if (esc.parent.isDeleted) {
+    await prisma.escalation.updateMany({ where: { id: esc.id, status: 'active' }, data: { status: 'closed', closedAt: now, nextStepAt: null } });
+    return;
+  }
   const rounds = roundsFor(esc, practiceContactId);
 
   if (round >= rounds.length) {
@@ -243,8 +248,10 @@ async function exhaust(escalationId: string, deps: EscalationDeps) {
     data: { status: 'exhausted', nextStepAt: null }
   });
   if (claimed.count !== 1) return;
-  const esc = await prisma.escalation.findUnique({ where: { id: escalationId }, include: { parent: true } });
+  const esc = await prisma.escalation.findUnique({ where: { id: escalationId }, include: { parent: true, attempts: { select: { status: true } } } });
   if (!esc || esc.kind === 'practice') return;
+  // Only say "we phoned everyone" when a call actually went out (not when calling is down or not set up).
+  const phoned = esc.attempts.some(a => a.status !== 'failed');
   const alert = esc.alertId ? await prisma.alertRecord.findUnique({ where: { id: esc.alertId } }) : null;
   const name = esc.parent.name;
   const rec = await recordAlert({
@@ -253,7 +260,9 @@ async function exhaust(escalationId: string, deps: EscalationDeps) {
     level: 3,
     title: ALERT_TITLES.escalationExhausted,
     message:
-      esc.kind === 'emergency'
+      !phoned
+        ? `We could not phone ${name}'s emergency contacts. Please call ${name} and the people near them yourself now. If you can't reach them and it may be serious, call 112.`
+        : esc.kind === 'emergency'
         ? `We phoned everyone on ${name}'s emergency list and nobody has said they are helping yet. Please call ${name} now. If you can't reach them and it may be serious, call 112 or someone near them.`
         : `We couldn't reach ${name}, and none of their local contacts could check on them. Please try calling ${name} or someone near them.`
   });
@@ -276,7 +285,7 @@ export async function startEscalation(
         parentId: input.parentId,
         alertId: input.alertId,
         kind: input.kind,
-        reason: input.reason.replace(/\s+/g, ' ').trim().slice(0, 300) || 'They may need help.',
+        reason: input.reason.replace(/\s+/g, ' ').trim().slice(0, 300).toWellFormed() || 'They may need help.',
         // Held by this run while its first round goes out; if the run is killed, the cron picks it up after the lease.
         nextStepAt: new Date((deps.now || new Date()).getTime() + ESCALATION_LEASE_MINUTES * 60000)
       }
@@ -352,7 +361,9 @@ export async function markHandled(
 ): Promise<{ handled: boolean; handledByName: string | null }> {
   const now = deps.now || new Date();
   const claimed = await prisma.escalation.updateMany({
-    where: { id: escalationId, status: 'active' },
+    // 'exhausted' too: the ladder ran out with nobody saying yes, and someone stepping in now is exactly the news the
+    // family needs (not "someone is already handling this").
+    where: { id: escalationId, status: { in: ['active', 'exhausted'] } },
     data: { status: 'handled', handledByName: by.name, handledByPhone: by.phone || null, handledVia: by.via, handledAt: now, nextStepAt: null }
   });
   const esc = await prisma.escalation.findUnique({ where: { id: escalationId } });
@@ -507,22 +518,33 @@ export async function startPracticeAlert(
   if (plan.expired || plan.channel === 'whatsapp') {
     return { ok: false, status: 402, error: 'Practice alerts come with the Solo, Family and Extended plans. Nothing was sent.' };
   }
-  const today = await prisma.escalation.count({
-    where: { parentId: input.parentId, kind: 'practice', createdAt: { gte: new Date(now.getTime() - 86400000) } }
-  });
-  if (today >= MAX_PRACTICE_PER_DAY) return { ok: false, status: 429, error: 'Too many practice alerts today. Please try again tomorrow.' };
-
-  const esc = await startEscalation(
-    {
+  // Recorded first, then counted (requests sent at the same moment see each other), across the whole account with
+  // removed parents included (removing and re-adding a parent doesn't start a fresh count). Over the limit, the row is
+  // closed before any call is placed.
+  const esc = await prisma.escalation.create({
+    data: {
+      id: newId('esc'),
       parentId: input.parentId,
       alertId: null,
       kind: 'practice',
       reason: `This is a practice alert for ${parent.name || 'your family member'}. Nothing is wrong.`,
-      practiceContactId: contact.id
-    },
-    deps
-  );
-  if (!esc) return { ok: false, status: 409, error: 'A practice alert is already running.' };
+      nextStepAt: null
+    }
+  });
+  const today = await prisma.escalation.count({
+    where: { kind: 'practice', parent: { userId: parent.userId }, status: { not: 'refused' }, createdAt: { gte: new Date(now.getTime() - 86400000) } }
+  });
+  if (today > MAX_PRACTICE_PER_DAY * Math.max(1, plan.parentsIncluded)) {
+    await prisma.escalation.update({ where: { id: esc.id }, data: { status: 'refused', closedAt: now } });
+    return { ok: false, status: 429, error: 'Too many practice alerts today. Please try again tomorrow.' };
+  }
+  try {
+    await runRound(esc.id, 0, deps, contact.id);
+  } catch (err) {
+    console.error('[escalation] Practice call failed:', err);
+    await prisma.escalation.updateMany({ where: { id: esc.id, status: 'active' }, data: { status: 'closed', closedAt: now } });
+    return { ok: false, status: 502, error: 'The practice call could not be placed. Please try again in a few minutes.' };
+  }
   return { ok: true, escalationId: esc.id };
 }
 
