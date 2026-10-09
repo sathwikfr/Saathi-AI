@@ -2,6 +2,11 @@ import { NextResponse } from 'next/server';
 import { raiseToolEscalation } from '@/lib/callResults';
 import { requestSecret, routeSecret, safeEqual } from '@/lib/secrets';
 
+// Alert steps (family messages, the first round of emergency calls) run inside this request: give them the same
+// 60 s as the cron rather than the platform default (as low as 10 s), and the cron's stalled-emergency check
+// finishes anything a cut-off run left undone.
+export const maxDuration = 60;
+
 /**
  * Called by the Sarvam agent's "escalate_emergency" API tool mid-call when the
  * parent describes an emergency. Configure the tool with bearer auth using

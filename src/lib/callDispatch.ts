@@ -796,13 +796,16 @@ export async function runDispatch(deps: DispatchDeps = {}): Promise<DispatchSumm
   });
 
   for (const prev of retries) {
+    // Claim the retry with a short lease so overlapping runs cannot both pick it up. A lease (not "cleared") means a
+    // run that is killed half-way (function time limit) leaves the retry to be picked up again a few minutes later;
+    // the unique attempt number stops it being dialled twice. The lease is cleared once the retry has been handled.
+    const lease = new Date(now.getTime() + RETRY_LEASE_MINUTES * 60000);
+    const claimedRetry = await prisma.callLog.updateMany({
+      where: { id: prev.id, nextRetryAt: prev.nextRetryAt },
+      data: { nextRetryAt: lease }
+    });
+    if (claimedRetry.count !== 1) continue;
     try {
-      // Claim the retry so overlapping runs cannot both pick it up.
-      const claimedRetry = await prisma.callLog.updateMany({
-        where: { id: prev.id, nextRetryAt: { not: null } },
-        data: { nextRetryAt: null }
-      });
-      if (claimedRetry.count !== 1) continue;
 
       const parent = await prisma.parentProfile.findUnique({
         where: { id: prev.parentId },
@@ -871,6 +874,8 @@ export async function runDispatch(deps: DispatchDeps = {}): Promise<DispatchSumm
       if (outcome === 'placed') summary.retried += 1;
     } catch (err) {
       summary.errors.push(`retry ${prev.id}: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      await prisma.callLog.updateMany({ where: { id: prev.id, nextRetryAt: lease }, data: { nextRetryAt: null } }).catch(() => undefined);
     }
   }
 
@@ -945,6 +950,8 @@ export type ManualCallResult =
   | { ok: false; status: number; code: string; error: string };
 
 const MAX_MANUAL_PER_HOUR = 2;
+/** How long a claimed retry is held before another run may pick it up again (a run killed half-way). */
+const RETRY_LEASE_MINUTES = 5;
 const MAX_MANUAL_PER_DAY = 5;
 
 /**

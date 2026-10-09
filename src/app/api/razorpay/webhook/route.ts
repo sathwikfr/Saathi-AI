@@ -23,6 +23,14 @@ import {
  * Razorpay can deliver an event more than once, so every email is deduplicated. A failing email
  * never fails the webhook: the subscription state is already saved.
  */
+/**
+ * A subscription that stops never gains days: its access ends at the end of the last PAID period. (A halted
+ * subscription's current_end can be the end of the cycle whose charge failed.)
+ */
+function earlier(a: Date, b: Date): Date {
+  return a.getTime() < b.getTime() ? a : b;
+}
+
 export async function POST(req: Request) {
   const rawBody = await req.text();
   const signature = req.headers.get('x-razorpay-signature');
@@ -133,7 +141,7 @@ export async function POST(req: Request) {
         // Razorpay stopped retrying: the plan ends (calls stop once the paid period is over).
         await prisma.userSubscription.update({
           where: { id: current.id },
-          data: { status: 'cancelled', cancelAtPeriodEnd: true, ...(periodEnd ? { currentPeriodEnd: periodEnd } : {}) }
+          data: { status: 'cancelled', cancelAtPeriodEnd: true, ...(periodEnd ? { currentPeriodEnd: earlier(periodEnd, current.currentPeriodEnd) } : {}) }
         });
         if (user) {
           await sendOnce({ userId: user.id, kind: 'subscription_ended', refKey: subscriptionId, failOpen: true }, () =>
@@ -153,7 +161,7 @@ export async function POST(req: Request) {
       case 'subscription.completed':
         await prisma.userSubscription.update({
           where: { id: current.id },
-          data: { status: 'cancelled', cancelAtPeriodEnd: true, ...(periodEnd ? { currentPeriodEnd: periodEnd } : {}) }
+          data: { status: 'cancelled', cancelAtPeriodEnd: true, ...(periodEnd ? { currentPeriodEnd: earlier(periodEnd, current.currentPeriodEnd) } : {}) }
         });
         if (event === 'subscription.cancelled' && user) {
           const accessEnd = periodEnd ?? current.currentPeriodEnd;

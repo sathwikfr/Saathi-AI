@@ -172,3 +172,47 @@ export async function escalateEmergencies(parentId: string, created: RecordAlert
     );
   }
 }
+
+/**
+ * Cron safety net for emergencies: a level-4 alert that should start a ladder but has none, a few minutes after it
+ * was recorded, means the run that recorded it stopped half-way (a crash, or the platform's time limit, which runs no
+ * error handler). The family is told and the ladder started now. At most once per alert: escalations are unique per
+ * alert, and family messages are unique per alert and number. `titles` are the alerts that start a ladder (calls and
+ * a parent's own WhatsApp; not Remind, which never phones anyone).
+ */
+export async function rescueStalledEmergencies(titles: string[], deps: AlertDeps = {}): Promise<{ rescued: number }> {
+  const now = deps.now || new Date();
+  const stalled = await prisma.alertRecord.findMany({
+    where: {
+      level: 4,
+      title: { in: titles },
+      acknowledgedAt: null,
+      createdAt: { gte: new Date(now.getTime() - 24 * 3600000), lte: new Date(now.getTime() - STALLED_EMERGENCY_MINUTES * 60000) }
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 50
+  });
+  const started = new Set(
+    (await prisma.escalation.findMany({ where: { alertId: { in: stalled.map(a => a.id) } }, select: { alertId: true } })).map(e => e.alertId)
+  );
+  let rescued = 0;
+  for (const a of stalled.filter(x => !started.has(x.id))) {
+    const alert: NotifyAlert = { id: a.id, level: a.level, title: a.title, message: a.message };
+    try {
+      await notifyThenEscalate(
+        a.parentId,
+        () => (a.channel === 'dashboard' ? notifyFamily({ parentId: a.parentId, callLogId: a.callLogId, alerts: [alert] }, deps) : Promise.resolve()),
+        [{ created: false, alertId: a.id, alert }],
+        a.message.slice(0, 200),
+        deps
+      );
+      rescued += 1;
+    } catch (err) {
+      console.error(`[alerts] Could not rescue emergency ${a.id}:`, err);
+    }
+  }
+  return { rescued };
+}
+
+/** How long a level-4 alert may go without its ladder before the cron steps in. */
+const STALLED_EMERGENCY_MINUTES = 3;

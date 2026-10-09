@@ -9,6 +9,9 @@ import { istMinutesOfDay } from '@/lib/ist';
 import { requestSecret, safeEqual } from '@/lib/secrets';
 import { runReminders } from '@/lib/reminders';
 import { prisma } from '@/lib/prisma';
+import { rescueStalledEmergencies } from '@/lib/alerts';
+import { ALERT_TITLES } from '@/lib/callInterpretation';
+import { PARENT_EMERGENCY_TITLE } from '@/lib/whatsappInbound';
 
 /** Daily jobs run in the first cron tick(s) after 9:30 PM IST; running twice is harmless (unique keys). */
 const DAILY_JOBS_FROM_MINUTES = 21 * 60 + 30;
@@ -75,6 +78,8 @@ async function handle(req: Request) {
   // An emergency that is already being worked on comes first: placing a morning's worth of calls can be slow,
   // and if this run is cut off the next round of phone calls must not be the thing that is left undone.
   const escalations = await step('Escalations', () => advanceEscalations({ now }));
+  // An emergency whose ladder never started (the run that recorded it stopped half-way) is started now.
+  const rescued = await step('Stalled emergencies', () => rescueStalledEmergencies([ALERT_TITLES.emergency, PARENT_EMERGENCY_TITLE], { now }));
   let dispatch: Awaited<ReturnType<typeof runDispatch>> | null = null;
   let dispatchFailed = false;
   try {
@@ -100,9 +105,9 @@ async function handle(req: Request) {
 
   await Promise.all([recordRun(now, failures), heartbeat(dispatchFailed || !dispatch || failures.length > 0)]);
   if (dispatchFailed || !dispatch) {
-    return NextResponse.json({ error: 'Dispatch failed', reminders, escalations, summaries, lifecycle, daily }, { status: 500 });
+    return NextResponse.json({ error: 'Dispatch failed', reminders, escalations, rescued, summaries, lifecycle, daily }, { status: 500 });
   }
-  return NextResponse.json({ success: true, ...dispatch, reminders, escalations, summaries, lifecycle, daily });
+  return NextResponse.json({ success: true, ...dispatch, reminders, escalations, rescued, summaries, lifecycle, daily });
 }
 
 export const GET = handle;

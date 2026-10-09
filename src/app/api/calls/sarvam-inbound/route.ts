@@ -1,17 +1,24 @@
 import { NextResponse } from 'next/server';
 import { processInboundCall } from '@/lib/callResults';
-import { safeEqual } from '@/lib/secrets';
+import { routeSecret, safeEqual } from '@/lib/secrets';
+
+// Alert steps (family messages, the first round of emergency calls) run inside this request: give them the same
+// 60 s as the cron rather than the platform default (as low as 10 s), and the cron's stalled-emergency check
+// finishes anything a cut-off run left undone.
+export const maxDuration = 60;
 
 /**
  * End-of-call webhook of Sarvam's INBOUND deployment: the parent rang Saathi's
  * number back (e.g. after missing a call). Configure the deployment's webhook as
- * https://<domain>/api/calls/sarvam-inbound?token=SARVAM_WEBHOOK_SECRET.
+ * https://<domain>/api/calls/sarvam-inbound?token=SARVAM_INBOUND_WEBHOOK_SECRET (falls back to SARVAM_WEBHOOK_SECRET
+ * when unset). Set its own secret: the shared one sits in the URL of every outbound call, and anyone holding it
+ * could otherwise post a made-up call-back for any parent's number.
  * Payload: interaction_id, user_phone_number, duration, final/output_agent_variables,
  * interaction_transcript (docs/sarvam-agent.md §10). Idempotent per interaction.
  */
 export async function POST(req: Request) {
   const token = new URL(req.url).searchParams.get('token');
-  if (!safeEqual(token, process.env.SARVAM_WEBHOOK_SECRET)) {
+  if (!safeEqual(token, routeSecret('SARVAM_INBOUND_WEBHOOK_SECRET'))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
   let payload: unknown;

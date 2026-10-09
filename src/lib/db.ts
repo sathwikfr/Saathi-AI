@@ -490,8 +490,10 @@ export async function cancelSubscription(userId: string, reason?: string | null)
 export async function reactivateSubscription(userId: string): Promise<boolean> {
   const sub = await prisma.userSubscription.findUnique({ where: { userId } });
   if (!sub) return false;
-  // Reactivation is only possible while the paid period is still running.
+  // Reactivation is only possible while the paid period is still running, and only undoes the customer's own
+  // cancel: a subscription Razorpay stopped (payments failed) needs a new checkout.
   if (sub.currentPeriodEnd.getTime() < Date.now()) return false;
+  if (sub.status !== 'cancelled' || !sub.cancelledAt) return false;
   const status = sub.trialEndsAt && sub.trialEndsAt.getTime() > Date.now() ? 'trialing' : 'active';
   await prisma.userSubscription.update({
     where: { userId },

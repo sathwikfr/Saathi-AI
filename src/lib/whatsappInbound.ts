@@ -99,6 +99,16 @@ async function findUserByPhone(e164: string, forStart = false) {
   return prisma.user.findFirst({ where: { phone: e164 } });
 }
 
+/** A number that changed hands: family updates, medicine checks and caretaker alerts stop until it sends START again. */
+async function forgetNumber(phone: string) {
+  await prisma.notificationPreferences.updateMany({
+    where: { OR: [{ whatsappNumber: phone }, { user: { phone } }] },
+    data: { whatsappVerifiedAt: null }
+  });
+  await prisma.parentProfile.updateMany({ where: { reminderWhatsapp: phone }, data: { reminderWhatsapp: null, reminderOptInAt: null } });
+  await prisma.parentProfile.updateMany({ where: { caretakerWhatsapp: phone }, data: { caretakerWhatsapp: null, caretakerOptInAt: null } });
+}
+
 async function reply(
   cfg: WhatsAppConfig | null,
   inbound: { id: string; phone: string; userId: string | null },
@@ -188,6 +198,13 @@ async function handleMessageInner(msg: Obj, cfg: WhatsAppConfig | null, deps: In
   // A photo's caption is read for warning words too ("chest pain" under a picture).
   const caption = type === 'image' ? str(obj(msg.image).caption).trim() : '';
   const word = text.toLowerCase().replace(/[.!]+$/, '').trim();
+
+  // WhatsApp says this number moved to a new account (the person changed number, or the number went to someone
+  // else): nothing more goes to it, and it no longer acts for anyone, until it proves itself again with START.
+  if (type === 'system' && /changed_number/.test(str(obj(msg.system).type))) {
+    await forgetNumber(phone);
+    return 0;
+  }
 
   // Meta re-delivers messages; the cheap check keeps the unique index (the backstop) out of the error log.
   if (await prisma.whatsAppMessage.findUnique({ where: { providerMessageId: waId }, select: { id: true } })) return 0;

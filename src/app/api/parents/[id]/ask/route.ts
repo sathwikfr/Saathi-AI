@@ -48,7 +48,9 @@ export async function POST(req: Request, { params }: Ctx) {
   const history: AskTurn[] = Array.isArray(body.history) ? body.history : [];
   const res = await askAboutParent({ parentId: id, question: body.question, history });
   if (!res.ok) {
-    await Promise.all([releaseAsk(dKey), releaseAsk(mKey)]);
+    // The plan's monthly allowance gets the question back; the person's daily one only when no AI request was made,
+    // so questions that keep failing (on purpose or not) can't run up the AI bill without limit.
+    await Promise.all([releaseAsk(mKey), ...(res.billed ? [] : [releaseAsk(dKey)])]);
     return NextResponse.json({ error: res.error }, { status: res.status });
   }
   return NextResponse.json({ answer: res.answer });

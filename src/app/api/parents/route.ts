@@ -76,6 +76,10 @@ export async function POST(req: Request) {
     if (!phoneResult.ok) {
       return NextResponse.json({ error: phoneResult.reason }, { status: 400 });
     }
+    // Saathi only calls numbers in India (the same rule as editing the number later).
+    if (!phoneResult.e164.startsWith('+91')) {
+      return NextResponse.json({ error: 'Saathi can only call Indian numbers (+91).' }, { status: 400 });
+    }
 
     if (consentGiven !== true) {
       return NextResponse.json({ error: 'Parent consent is mandatory before starting calls' }, { status: 400 });

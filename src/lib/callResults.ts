@@ -604,16 +604,37 @@ export async function raiseToolEscalation(
 // Call-back: the parent rings Saathi's number (Sarvam inbound deployment)
 // ---------------------------------------------------------------------------
 
-/** Parents whose phone is this number (two parents can share a landline). */
+/**
+ * Parents whose phone is this number (two parents can share a landline). Caller ID is all we have, and anyone can add
+ * a profile with any number: when the number belongs to profiles in more than one account, the call-back goes only to
+ * the account Saathi most recently called at this number (the parent is ringing back). With no such call it is
+ * treated as an unknown caller, so one family's call-back (and its medical details) never lands in another's.
+ */
 async function parentsForCaller(phone: string) {
   const norm = normalizePhone(phone);
   if (!norm.ok) return [];
-  return prisma.parentProfile.findMany({
+  const parents = await prisma.parentProfile.findMany({
     where: { phone: norm.e164, isDeleted: false },
     include: { callSchedule: { where: { isActive: true } }, medicines: true, user: true },
     orderBy: { createdAt: 'asc' }
   });
+  if (new Set(parents.map(p => p.userId)).size <= 1) return parents;
+  const lastDialled = await prisma.callLog.findFirst({
+    where: {
+      parentId: { in: parents.map(p => p.id) },
+      NOT: { slot: 'callback' },
+      providerAttemptId: { not: null },
+      createdAt: { gte: new Date(Date.now() - CALLBACK_MATCH_HOURS * 3600000) }
+    },
+    orderBy: { createdAt: 'desc' },
+    select: { parentId: true }
+  });
+  const owner = parents.find(p => p.id === lastDialled?.parentId)?.userId;
+  return owner ? parents.filter(p => p.userId === owner) : [];
 }
+
+/** How far back a call from Saathi counts when a call-back's number belongs to more than one account. */
+const CALLBACK_MATCH_HOURS = 48;
 
 /** Medicines from today's slots that have passed without a confirmed answer. */
 async function unconfirmedToday(parent: Awaited<ReturnType<typeof parentsForCaller>>[number], now: Date): Promise<LinkedMedicineDetail[]> {

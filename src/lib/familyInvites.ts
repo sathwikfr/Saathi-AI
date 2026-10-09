@@ -34,6 +34,9 @@ export function canEmailInvites(env: NodeJS.ProcessEnv = process.env): boolean {
   return !!env.RESEND_API_KEY && !!from && !from.includes('@resend.dev');
 }
 
+/** Invite emails one person can send in 24 hours (each invite counts, removed ones too). */
+const INVITE_EMAILS_PER_DAY = 10;
+
 export async function createInvite(input: {
   parentId: string;
   invitedBy: { id: string; name: string; email: string; phone?: string };
@@ -75,7 +78,12 @@ export async function createInvite(input: {
   });
 
   let emailed = false;
-  if (email && canEmailInvites()) {
+  // Invite, remove, invite again would otherwise send our email to any address without limit: past a few a day the
+  // link is still made (to share by hand), but no email goes out.
+  const sentToday = email
+    ? await prisma.caregiverInvite.count({ where: { invitedById: input.invitedBy.id, invitedAt: { gte: new Date(Date.now() - 86400000) } } })
+    : 0;
+  if (email && canEmailInvites() && sentToday <= INVITE_EMAILS_PER_DAY) {
     const parent = await prisma.parentProfile.findUnique({ where: { id: input.parentId }, select: { name: true } });
     const res = await sendFamilyInviteEmail({
       to: email,

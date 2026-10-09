@@ -143,7 +143,8 @@ export type AskTurn = { role: 'user' | 'assistant'; content: string };
 
 export type AskResult =
   | { ok: true; answer: string }
-  | { ok: false; status: number; error: string };
+  /** `billed`: the AI request was made (and paid for) even though no answer came back. */
+  | { ok: false; status: number; error: string; billed?: boolean };
 
 export async function askAboutParent(
   input: { parentId: string; question: string; history?: AskTurn[] },
@@ -189,17 +190,18 @@ export async function askAboutParent(
       messages
     });
     if (response.stop_reason === 'refusal') {
-      return { ok: false, status: 422, error: "I can't answer that one. Try asking about calls, medicines or how they have been." };
+      return { ok: false, status: 422, billed: true, error: "I can't answer that one. Try asking about calls, medicines or how they have been." };
     }
     const answer = response.content
       .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === 'text')
       .map(b => b.text)
       .join('\n')
       .trim();
-    if (!answer) return { ok: false, status: 502, error: 'No answer came back. Please try again.' };
+    if (!answer) return { ok: false, status: 502, billed: true, error: 'No answer came back. Please try again.' };
     return { ok: true, answer };
   } catch (err) {
     console.error(`[ask] Claude request failed: ${describeClaudeError(err)}`);
-    return { ok: false, status: 502, error: 'Could not get an answer right now. Please try again in a minute.' };
+    // Counted as paid: a timeout or a server error can come after the model already ran.
+    return { ok: false, status: 502, billed: true, error: 'Could not get an answer right now. Please try again in a minute.' };
   }
 }

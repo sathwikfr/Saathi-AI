@@ -28,6 +28,8 @@ import { notifyFamily, notifyHandled, NotifyDeps } from './familyNotify';
 import { EscalationSummary } from './types';
 
 export const ESCALATION_STEP_MINUTES = 10;
+/** A round in progress holds its escalation this long; a run killed half-way is picked up again after it. */
+const ESCALATION_LEASE_MINUTES = 3;
 /** Practice calls per parent per day (each one costs a call). */
 export const MAX_PRACTICE_PER_DAY = 3;
 /** Emergency contacts a parent can have; a ladder never phones more than this many. */
@@ -274,7 +276,9 @@ export async function startEscalation(
         parentId: input.parentId,
         alertId: input.alertId,
         kind: input.kind,
-        reason: input.reason.replace(/\s+/g, ' ').trim().slice(0, 300) || 'They may need help.'
+        reason: input.reason.replace(/\s+/g, ' ').trim().slice(0, 300) || 'They may need help.',
+        // Held by this run while its first round goes out; if the run is killed, the cron picks it up after the lease.
+        nextStepAt: new Date((deps.now || new Date()).getTime() + ESCALATION_LEASE_MINUTES * 60000)
       }
     });
   } catch (err) {
@@ -307,13 +311,18 @@ export async function advanceEscalations(deps: EscalationDeps & { parentIds?: st
   });
   let advanced = 0;
   for (const esc of due) {
+    // Claimed with a short lease, not cleared: a run killed half-way (function time limit) would otherwise leave the
+    // emergency "active" with no next step, forever. runRound sets the real next step.
+    const lease = new Date(now.getTime() + ESCALATION_LEASE_MINUTES * 60000);
     const claimed = await prisma.escalation.updateMany({
       where: { id: esc.id, status: 'active', nextStepAt: esc.nextStepAt },
-      data: { nextStepAt: null }
+      data: { nextStepAt: lease }
     });
     if (claimed.count !== 1) continue;
     try {
-      await runRound(esc.id, esc.round + 1, deps);
+      // A ladder whose first round never went out (the run that started it was killed) starts at round 0.
+      const firstRoundDone = esc.round > 0 || (await prisma.escalationAttempt.count({ where: { escalationId: esc.id } })) > 0;
+      await runRound(esc.id, firstRoundDone ? esc.round + 1 : 0, deps);
       advanced += 1;
     } catch (err) {
       console.error(`[escalation] Round ${esc.round + 1} of ${esc.id} failed:`, err);
@@ -321,7 +330,7 @@ export async function advanceEscalations(deps: EscalationDeps & { parentIds?: st
       // would be told. Try the round again on a later tick.
       try {
         await prisma.escalation.updateMany({
-          where: { id: esc.id, status: 'active', nextStepAt: null },
+          where: { id: esc.id, status: 'active', nextStepAt: lease },
           data: { nextStepAt: new Date(now.getTime() + 2 * 60000) }
         });
       } catch (restoreErr) {
