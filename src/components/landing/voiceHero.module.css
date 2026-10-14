@@ -173,9 +173,16 @@
   font-style: normal;
   white-space: nowrap; /* keep "Peace of mind" and its gradient on one line */
   background: var(--grad);
+  background-size: 200% 100%;
+  animation: gradFlow 9s ease-in-out infinite alternate;
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
+}
+
+@keyframes gradFlow {
+  from { background-position: 0% 0; }
+  to { background-position: 100% 0; }
 }
 
 .proof {
@@ -399,6 +406,12 @@
   font-weight: 600;
   white-space: nowrap;
   transition: transform var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out);
+  animation: pillFloat 4.5s ease-in-out infinite;   /* `translate` composes with the hover `transform` */
+}
+
+@keyframes pillFloat {
+  0%, 100% { translate: 0 0; }
+  50% { translate: 0 -5px; }
 }
 
 .circleIcon {
@@ -489,7 +502,7 @@
 
 /* ---------- Stacked: tablets and phones ----------
    The two columns dissolve (display: contents) so the pieces can be ordered:
-   the orb and its controls first, then the pitch. */
+   the pitch and its buttons first, then the orb and its controls. */
 
 @media (max-width: 1023px) {
   .hero {
@@ -518,10 +531,10 @@
     display: contents;
   }
 
-  .stage { order: 1; align-self: center; }
-  .controls { order: 2; align-self: center; max-width: none; margin-top: -8px; }
-  .copy { order: 3; gap: 16px; }
-  .ctas { order: 4; }
+  .copy { order: 1; gap: 16px; }
+  .ctas { order: 2; }
+  .stage { order: 3; align-self: center; }
+  .controls { order: 4; align-self: center; max-width: none; margin-top: -8px; }
 
   .h1 { font-size: var(--h1); }
 }
@@ -542,5 +555,5 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .insideLine { animation: none; }
+  .insideLine, .h1 em, .circleHint { animation: none; }
 }

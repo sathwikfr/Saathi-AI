@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { ArrowRight, Play, Square, RotateCcw } from 'lucide-react';
 import { type OrbMode, type SaathiOrbHandle } from '@/components/voice/SaathiOrb';
 import { SaathiBlob } from '@/components/voice/SaathiBlob';
+import { MagneticLink } from '@/components/motion/MagneticLink';
+import { WordReveal } from '@/components/motion/WordReveal';
 import s from './voiceHero.module.css';
 
 /**
@@ -312,12 +314,12 @@ export function VoiceHero({ primaryHref, primaryLabel, trialDays }: { primaryHre
         <div className={s.left}>
           <div className={s.copy}>
             <span className={`${s.tagline} anim-load d1`}><span className={s.mark} aria-hidden="true" />Saathi · a voice companion for parents</span>
-            <h1 className={`${s.h1} anim-load d2`}>A daily call for<br />your parents.<br /><em>Peace of mind</em><br />for you.</h1>
+            <WordReveal as="h1" className={s.h1} delay={0.15} onLoad>A daily call for<br />your parents.<br /><em>Peace of mind</em><br />for you.</WordReveal>
             <p className={`${s.proof} anim-load d3`}>{trialDays}-day free trial · 9 Indian languages · no app for your parents</p>
           </div>
 
           <div className={`${s.ctas} anim-load d4`}>
-            <Link href={primaryHref} className={`${s.btnSolid} btn-glow`}>{primaryLabel} <ArrowRight size={18} /></Link>
+            <MagneticLink href={primaryHref} className={`${s.btnSolid} btn-glow`}>{primaryLabel} <ArrowRight size={18} /></MagneticLink>
             <Link href="#how" className={s.btnGhost}>See how it works</Link>
           </div>
         </div>
