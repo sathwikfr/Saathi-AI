@@ -232,6 +232,14 @@
 
 .screen {
   position: relative;
+  transition: opacity 500ms var(--ease-out), filter 500ms var(--ease-out), translate 500ms var(--ease-out);
+}
+
+/* Between loops the phone fades out, the film starts again, and it fades back in. */
+.screen[data-fading] {
+  opacity: 0;
+  filter: blur(6px);
+  translate: 0 10px;
 }
 
 /* The film is laid out at its own size and scaled to fit. */

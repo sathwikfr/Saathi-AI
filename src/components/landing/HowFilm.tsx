@@ -21,7 +21,8 @@ import x from './howFilm.module.css';
  */
 
 const END = TAP_AT + 700;    // the tap on "I'll handle it" lands
-const HOLD_MS = 2600;        // rest on the last frame before playing again
+const HOLD_MS = 2400;        // rest on the last frame...
+const FADE_MS = 500;         // ...then fade the phone out, start again, and fade it back in
 const PARENT_KNEE_AT = 7400; // BragFilm LINES[3]: Amma mentions her knee
 
 // The film frame hugs the phone: the device plus a little room for its shadow and side buttons.
@@ -46,15 +47,16 @@ export function HowFilm() {
   const tRef = useRef(0);
   const [t, setT] = useState(0);
   const [k, setK] = useState(1);
+  const [fading, setFading] = useState(false);
   const [lang, setLang] = useState<CallLang>('en');
 
-  const seek = (v: number) => { tRef.current = v; setT(v); };
+  const seek = (v: number) => { tRef.current = v; setT(v); setFading(false); };
 
   // "Hear it" in the Languages section switches the call's language and plays it from the start.
   useEffect(() => {
     const onLang = (e: Event) => {
       const v = (e as CustomEvent).detail;
-      if (isCallLang(v)) { setLang(v); tRef.current = 0; setT(0); }
+      if (isCallLang(v)) { setLang(v); tRef.current = 0; setT(0); setFading(false); }
     };
     window.addEventListener(CALL_LANG_EVENT, onLang);
     return () => window.removeEventListener(CALL_LANG_EVENT, onLang);
@@ -72,7 +74,7 @@ export function HowFilm() {
     return () => ro.disconnect();
   }, [reduce]);
 
-  // Play on its own clock while on screen; rest on the last frame, then play again.
+  // Play on its own clock while on screen; rest on the last frame, fade out, start again, fade in.
   useEffect(() => {
     const el = root.current;
     if (!el) return;
@@ -85,8 +87,15 @@ export function HowFilm() {
       let next = tRef.current;
       if (next >= END) {
         held += dt;
-        if (held > HOLD_MS) { held = 0; next = 0; }
+        if (held > HOLD_MS + FADE_MS) {
+          held = 0;
+          next = 0;
+          setFading(false);
+        } else if (held > HOLD_MS) {
+          setFading(true);
+        }
       } else {
+        held = 0;
         next = Math.min(END, next + dt);
       }
       if (next !== tRef.current) { tRef.current = next; setT(next); }
@@ -169,7 +178,7 @@ export function HowFilm() {
 
         <div className={x.slot} ref={slot} data-beat={beat}>
           <div className={x.glow} aria-hidden="true" />
-          <div className={x.screen} data-grow style={{ width: FW * k, height: FH * k }} aria-hidden="true">
+          <div className={x.screen} data-grow data-fading={fading || undefined} style={{ width: FW * k, height: FH * k }} aria-hidden="true">
             <div className={x.frame} style={{ width: FW, height: FH, transform: `scale(${k})` }}>
               <CallPhone t={t} lang={lang} still={STILL} />
               <WaPhone t={t} still={STILL} />

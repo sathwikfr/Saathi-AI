@@ -345,7 +345,8 @@ export function WaPhone({ t, still }: { t: number; still?: Cam }) {
   const msgIn = expoOut(prog(t, MSG_AT, MSG_AT + 450));
   const tap = prog(t, TAP_AT, TAP_AT + 600);
   const pressed = t >= TAP_AT && t < TAP_AT + 320;
-  const out = easeIn(prog(t, CUT_LANG - 450, CUT_LANG - 50));
+  // The launch film cuts to its languages scene here; the landing's still phone stays (it fades the loop itself).
+  const out = still ? 0 : easeIn(prog(t, CUT_LANG - 450, CUT_LANG - 50));
   if (t < CUT_WA) return null;
 
   return (
