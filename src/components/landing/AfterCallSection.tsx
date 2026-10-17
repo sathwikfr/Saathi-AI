@@ -34,11 +34,11 @@ export function AfterCallSection() {
         <div className={x.pair}>
           {/* The dashboard */}
           <Reveal variant="left" className={x.col}>
-            <div className={x.label} data-speed="0.5">
+            <div className={x.label}>
               <span><LayoutDashboard size={15} /> On your dashboard</span>
               <span className={x.example}>Example</span>
             </div>
-            <div className={x.dash} data-speed="0.5">
+            <div className={x.dash}>
               <div className={x.dashHead}>
                 <span className={x.avatar} aria-hidden="true">A</span>
                 <span className={x.who}>
@@ -72,10 +72,10 @@ export function AfterCallSection() {
 
           {/* WhatsApp */}
           <Reveal variant="right" delay={120} className={x.col}>
-            <div className={x.label} data-speed="-0.4">
+            <div className={x.label}>
               <span><MessageCircle size={15} /> On your WhatsApp</span>
             </div>
-            <div className={x.wa} aria-label="Example WhatsApp update" data-speed="-0.4">
+            <div className={x.wa} aria-label="Example WhatsApp update">
               <div className={x.waHead}>
                 <span className={x.waAvatar}><Heart size={14} fill="currentColor" strokeWidth={0} /></span>
                 <span className={x.who}>
