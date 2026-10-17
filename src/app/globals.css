@@ -3157,7 +3157,7 @@ a.link:hover {
 
 .status-orb.good { background: var(--green-soft); color: var(--green); }
 .status-orb.warn { background: var(--amber-soft); color: var(--amber); }
-.status-orb.live { background: var(--teal-light); color: var(--teal); }
+.status-orb.live { background: none; }   /* the glass orb is the status */
 
 .today-status h3 {
   font-size: 1.45rem;
@@ -4978,7 +4978,19 @@ svg .steam + .steam {
 }
 .ask-bubble.me { justify-self: end; background: var(--teal-fill); color: var(--on-teal); border-bottom-right-radius: 6px; }
 .ask-bubble.ai { justify-self: start; background: var(--panel-elevated); border: 1px solid var(--line-subtle); border-bottom-left-radius: 6px; }
-.ask-thinking { display: flex; align-items: center; gap: 10px; color: var(--ink-muted); }
+/* "Going through Amma's calls…": the glass orb in a dark pill (same in both themes, like the hero's capsule). */
+.ask-bubble.ai.ask-thinking {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 5px 20px 5px 5px;
+  border-radius: var(--r-full);
+  background: linear-gradient(180deg, rgba(34, 35, 44, 0.98) 0%, rgba(13, 14, 20, 0.98) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 10px 24px -14px rgba(10, 8, 40, 0.6);
+  color: rgba(255, 255, 255, 0.62);
+  font-weight: 500;
+}
 .ask-form { display: flex; gap: 8px; }
 .ask-form .form-input { flex: 1; }
 

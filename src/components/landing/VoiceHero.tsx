@@ -7,6 +7,7 @@ import { ArrowRight, BellRing, CirclePlay, Clock, Headphones, Languages, Message
 import { Ticker } from '@/components/motion/Ticker';
 import { type OrbMode, type SaathiOrbHandle } from '@/components/voice/SaathiOrb';
 import { SaathiBlob } from '@/components/voice/SaathiBlob';
+import { SaathiGlass } from '@/components/voice/SaathiGlass';
 import { MagneticLink } from '@/components/motion/MagneticLink';
 import { WordReveal } from '@/components/motion/WordReveal';
 import { HeroWaves } from './HeroWaves';
@@ -17,8 +18,8 @@ import s from './voiceHero.module.css';
 /**
  * Landing hero, three columns on a soft aurora:
  *  - left: the pitch and the trial button.
- *  - centre: Saathi's voice orb (a living glass blob) with a dark capsule across it: the mic in the
- *    middle plays a sample greeting (browser speech synthesis), and the capsule's waves move with the
+ *  - centre: Saathi's voice orb (the living glass blob, SaathiBlob; /?orb=glass shows the Siri-style SaathiGlass) and a dark capsule
+ *    under it: the mic in the middle plays a sample greeting (browser speech synthesis), and the capsule's waves move with the
  *    voice, Saathi's on the left, Amma's on the right.
  *  - right: the call as it happens: the words being said (spoken part lit), the
  *    translation, "Hear a sample call" and "Watch video" (the call film, in a player that grows out
@@ -118,14 +119,6 @@ function chunk(text: string): Chunk[] {
 const CHARS_PER_SEC = 13;            // estimate when a browser voice doesn't report word timing
 const THINK_MS = 650;                // after Amma answers, Saathi 'thinks' this long before replying
 
-/* The site theme (<html data-theme>): the orb glows on dark pages and uses ink on light ones (no dark backing). */
-const subscribeTheme = (cb: () => void) => {
-  const mo = new MutationObserver(cb);
-  mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
-  return () => mo.disconnect();
-};
-const readDarkTheme = () => document.documentElement.getAttribute('data-theme') === 'dark';
-
 /** The browser's voices, waiting (briefly) for them to load if the list is still empty. */
 function loadVoices(synth: SpeechSynthesis): Promise<SpeechSynthesisVoice[]> {
   const now = synth.getVoices();
@@ -153,10 +146,22 @@ const rise = (d: number) => ({ ['--d' as string]: d });
 
 /* ---------- The hero ---------- */
 
+/* The site theme (<html data-theme>): the blob glows on dark pages and uses ink on light ones. */
+const subscribeTheme = (cb: () => void) => {
+  const mo = new MutationObserver(cb);
+  mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  return () => mo.disconnect();
+};
+const readDarkTheme = () => document.documentElement.getAttribute('data-theme') === 'dark';
+// The Siri-style glass orb is saved for later (user, 2026-10-17): the blob is live, /?orb=glass shows the glass one.
+const readGlass = () => new URLSearchParams(window.location.search).get('orb') === 'glass';
+const noSubscribe = () => () => {};
+
 export function VoiceHero({ primaryHref, primaryLabel, trialDays }: { primaryHref: string; primaryLabel: string; trialDays: number }) {
   const orb = useRef<SaathiOrbHandle>(null);
   const [orbMode, setOrbMode] = useState<OrbMode>('idle');
   const dark = useSyncExternalStore(subscribeTheme, readDarkTheme, () => false);
+  const glass = useSyncExternalStore(noSubscribe, readGlass, () => false);
 
   const [lang, setLang] = useState<LangKey>('en');
   const [status, setStatus] = useState<Status>('idle');
@@ -385,8 +390,8 @@ export function VoiceHero({ primaryHref, primaryLabel, trialDays }: { primaryHre
 
         {/* Centre: the orb, and the capsule across it with the mic and the voice */}
         <div className={s.stage} data-hero-orb>
-          <div className={s.orb} aria-hidden="true">
-            <SaathiBlob ref={orb} mode={orbMode} variant={dark ? 'night' : 'day'} scale={0.52} />
+          <div className={s.orb} data-kind={glass ? 'glass' : 'blob'} aria-hidden="true">
+            {glass ? <SaathiGlass ref={orb} mode={orbMode} /> : <SaathiBlob ref={orb} mode={orbMode} variant={dark ? 'night' : 'day'} scale={0.52} />}
           </div>
           <div className={s.capsule} data-live={speaking || undefined}>
             <HeroWaves className={s.waves} mode={orbMode} dark voice={voice} inner={1.4} silk={false} />

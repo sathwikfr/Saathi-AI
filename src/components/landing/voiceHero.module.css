@@ -298,15 +298,16 @@
   position: relative;
   z-index: 1;
   width: calc(var(--r) * 3.3);
-  height: calc(var(--r) * 2.5);
+  height: calc(var(--r) * 2.2 + max(42px, var(--r) * 0.34));   /* the ball, then the capsule under it */
   margin: 0 calc(var(--r) * 0.1) 0 calc(var(--r) * -0.22);   /* reaches into the pitch's gutter, like the mockup */
 }
 
-/* The canvas is 3.85 x the ball's radius (scale 0.52): the glow and dust fade before its edge. */
+/* The ball (radius --r) at the top of the stage, the capsule under it. The blob's canvas is 3.85 x --r
+   (scale 0.52): its glow and dust fade before the edge. */
 .orb {
   position: absolute;
   left: 50%;
-  top: 50%;
+  top: calc(var(--r) * 1.02);
   width: calc(var(--r) * 3.85);
   height: calc(var(--r) * 3.85);
   transform: translate(-50%, -50%);
@@ -316,21 +317,29 @@
   animation: orbForm 1.7s cubic-bezier(0.16, 1, 0.3, 1) 0.15s both;
 }
 
+/* /?orb=glass: the Siri-style glass ball needs only a little room for its glow, and no fade mask. */
+.orb[data-kind='glass'] {
+  width: calc(var(--r) * 2.3);
+  height: calc(var(--r) * 2.3);
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
 @keyframes orbForm {
   from { opacity: 0; transform: translate(-50%, -50%) scale(0.7); filter: blur(18px); }
   to { opacity: 1; transform: translate(-50%, -50%) scale(1); filter: blur(0); }
 }
 
 .capsule {
-  --h: max(42px, calc(var(--r) * 0.34));        /* a slim bar across the orb, not a full-width band */
+  --h: max(42px, calc(var(--r) * 0.34));        /* a slim pill under the orb, so its wave stays in view */
   --mic: calc(var(--h) * 0.86);
   position: absolute;
   left: 50%;
-  top: 50%;
+  top: calc(var(--r) * 2.2);
   width: calc(var(--r) * 2.05);
   max-width: 100%;
   height: var(--h);
-  translate: -50% -50%;
+  translate: -50% 0;
   border-radius: var(--r-full);
   background: var(--capsule);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), inset 0 0 0 1px var(--capsule-line), var(--capsule-shadow);
@@ -776,8 +785,8 @@
   .stage {
     align-self: center;
     width: min(100%, calc(var(--r) * 3.3));
-    height: calc(var(--r) * 2.4);
-    margin: -6px 0;
+    height: calc(var(--r) * 2.2 + max(42px, var(--r) * 0.34));
+    margin: 4px 0;
   }
 
   .caption { justify-content: center; --qfs: clamp(28px, 7.6cqi, 46px); }

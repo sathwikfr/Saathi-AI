@@ -74,8 +74,8 @@ const SOUND: Record<Sound, { len: number; loud: number; hiss: number }> = {
   hiss: { len: 0.7, loud: 0.26, hiss: 1 },     // s sh f h th
   stop: { len: 0.45, loud: 0.85, hiss: 0.4 },  // t k p b d g: a short silence, then a pop
 };
-type Bit = { k: Sound; len: number };
-type Seg = { a: number; b: number; k: Sound; loud: number; hiss: number };
+export type Bit = { k: Sound; len: number };
+export type Seg = { a: number; b: number; k: Sound; loud: number; hiss: number };
 
 const LATIN: Record<string, Sound> = {};
 for (const [letters, k] of [['aeiou', 'vowel'], ['lmnrwy', 'hum'], ['sfvzh', 'hiss'], ['bcdgjkpqtx', 'stop']] as const) {
@@ -130,7 +130,7 @@ function indicBits(word: string): Bit[] {
   return out;
 }
 
-function wordBits(word: string): Bit[] {
+export function wordBits(word: string): Bit[] {
   const w = word.replace(/[^\p{L}\p{M}]/gu, '');
   if (!w) return [];
   if (/[ऀ-ൿ]/.test(w)) return indicBits(w);
@@ -139,7 +139,7 @@ function wordBits(word: string): Bit[] {
 }
 
 /** Lays sounds out over `seconds` (the last tenth is the gap before the next word). */
-function plan(bits: Bit[], seconds: number): Seg[] {
+export function plan(bits: Bit[], seconds: number): Seg[] {
   const total = bits.reduce((a, b) => a + b.len * SOUND[b.k].len, 0);
   if (!total) return [];
   const unit = (seconds * 0.9) / total;
@@ -157,7 +157,7 @@ function plan(bits: Bit[], seconds: number): Seg[] {
 }
 
 /** Loudness and hiss of a planned word, `tau` seconds in. */
-function sample(segs: Seg[], tau: number): [number, number] {
+export function sample(segs: Seg[], tau: number): [number, number] {
   for (const s of segs) {
     if (tau < s.a || tau >= s.b) continue;
     const x = (tau - s.a) / (s.b - s.a);
@@ -169,7 +169,7 @@ function sample(segs: Seg[], tau: number): [number, number] {
 }
 
 /** Made-up speech for when no words come (the mode alone says someone is talking): 1-3 syllables. */
-function madeUp(n: number): Bit[] {
+export function madeUp(n: number): Bit[] {
   const out: Bit[] = [];
   for (let i = 0; i < n; i++) {
     const r = Math.random();
@@ -549,7 +549,7 @@ function compile(gl: WebGLRenderingContext, type: number, src: string) {
   return sh;
 }
 
-function link(gl: WebGLRenderingContext, vsSrc: string, fsSrc: string) {
+export function link(gl: WebGLRenderingContext, vsSrc: string, fsSrc: string) {
   const vs = compile(gl, gl.VERTEX_SHADER, vsSrc);
   const fs = compile(gl, gl.FRAGMENT_SHADER, fsSrc);
   const prog = vs && fs ? gl.createProgram() : null;
@@ -645,11 +645,11 @@ function rotation(yaw: number, pitch: number, roll: number) {
   return new Float32Array([m[0], m[3], m[6], m[1], m[4], m[7], m[2], m[5], m[8]]);
 }
 
-type Spring = { x: number; v: number };
-const spring = (): Spring => ({ x: 0, v: 0 });
+export type Spring = { x: number; v: number };
+export const spring = (): Spring => ({ x: 0, v: 0 });
 
 /** Moves a spring toward `to` over `dt` seconds: `hz` is how fast it swings, `damp` below 1 lets it overshoot and wobble. */
-function settle(s: Spring, to: number, hz: number, damp: number, dt: number) {
+export function settle(s: Spring, to: number, hz: number, damp: number, dt: number) {
   const w = 2 * Math.PI * hz;
   const n = Math.max(1, Math.ceil(dt / 0.004));
   const h = dt / n;

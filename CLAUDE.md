@@ -131,12 +131,10 @@ src/lib/
 src/app/card/[token], notice/[lang], invite/[token], dashboard/report/[parentId]   emergency card (public, noindex, revocable), parent notice, invite accept, printable doctor summary
 src/app/admin/page.tsx      read-only admin overview (server component). NOT in proxy.ts matcher on purpose: signed-out visitors get a 404, not a login redirect
 src/components/GoogleSignInButton.tsx   GIS button (hidden when not configured)
-src/components/ui/ThinkingOrb.tsx   client wrapper for `thinking-orbs` (added 2026-10-05): dotted canvas orb, tinted with the surrounding
-                              text colour (follows light/dark). Only at 32/64 px for AI activity: Ask "Going through Amma's calls…"
-                              = composing 32, prescription reading = searching 64, call in progress (`.status-orb.live`) = listening 32.
-                              Buttons keep `.spinner`: at 20 px on a dimmed busy button the orb reads as a grey smudge (tried 2026-10-05).
-                              Never pass theme="dark" (invisible on the ivory theme); no gravity.
-                              All 9 states: /dev/thinking-orbs (dev only)
+src/components/ui/ThinkingOrb.tsx   "Saathi is busy" orb (2026-10-17: a small SaathiGlass; the `thinking-orbs` package was removed).
+                              AI activity only: Ask "Going through Amma's calls…" (composing 36, in a dark pill `.ask-thinking`),
+                              prescription reading (searching 64), call in progress (`.status-orb.live`, listening 42 = Saathi talking).
+                              Buttons keep `.spinner`. One WebGL context per orb. States: /dev/thinking-orbs (dev only)
 src/components/LegalPage.tsx + app/privacy + app/terms   plain-language Privacy Policy and Terms (draft; lawyer review advised); linked from Footer and checkout
 src/components/               Navbar (+Brand), Footer, Reveal, ThemeToggle, ui/Modal (portal),
                               auth/AuthUI (AuthShell, PasswordField, PhoneField, StrengthMeter),
@@ -154,7 +152,14 @@ src/components/landing/LiveCallPhone.tsx   "How it works": scripted example call
                               (IslandWave.tsx, canvas) flow left->right green for Saathi, right->left red for Amma.
                               Script in callScript.ts: hand-written English/Telugu/Hindi, shared timings, no API.
                               Plays twice by itself, then waits with "Ring again". The summary card's call length reads CALL_MS.
-src/components/voice/SaathiBlob.tsx    the hero's voice orb (raw WebGL1, no three.js): a living glass blob. Bumpy
+src/components/voice/SaathiGlass.tsx   SAVED alternative hero orb (2026-10-17; the user keeps the blob live for now, see it at /?orb=glass): a Siri-style "Glass Liquid" shader, ported
+                              to WebGL1): a dark glass ball, the same in both themes, with a white crest + gold/cyan/pink/violet bands
+                              inside, lens refraction with a rainbow fringe, a thin rim, key/fill lights. Voice = SaathiBlob's word-to-
+                              sounds level (speed, band spread, outline wobble, sheen); cyan for Saathi, pink for family; thinking
+                              in 220 ms / settles in 650 ms. Touch: crest reaches for the pointer, key light follows, outline bulges,
+                              press dents, release ripples. On light pages a thin dark outer edge (a white rim melts into ivory).
+                              The hero's mic capsule sits UNDER the ball for both orbs. Also used by ThinkingOrb.
+src/components/voice/SaathiBlob.tsx    the hero's voice orb (raw WebGL1; its voice/spring helpers are exported for SaathiGlass): a living glass blob. Bumpy
                               geodesic net of dots + lines, glass rim/glint, two inner ribbons (cyan = Saathi,
                               pink = family), offscreen bloom (two blur sizes), drifting dust.
                               Voice (2026-10-04): each word -> rough sounds (vowel/hum/hiss/stop, Indic letters too) -> a

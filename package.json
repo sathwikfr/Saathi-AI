@@ -31,7 +31,6 @@
     "react-dom": "19.2.8",
     "remotion": "^4.0.535",
     "resend": "^6.30.0",
-    "thinking-orbs": "^0.3.2",
     "three": "0.134.0",
     "vanta": "0.5.24",
     "zod": "^4.6.5"

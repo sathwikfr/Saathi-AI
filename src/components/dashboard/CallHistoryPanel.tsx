@@ -8,7 +8,7 @@ import { formatCallTime, formatDuration, moodLabel } from './helpers';
 
 /** Saathi is on the call right now. */
 function LiveCall() {
-  return <ThinkingOrb state="listening" size={32} label="Call in progress" />;
+  return <ThinkingOrb state="listening" size={42} label="Call in progress" />;
 }
 
 function statusView(status: CallLog['status']) {
