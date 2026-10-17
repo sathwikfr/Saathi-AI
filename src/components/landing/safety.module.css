@@ -6,6 +6,40 @@
    <Reveal>), then sit still.
    ========================================================================== */
 
+/* The film beside the four cards (stacked on narrow screens). */
+.split {
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  gap: 28px;
+  align-items: center;
+  max-width: 1160px;
+  margin: 0 auto;
+}
+
+.filmCol {
+  min-width: 0;
+}
+
+/* A 9:16 screen: holds its size before the film loads, so nothing below it jumps. */
+.film {
+  aspect-ratio: 9 / 16;
+  border-radius: 30px;
+  overflow: clip;
+  background: #010d16;
+  box-shadow: 0 40px 90px -40px rgba(1, 13, 22, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.06) inset;
+}
+
+@media (max-width: 1023px) {
+  .split {
+    grid-template-columns: 1fr;
+  }
+
+  .filmCol {
+    width: min(340px, 100%);
+    margin: 0 auto;
+  }
+}
+
 .grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

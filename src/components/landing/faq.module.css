@@ -116,6 +116,36 @@
   color: var(--ink);
 }
 
+/* 01, 02…: a quiet index before each question. */
+.num {
+  flex: none;
+  min-width: 2ch;
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-subtle);
+  transition: color var(--dur) ease;
+}
+
+.q {
+  flex: 1;
+}
+
+.item:hover .num,
+.item[open] .num {
+  color: var(--teal);
+}
+
+/* The answer settles in as the item opens. */
+.item[open] p {
+  animation: answerIn 420ms var(--ease-out) both;
+}
+
+@keyframes answerIn {
+  from { opacity: 0; translate: 0 -6px; }
+}
+
 .item summary::-webkit-details-marker {
   display: none;
 }
@@ -146,7 +176,7 @@
 }
 
 .item p {
-  padding: 0 24px 22px;
+  padding: 0 24px 22px 58px;          /* lines up with the question, after its number */
   max-width: 62ch;
   font-size: 0.98rem;
   line-height: 1.65;
@@ -177,5 +207,9 @@
 @media (prefers-reduced-motion: reduce) {
   .item::details-content {
     transition: none;
+  }
+
+  .item[open] p {
+    animation: none;
   }
 }

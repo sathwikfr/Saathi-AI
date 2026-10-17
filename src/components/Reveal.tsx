@@ -12,7 +12,7 @@ type RevealProps = {
 };
 
 /** Fades its children up the first time they scroll into view. */
-export function Reveal({ children, delay = 0, as = 'div', variant = 'up', className = '', style }: RevealProps) {
+export function Reveal({ children, delay = 0, as = 'div', variant = 'up', className = '', style, ...rest }: RevealProps) {
   const ref = useRef<HTMLElement>(null);
   const [visible, setVisible] = useState(false);
 
@@ -35,6 +35,7 @@ export function Reveal({ children, delay = 0, as = 'div', variant = 'up', classN
   const Tag = as as React.ElementType;
   return (
     <Tag
+      {...rest}
       ref={ref}
       className={`reveal${variant !== 'up' ? ` v-${variant}` : ''}${visible ? ' in' : ''}${className ? ` ${className}` : ''}`}
       style={{ ...style, ['--reveal-delay' as string]: `${delay}ms` }}

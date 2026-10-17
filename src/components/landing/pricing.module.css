@@ -54,7 +54,7 @@
   color: var(--ink);
 }
 
-.price span {
+.price > span {
   font-size: 0.92rem;
   color: var(--ink-muted);
 }
@@ -102,9 +102,34 @@
 
 /* ---------- The popular plan: light, outlined in teal ---------- */
 
+/* Cards lift a little under the pointer (and get the pointer light: data-spot).
+   (The lift uses `translate`, so the scroll entrance keeps its own `transform` transition.) */
+.plan {
+  transition: opacity 700ms var(--ease-out), transform 700ms var(--ease-out),
+    translate var(--dur-slow) var(--ease-out), box-shadow var(--dur-slow) var(--ease-out);
+  transition-delay: var(--reveal-delay, 0ms), var(--reveal-delay, 0ms), 0ms, 0ms;
+}
+
+@media (hover: hover) {
+  .plan:hover {
+    translate: 0 -6px;
+    box-shadow: var(--shadow-lg);
+  }
+}
+
+/* The popular plan: a border of the orb's colours, slowly turning (the same angle as .btn-glow). */
 .featured {
-  border: 2px solid var(--teal);
-  box-shadow: var(--shadow-lg), 0 0 0 5px var(--teal-soft);
+  border: 2px solid transparent;
+  background:
+    linear-gradient(var(--panel-elevated), var(--panel-elevated)) padding-box,
+    conic-gradient(from var(--glow-angle), #5b8cff, #9b4dff, #ff6ab4, #5b8cff) border-box;
+  box-shadow: var(--shadow-lg), 0 30px 70px -40px rgba(155, 77, 255, 0.55);
+  animation: borderSpin 6s linear infinite;
+}
+
+@keyframes borderSpin {
+  from { --glow-angle: 0deg; }
+  to { --glow-angle: 360deg; }
 }
 
 .badge {

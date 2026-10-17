@@ -1,5 +1,5 @@
 import React from 'react';
-import { Check, Minus, Heart, Scale } from 'lucide-react';
+import { Check, Minus, Heart } from 'lucide-react';
 import { Reveal } from '@/components/Reveal';
 import { WordReveal } from '@/components/motion/WordReveal';
 import s from './home.module.css';
@@ -8,7 +8,8 @@ import x from './compare.module.css';
 /**
  * "Same worry. Much less effort.": Aaptha against the usual ways families keep
  * an eye on their parents. A real table on wide screens, with the Aaptha column
- * raised like a featured card; on phones each row becomes its own small card.
+ * raised like a featured card; on phones each row becomes its own small card. The rows arrive one by
+ * one and Aaptha's ticks pop in after them (GsapScroll's data-stagger / data-pop).
  */
 
 type Cell = true | false | string;
@@ -26,7 +27,7 @@ const ROWS: { label: string; us: Cell; others: [Cell, Cell, Cell] }[] = [
 
 function Value({ v, ours }: { v: Cell; ours?: boolean }) {
   if (v === true) {
-    return <span className={`${x.mark} ${ours ? x.markUs : x.markYes}`}><Check size={14} strokeWidth={3} /><span className="sr-only">Yes</span></span>;
+    return <span className={`${x.mark} ${ours ? x.markUs : x.markYes}`} data-pop={ours || undefined}><Check size={14} strokeWidth={3} /><span className="sr-only">Yes</span></span>;
   }
   if (v === false) {
     return <span className={`${x.mark} ${x.markNo}`}><Minus size={14} strokeWidth={2.5} /><span className="sr-only">No</span></span>;
@@ -39,13 +40,12 @@ export function CompareSection() {
     <section id="why" className={`section ${s.alt}`}>
       <div className="wrap">
         <Reveal className={s.head}>
-          <span className={s.pill}><Scale size={14} /> Compare</span>
           <WordReveal>Same worry. <span className={s.grad}>Much less effort.</span></WordReveal>
           <p>How a daily Saathi call compares with the usual ways families keep an eye on their parents.</p>
         </Reveal>
 
         <Reveal variant="scale">
-          <div className={x.frame}>
+          <div className={x.frame} data-spot>
             <table className={x.table}>
               <thead>
                 <tr>
@@ -56,7 +56,7 @@ export function CompareSection() {
                   {COLUMNS.map((col) => <th key={col} scope="col">{col}</th>)}
                 </tr>
               </thead>
-              <tbody>
+              <tbody data-stagger>
                 {ROWS.map((r) => (
                   <tr key={r.label}>
                     <th scope="row">{r.label}</th>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { ClipboardCheck, LayoutDashboard, MessageCircle, Heart, Reply, ExternalLink, CheckCheck, Check, Link2 } from 'lucide-react';
+import { LayoutDashboard, MessageCircle, Heart, Reply, ExternalLink, CheckCheck, Check, Link2 } from 'lucide-react';
 import { Reveal } from '@/components/Reveal';
 import { WordReveal } from '@/components/motion/WordReveal';
 import { CALL_MS, formatCallTime } from './callScript';
@@ -27,7 +27,6 @@ export function AfterCallSection() {
     <section className="section">
       <div className="wrap">
         <Reveal className={s.head}>
-          <span className={s.pill}><ClipboardCheck size={14} /> After every call</span>
           <WordReveal>Know how she is <span className={s.grad}>in ten seconds.</span></WordReveal>
           <p>Every call is summed up on your dashboard and sent to your WhatsApp. When something needs you, act on it with one tap.</p>
         </Reveal>
@@ -35,11 +34,11 @@ export function AfterCallSection() {
         <div className={x.pair}>
           {/* The dashboard */}
           <Reveal variant="left" className={x.col}>
-            <div className={x.label}>
+            <div className={x.label} data-speed="0.5">
               <span><LayoutDashboard size={15} /> On your dashboard</span>
               <span className={x.example}>Example</span>
             </div>
-            <div className={x.dash}>
+            <div className={x.dash} data-speed="0.5">
               <div className={x.dashHead}>
                 <span className={x.avatar} aria-hidden="true">A</span>
                 <span className={x.who}>
@@ -73,10 +72,10 @@ export function AfterCallSection() {
 
           {/* WhatsApp */}
           <Reveal variant="right" delay={120} className={x.col}>
-            <div className={x.label}>
+            <div className={x.label} data-speed="-0.4">
               <span><MessageCircle size={15} /> On your WhatsApp</span>
             </div>
-            <div className={x.wa} aria-label="Example WhatsApp update">
+            <div className={x.wa} aria-label="Example WhatsApp update" data-speed="-0.4">
               <div className={x.waHead}>
                 <span className={x.waAvatar}><Heart size={14} fill="currentColor" strokeWidth={0} /></span>
                 <span className={x.who}>

@@ -34,5 +34,5 @@ export function CountUp({ value, suffix = '', duration = 1100 }: { value: number
     };
   }, [value, duration]);
 
-  return <span ref={ref}>{n}{suffix}</span>;
+  return <span ref={ref}>{n.toLocaleString('en-IN')}{suffix}</span>;
 }

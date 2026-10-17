@@ -1,6 +1,6 @@
 /* ==========================================================================
    Landing hero on the page background, one centred composition:
-   - left: the pitch. Its tagline lines up with the top of the orb and its
+   - left: the pitch. Its headline lines up with the top of the orb and its
      buttons with the bottom; the headline fills between.
    - right: the demo. Saathi's voice orb (SaathiBlob.tsx, a living glass blob).
      The live captions sit INSIDE the orb, above its centre; the language
@@ -50,7 +50,6 @@
   --who-saathi: #0a6fc2;              /* cyan-blue, like the orb when Saathi speaks */
   --who-amma: #c0247a;                /* pink, like the orb when Amma speaks */
   --grad: linear-gradient(90deg, #e0452a 0%, #9b4dff 50%, #2f5fe8 100%);
-  --mark: #e0452a;
   --bokeh: rgba(255, 255, 255, 0.7);
   --pill-bg: rgba(255, 255, 255, 0.9);
   --cap-halo: rgba(248, 245, 239, 0.78);   /* behind the captions, over the orb's light */
@@ -75,7 +74,9 @@
   color: var(--ink);
 }
 
-:global(:root[data-theme='dark']) .panel {
+/* Dark: the site's dark theme, and always on the landing's dark stage (.stage-dark). */
+:global(:root[data-theme='dark']) .panel,
+:global(.stage-dark) .panel {
   --ink: #f4efe6;
   --dim: rgba(244, 239, 230, 0.6);
   --faint: rgba(244, 239, 230, 0.45);
@@ -89,7 +90,6 @@
   --who-saathi: #7fd6ff;
   --who-amma: #ff8fc8;
   --grad: linear-gradient(90deg, #ff6a4d 0%, #c77dff 50%, #5b8cff 100%);
-  --mark: #ff6a4d;
   --bokeh: rgba(244, 239, 230, 0.05);
   --pill-bg: rgba(32, 30, 28, 0.88);
   --cap-halo: rgba(8, 8, 12, 0.55);
@@ -120,7 +120,7 @@
 
 /* ---------- Left: the pitch ---------- */
 
-/* Beside the orb: tagline level with its top, buttons level with its bottom. */
+/* Beside the orb, centred on it: tag, headline, subline, then the buttons. */
 .left {
   position: relative;
   z-index: 2;
@@ -130,8 +130,8 @@
   min-height: calc(var(--hole) * 2);
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  gap: 32px;
+  justify-content: center;
+  gap: 36px;
   min-width: 0;
   max-width: var(--leftw);
 }
@@ -142,53 +142,51 @@
   gap: 26px;
 }
 
-.tagline {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  font-size: var(--ui);
-  font-weight: 500;
-  color: var(--ink);
-}
-
-.mark {
-  width: 14px;
-  height: 14px;
-  flex: none;
-  border: 1.5px solid var(--mark);
-  border-radius: 50%;
-}
-
-/* As big as fits: four fixed lines, the widest being "Peace of mind" (~6.0em),
-   must fit the pitch column, and the pitch must fit beside the orb. */
+/* Three lines; the widest, "Peace of mind for you.", is about 10.6em, and the
+   pitch (with its subline and buttons) must fit beside the orb. */
 .h1 {
-  font-size: min(var(--h1), calc(var(--leftw) / 6.15), calc((var(--hole) * 2 - 220px) / 3.92));
+  font-size: min(var(--h1), calc(var(--leftw) / 10.8), calc((var(--hole) * 2 - 300px) / 3.15));
   font-weight: 650;
-  line-height: 0.98;
-  letter-spacing: -0.045em;
+  line-height: 1.02;
+  letter-spacing: -0.03em;
   color: var(--ink);
+  text-wrap: balance;
 }
 
+/* The accent line, one word per <em> so it can wrap on a phone. */
 .h1 em {
   font-style: normal;
-  white-space: nowrap; /* keep "Peace of mind" and its gradient on one line */
-  background: var(--grad);
-  background-size: 200% 100%;
-  animation: gradFlow 9s ease-in-out infinite alternate;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+  background: none; color: var(--teal);
+  padding-right: 0.03em;
 }
 
-@keyframes gradFlow {
-  from { background-position: 0% 0; }
-  to { background-position: 100% 0; }
+.sub {
+  max-width: 34em;
+  font-size: calc(var(--ui) + 1px);
+  line-height: 1.6;
+  color: var(--dim);
+}
+
+/* The buttons, with the three proof points small underneath. */
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
 }
 
 .proof {
-  font-size: var(--ui);
-  line-height: 1.5;
-  color: var(--dim);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13.5px;
+  color: var(--faint);
+}
+
+.proof li + li::before {
+  content: '·';
+  margin: 0 10px;
 }
 
 .ctas {
@@ -496,7 +494,6 @@
     --btnh: 50px;
   }
 
-  .tagline { font-size: 13.5px; white-space: nowrap; }
   .btnSolid, .btnGhost { padding: 0 22px; }
 }
 
@@ -532,7 +529,7 @@
   }
 
   .copy { order: 1; gap: 16px; }
-  .ctas { order: 2; }
+  .actions { order: 2; }
   .stage { order: 3; align-self: center; }
   .controls { order: 4; align-self: center; max-width: none; margin-top: -8px; }
 
@@ -548,6 +545,8 @@
   }
 
   .ctas a { flex: 1 1 0; padding: 0 12px; }
+  .proof { gap: 4px 16px; }
+  .proof li + li::before { content: none; }
   .circleHint { font-size: 0.84rem; padding: 5px 14px 5px 5px; }
   .circleIcon { width: 26px; height: 26px; }
   .inside { max-height: calc(var(--orb) * 0.48); }
@@ -555,5 +554,5 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .insideLine, .h1 em, .circleHint { animation: none; }
+  .insideLine, .circleHint { animation: none; }
 }

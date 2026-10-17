@@ -1,8 +1,9 @@
 import React from 'react';
 import Link from 'next/link';
-import { Check, Sparkles, BadgeIndianRupee, HeartPulse } from 'lucide-react';
+import { Check, Sparkles, HeartPulse } from 'lucide-react';
 import { Reveal } from '@/components/Reveal';
 import { WordReveal } from '@/components/motion/WordReveal';
+import { CountUp } from '@/components/motion/CountUp';
 import { PLANS, PAID_PLAN_IDS, FREE_TRIAL_DAYS, HEALTH_MONITOR, healthMonitorPrice } from '@/lib/plans';
 import { PlanId } from '@/lib/types';
 import s from './home.module.css';
@@ -57,7 +58,6 @@ export function PricingSection({ planHref }: { planHref: (id: PlanId) => string 
     <section id="plans" className="section">
       <div className="wrap">
         <Reveal className={s.head}>
-          <span className={s.pill}><BadgeIndianRupee size={14} /> Pricing</span>
           <WordReveal>Simple plans. <span className={s.grad}>Cancel anytime.</span></WordReveal>
           <p>Every plan starts with {FREE_TRIAL_DAYS} days free. Set up AutoPay to begin; nothing is charged until the trial ends, and you can cancel any time.</p>
         </Reveal>
@@ -67,13 +67,13 @@ export function PricingSection({ planHref }: { planHref: (id: PlanId) => string 
             const plan = PLANS[id];
             const featured = !!plan.popular;
             return (
-              <Reveal key={id} delay={i * 100} className={`${x.plan} ${featured ? x.featured : ''}`}>
+              <Reveal key={id} delay={i * 100} className={`${x.plan} ${featured ? x.featured : ''}`} data-spot>
                 {featured && <span className={x.badge}><Sparkles size={12} /> Most popular</span>}
                 <h3>{plan.name}</h3>
                 <p className={x.tagline}>{plan.tagline}</p>
 
                 <div className={x.price}>
-                  <b>₹{plan.priceMonthly.toLocaleString('en-IN')}</b>
+                  <b>₹<CountUp value={plan.priceMonthly} duration={1300} /></b>
                   <span>/month</span>
                 </div>
                 <p className={x.perDay}>
@@ -104,7 +104,7 @@ export function PricingSection({ planHref }: { planHref: (id: PlanId) => string 
 
         <Reveal className={x.every}>
           <span className={x.everyTitle}>Every calling plan includes</span>
-          <ul>
+          <ul data-stagger>
             {EVERY_PLAN.map((f) => (
               <li key={f}><Check size={15} strokeWidth={2.5} /> {f}</li>
             ))}

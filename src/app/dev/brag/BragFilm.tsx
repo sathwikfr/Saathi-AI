@@ -7,7 +7,7 @@ import {
   ChevronLeft, Reply, ExternalLink, Mic, Plus, Camera,
 } from 'lucide-react';
 import c from '@/components/landing/liveCallPhone.module.css';
-import { CALL_SCRIPT, formatCallTime } from '@/components/landing/callScript';
+import { CALL_LANGS, CALL_SCRIPT, formatCallTime, type CallLang } from '@/components/landing/callScript';
 import s from './brag.module.css';
 
 /**
@@ -23,7 +23,7 @@ export const DURATION = 24000;
 /* ---------- Timeline (ms) ---------- */
 
 const SLIDE_FROM = 1900;      // the knob starts sliding
-const ANSWER_AT = 2900;       // the knob arrives: call screen
+export const ANSWER_AT = 2900;       // the knob arrives: call screen
 const CALL_AT = 3000;         // call clock 0:00
 /** When each line of the landing page's example call is said in the film (retimed for 24 s). */
 const LINES = [
@@ -33,13 +33,13 @@ const LINES = [
   { i: 3, start: 7500, end: 9200 },
   { i: 4, start: 9500, end: 11400 },
 ];
-const CUT_WA = 12000;
+export const CUT_WA = 12000;
 const MSG_AT = 12650;
 const ZOOM_WA: [number, number] = [13000, 13800];
 const HL1: [number, number] = [13900, 14450];
 const HL2: [number, number] = [14700, 15250];
-const TAP_AT = 16000;
-const CUT_LANG = 16800;
+export const TAP_AT = 16000;
+export const CUT_LANG = 16800;
 const CUT_OUT = 19800;
 
 /* ---------- Helpers ---------- */
@@ -238,8 +238,11 @@ const CONTROLS = [
   { icon: Grid3x3, label: 'keypad' },
 ];
 
-/** Amma's phone: the landing page's "How it works" call, driven by film time. */
-function CallPhone({ t }: { t: number }) {
+/**
+ * Amma's phone: the landing page's "How it works" call, driven by film time. Also used by the landing's
+ * scroll film (components/landing/HowFilm.tsx), which passes the call language.
+ */
+export function CallPhone({ t, lang = 'en' }: { t: number; lang?: CallLang }) {
   const onCall = t >= ANSWER_AT;
   const callMs = Math.max(0, t - CALL_AT);
   const talking = speakerAt(t) !== null;
@@ -285,12 +288,12 @@ function CallPhone({ t }: { t: number }) {
           <div className={c.transcript}>
             <span className={c.liveLabel}>
               <span className={c.liveDot} data-on={talking || undefined} />
-              Live transcript · English
+              Live transcript · {CALL_LANGS.find((l) => l.key === lang)?.name}
             </span>
             <div className={c.feed}>
               {LINES.filter((l) => t >= l.start).map((l) => {
                 const line = CALL_SCRIPT[l.i];
-                const words = line.text.en.split(' ');
+                const words = line.text[lang].split(' ');
                 const p = prog(t, l.start, l.end);
                 const upTo = Math.ceil(p * words.length);
                 return (
@@ -301,6 +304,7 @@ function CallPhone({ t }: { t: number }) {
                         <span key={i} data-on={i < upTo || undefined}>{w}{i < words.length - 1 ? ' ' : ''}</span>
                       ))}
                     </p>
+                    {lang !== 'en' && <small className={c.bubbleEn} data-on={p >= 1 || undefined}>{line.text.en}</small>}
                   </div>
                 );
               })}
@@ -337,7 +341,7 @@ function Highlight({ p, children }: { p: number; children: React.ReactNode }) {
   return <mark className={s.hl} style={{ backgroundSize: `${p * 100}% 100%` }}>{children}</mark>;
 }
 
-function WaPhone({ t }: { t: number }) {
+export function WaPhone({ t }: { t: number }) {
   const msgIn = expoOut(prog(t, MSG_AT, MSG_AT + 450));
   const tap = prog(t, TAP_AT, TAP_AT + 600);
   const pressed = t >= TAP_AT && t < TAP_AT + 320;

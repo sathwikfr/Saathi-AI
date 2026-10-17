@@ -1,5 +1,8 @@
-import React from 'react';
-import { ShieldCheck, PhoneCall, AlertTriangle, Check, Camera, Pause } from 'lucide-react';
+'use client';
+
+import React, { useEffect, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
+import { PhoneCall, AlertTriangle, Check, Camera, Pause } from 'lucide-react';
 import { Reveal } from '@/components/Reveal';
 import { WordReveal } from '@/components/motion/WordReveal';
 import s from './home.module.css';
@@ -76,6 +79,27 @@ function MedsDemo() {
   );
 }
 
+// The film (Remotion) loads only as the section comes near, so it never weighs on the first page load.
+const SafetyFilmPlayer = dynamic(() => import('@/components/film/SafetyFilmPlayer'), { ssr: false });
+
+/** A 9:16 screen that reserves its space and mounts the film once it is within a screen of view. */
+function FilmSlot() {
+  const ref = useRef<HTMLDivElement>(null);
+  const [near, setNear] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const io = new IntersectionObserver(([e]) => { if (e.isIntersecting) { setNear(true); io.disconnect(); } }, { rootMargin: '600px 0px' });
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+  return (
+    <div ref={ref} className={x.film} aria-label="Example: what happens when Amma mentions chest pain on a call" role="img">
+      {near && <SafetyFilmPlayer />}
+    </div>
+  );
+}
+
 const PROMISES = [
   { title: 'Never plays doctor', body: 'Saathi doesn’t diagnose or give medical advice. Health questions go to their doctor, or to you.', Demo: DoctorDemo },
   { title: 'Listens for warning signs', body: 'A fall, chest pain, feeling faint: Saathi stays calm, asks them to get help, and tells you straight away.', Demo: WarningDemo },
@@ -88,21 +112,28 @@ export function SafetySection() {
     <section id="safety" className="section">
       <div className="wrap">
         <Reveal className={s.head}>
-          <span className={s.pill}><ShieldCheck size={14} /> Built with care</span>
           <WordReveal>A companion, <span className={s.grad}>not a doctor.</span></WordReveal>
           <p>Saathi is gentle and knows its limits. It keeps your parents connected to you, and never replaces the people who care for them.</p>
         </Reveal>
 
-        <div className={x.grid}>
-          {PROMISES.map(({ title, body, Demo }, i) => (
-            <Reveal key={title} delay={i * 90} className={x.card}>
-              <div className={x.demo} aria-hidden="true"><Demo /></div>
-              <div className={x.text}>
-                <h3>{title}</h3>
-                <p>{body}</p>
-              </div>
-            </Reveal>
-          ))}
+        <div className={x.split}>
+          <Reveal variant="scale" className={x.filmCol}>
+            <div data-grow>
+              <FilmSlot />
+            </div>
+          </Reveal>
+
+          <div className={x.grid}>
+            {PROMISES.map(({ title, body, Demo }, i) => (
+              <Reveal key={title} delay={i * 90} className={x.card}>
+                <div className={x.demo} aria-hidden="true"><Demo /></div>
+                <div className={x.text}>
+                  <h3>{title}</h3>
+                  <p>{body}</p>
+                </div>
+              </Reveal>
+            ))}
+          </div>
         </div>
 
         <Reveal className={x.sos}>

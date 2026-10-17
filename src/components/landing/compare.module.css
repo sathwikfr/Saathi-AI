@@ -74,9 +74,27 @@
 }
 
 .table thead .us {
+  position: relative;
+  overflow: hidden;
   border-radius: 18px 18px 0 0;
   background: var(--teal-fill);
   box-shadow: none;
+}
+
+/* Now and then a light passes across the Aaptha header. */
+.table thead .us::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 35%, rgba(255, 255, 255, 0.32) 50%, transparent 65%);
+  translate: -120% 0;
+  animation: sheen 5s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes sheen {
+  0%, 60% { translate: -120% 0; }
+  100% { translate: 120% 0; }
 }
 
 .table tbody tr:last-child .us {
@@ -119,6 +137,7 @@
 .markUs {
   background: var(--teal-fill);
   color: var(--on-teal);
+  box-shadow: 0 6px 16px -6px var(--teal-glow);
 }
 
 .markYes {

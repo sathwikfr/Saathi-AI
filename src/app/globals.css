@@ -19,7 +19,7 @@
   --panel: #f1ece3;
   --panel-elevated: #ffffff;
   --panel-sunken: #e9e2d6;
-  --header-bg: rgba(248, 245, 239, 0.84);
+  --header-bg: #f8f5ef;
 
   /* Brand: ocean blue (was peacock teal until 2026-10-03; token names kept).
      --teal is for text, borders and icons; --teal-fill is for solid backgrounds
@@ -132,7 +132,7 @@
   --panel: #1b1916;
   --panel-elevated: #221f1b;
   --panel-sunken: #0d0c0a;
-  --header-bg: rgba(19, 18, 15, 0.82);
+  --header-bg: #13120f;
   --teal: #8ccdf7;
   --teal-hover: #c4e7fe;
   --teal-fill: #006baa;
@@ -171,6 +171,45 @@
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-md: 0 14px 32px -12px rgba(0, 0, 0, 0.6);
   --shadow-lg: 0 32px 64px -24px rgba(0, 0, 0, 0.7);
+}
+
+/* The landing's dark film scenes (.stage-dark), dark in both site themes: the dark theme's ink and accents
+   on the near-black navy of --band-2. The navbar takes the same values while one sits right under it
+   (data-stage="on", set by GsapScroll), so it reads as part of the scene; before the script runs, a page
+   that opens on a dark scene starts with the dark navbar. */
+.stage-dark,
+header.app-header[data-stage='on'],
+body:has(#main > .stage-dark:first-child) header.app-header:not([data-stage]) {
+  color-scheme: dark;
+  --ink: #f3eee6;
+  --ink-muted: #b9c0c8;
+  --ink-subtle: #8a949e;
+  --ink-inverse: #161411;
+  --paper: var(--band-2);
+  --panel: #061827;
+  --panel-elevated: #0a2134;
+  --panel-sunken: #00070d;
+  --header-bg: var(--band-2);
+  --teal: #8ccdf7;
+  --teal-hover: #c4e7fe;
+  --teal-text: #c4e7fe;
+  --teal-light: rgba(71, 172, 229, 0.14);
+  --teal-soft: rgba(71, 172, 229, 0.10);
+  --teal-glow: rgba(71, 172, 229, 0.24);
+  --gold: #f2a94e;
+  --gold-hover: #f7c27e;
+  --line: var(--band-line);
+  --line-subtle: rgba(244, 239, 230, 0.08);
+  --line-strong: rgba(244, 239, 230, 0.22);
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 14px 32px -12px rgba(0, 0, 0, 0.6);
+  --shadow-lg: 0 32px 64px -24px rgba(0, 0, 0, 0.7);
+}
+
+.stage-dark {
+  background: var(--paper);
+  color: var(--ink);
 }
 
 /* ==========================================================================
@@ -303,12 +342,55 @@ button, input, select, textarea {
 .section {
   padding: var(--section-y) 0;
   position: relative;
+  overflow-x: clip;   /* slide-in reveals start off to the side; never let them widen the page on phones */
 }
 
 .section-alt {
   background: var(--panel);
   border-top: 1px solid var(--line-subtle);
   border-bottom: 1px solid var(--line-subtle);
+}
+
+/* A light section that follows a dark scene slides over the scene's end: rounded top, soft shadow.
+   The scene before it leaves --r-xl of room at its bottom for the overlap. */
+.sheet {
+  z-index: 1;
+  margin-top: calc(var(--r-xl) * -1);
+  border-radius: var(--r-xl) var(--r-xl) 0 0;
+  background: var(--paper);
+  box-shadow: 0 -28px 56px -36px rgba(0, 0, 0, 0.55);
+}
+
+/* Scroll depth (GsapScroll): parallax drift and grow-in move through their own properties, so they stack
+   with the entrance animations' transform instead of fighting them. */
+[data-speed] { translate: 0 var(--py, 0px); }
+[data-grow] { scale: var(--grow, 1); }
+
+/* A soft light under the pointer on [data-spot] cards (GsapScroll sets --mx/--my), behind the content. */
+[data-spot] {
+  position: relative;
+  isolation: isolate;
+}
+
+[data-spot]::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: radial-gradient(280px circle at var(--mx, 50%) var(--my, 0%), var(--teal-light), transparent 65%);
+  opacity: 0;
+  transition: opacity var(--dur-slow) var(--ease-out);
+  pointer-events: none;
+}
+
+[data-spot]:hover::after {
+  opacity: 1;
+}
+
+/* In the dark theme the sheet and the scene are both near-black and the shadow doesn't show: draw the edge. */
+:root[data-theme='dark'] .sheet {
+  border-top: 1px solid var(--line);
 }
 
 .section-head {
@@ -974,16 +1056,20 @@ header.app-header {
   position: sticky;
   top: 0;
   z-index: 100;
-  backdrop-filter: saturate(1.4) blur(16px);
-  -webkit-backdrop-filter: saturate(1.4) blur(16px);
   background: var(--header-bg);
   border-bottom: 1px solid transparent;
-  transition: border-color var(--dur) ease, box-shadow var(--dur) ease;
+  transition: background-color var(--dur-slow) var(--ease-out), border-color var(--dur) ease, box-shadow var(--dur) ease;
 }
 
 header.app-header.scrolled {
   border-bottom-color: var(--line-subtle);
   box-shadow: 0 6px 20px -16px rgba(41, 30, 15, 0.22);
+}
+
+/* Over a dark scene the header is part of it: no edge between them. */
+header.app-header[data-stage='on'].scrolled {
+  border-bottom-color: transparent;
+  box-shadow: none;
 }
 
 .app-nav {
@@ -1638,7 +1724,6 @@ header.app-header.scrolled {
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: var(--r-lg);
   padding: 16px 18px;
-  backdrop-filter: blur(6px);
 }
 
 .auth-day-head {
@@ -1977,8 +2062,6 @@ a.link:hover {
   inset: 0;
   z-index: 999;
   background: rgba(20, 16, 10, 0.5);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2038,8 +2121,6 @@ a.link:hover {
   top: 0;
   z-index: 50;
   background: var(--header-bg);
-  backdrop-filter: saturate(1.4) blur(16px);
-  -webkit-backdrop-filter: saturate(1.4) blur(16px);
   border-bottom: 1px solid var(--line-subtle);
 }
 
@@ -4020,6 +4101,11 @@ table.data tr:hover td {
 /* Page content settles in on every route change */
 main {
   animation: reveal-fade 400ms ease both;
+}
+
+/* ...except a page that opens on a dark scene: fading it in would flash the light page behind it. */
+main:has(> .stage-dark:first-child) {
+  animation: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

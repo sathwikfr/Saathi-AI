@@ -1,5 +1,5 @@
 import React from 'react';
-import { Languages, Play } from 'lucide-react';
+import { Play } from 'lucide-react';
 import { Reveal } from '@/components/Reveal';
 import { WordReveal } from '@/components/motion/WordReveal';
 import { CALL_LANG_EVENT, isCallLang } from './callScript';
@@ -85,7 +85,6 @@ export function LanguagesSection() {
     <section className={`section ${s.alt}`}>
       <div className="wrap">
         <Reveal className={s.head}>
-          <span className={s.pill}><Languages size={14} /> Their language</span>
           <WordReveal>Speaks the way <span className={s.grad}>Amma speaks.</span></WordReveal>
           <p>Saathi talks in the language your parent thinks in. You choose it when you add them, and can change it any time.</p>
         </Reveal>

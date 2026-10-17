@@ -133,6 +133,9 @@ function loadVoices(synth: SpeechSynthesis): Promise<SpeechSynthesisVoice[]> {
   });
 }
 
+/* The accent line, word by word (so it can wrap on a phone). */
+const ACCENT = ['Peace', 'of', 'mind', 'for', 'you.'];
+
 /* ---------- The hero ---------- */
 
 export function VoiceHero({ primaryHref, primaryLabel, trialDays }: { primaryHref: string; primaryLabel: string; trialDays: number }) {
@@ -305,28 +308,39 @@ export function VoiceHero({ primaryHref, primaryLabel, trialDays }: { primaryHre
       ? `Your browser has no ${LANGS[lang].label} voice, so this preview reads it in English. Real calls use Saathi’s own voice.`
       : status !== 'idle'
         ? 'Preview uses your browser’s voice. Real calls use Saathi’s own voice.'
-        : 'Turn your sound on. Saathi asks, Amma answers, then Saathi says hello to you.';
+        : 'Turn your sound on.';
 
   return (
-    <section className={s.hero} aria-label="Meet Saathi">
+    <section className={s.hero} data-scene="hero" aria-label="Meet Saathi">
       <div className={s.panel}>
         {/* Left: the pitch */}
-        <div className={s.left}>
+        <div className={s.left} data-hero-copy>
           <div className={s.copy}>
-            <span className={`${s.tagline} anim-load d1`}><span className={s.mark} aria-hidden="true" />Saathi · a voice companion for parents</span>
-            <WordReveal as="h1" className={s.h1} delay={0.15} onLoad>A daily call for<br />your parents.<br /><em>Peace of mind</em><br />for you.</WordReveal>
-            <p className={`${s.proof} anim-load d3`}>{trialDays}-day free trial · 9 Indian languages · no app for your parents</p>
+            <WordReveal as="h1" className={s.h1} delay={0.15} onLoad>
+              A daily call for<br />your parents.<br />
+              {ACCENT.flatMap((w, i) => [i ? ' ' : null, <em key={w} style={{ ['--i' as string]: i }}>{w}</em>])}
+            </WordReveal>
+            <p className={`${s.sub} anim-load d3`}>
+              Saathi phones your parents at medicine time, in their own language, and tells you how every call went.
+            </p>
           </div>
 
-          <div className={`${s.ctas} anim-load d4`}>
-            <MagneticLink href={primaryHref} className={`${s.btnSolid} btn-glow`}>{primaryLabel} <ArrowRight size={18} /></MagneticLink>
-            <Link href="#how" className={s.btnGhost}>See how it works</Link>
+          <div className={s.actions}>
+            <div className={`${s.ctas} anim-load d4`}>
+              <MagneticLink href={primaryHref} className={`${s.btnSolid} btn-glow`}>{primaryLabel} <ArrowRight size={18} /></MagneticLink>
+              <Link href="#how" className={s.btnGhost}>See how it works</Link>
+            </div>
+            <ul className={`${s.proof} anim-load d5`}>
+              <li>{trialDays}-day free trial</li>
+              <li>No app for your parents</li>
+              <li>9 Indian languages</li>
+            </ul>
           </div>
         </div>
 
         {/* Right: the demo. The orb, with the live captions inside its ring */}
         <div className={s.right}>
-          <div className={s.stage}>
+          <div className={s.stage} data-hero-orb>
             {/* The ring is the call, the waves are the voice: dead centre, captions above, pill below */}
             <div className={s.orb} aria-hidden="true">
               <SaathiBlob ref={orb} mode={orbMode} variant={dark ? 'night' : 'day'} scale={0.52} />

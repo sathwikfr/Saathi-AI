@@ -1,5 +1,5 @@
 import React from 'react';
-import { Plus, Mail, MessageCircleQuestion } from 'lucide-react';
+import { Plus, Mail } from 'lucide-react';
 import { Reveal } from '@/components/Reveal';
 import { PLANS, FREE_TRIAL_DAYS } from '@/lib/plans';
 import s from './home.module.css';
@@ -31,7 +31,6 @@ export function FaqSection() {
     <section id="faq" className={`section ${s.alt}`}>
       <div className={`wrap ${x.grid}`}>
         <Reveal className={x.intro}>
-          <span className={s.pill}><MessageCircleQuestion size={14} /> Questions</span>
           <h2 className={x.title}>What families <span className={s.grad}>usually ask.</span></h2>
           <p className={x.lead}>Short answers to what people ask before they start.</p>
           {email && (
@@ -45,17 +44,18 @@ export function FaqSection() {
           )}
         </Reveal>
 
-        <Reveal className={x.list}>
-          {FAQ.map((item) => (
+        <div className={x.list} data-stagger>
+          {FAQ.map((item, i) => (
             <details key={item.q} className={x.item}>
               <summary>
-                <span>{item.q}</span>
+                <span className={x.num} aria-hidden="true">{String(i + 1).padStart(2, '0')}</span>
+                <span className={x.q}>{item.q}</span>
                 <span className={x.toggle} aria-hidden="true"><Plus size={16} /></span>
               </summary>
               <p>{item.a}</p>
             </details>
           ))}
-        </Reveal>
+        </div>
       </div>
     </section>
   );
