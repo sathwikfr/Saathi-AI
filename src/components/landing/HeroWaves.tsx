@@ -30,7 +30,7 @@ const BURSTS: Record<Side, [number, number, number][]> = {
 // far left -> next to the orb (left) | next to the orb (right) -> far right
 const COLORS = {
   day: { bars: ['#a9b8ff', '#5b5ef2', '#a24ff0', '#eaa6d2'], silkL: '91, 94, 242', silkR: '162, 79, 240' },
-  night: { bars: ['#4f5fc4', '#8f93ff', '#c58bff', '#c477ad'], silkL: '143, 147, 255', silkR: '197, 139, 255' },
+  night: { bars: ['#2f63e8', '#7f95ff', '#c27bff', '#f05cc0'], silkL: '143, 147, 255', silkR: '197, 139, 255' },
 };
 
 const HIST = 54;        // samples of loudness kept per side (~0.9 s): how long a syllable takes to cross a side
@@ -54,10 +54,12 @@ type Props = {
   voice: () => number;
   /** Where the bars start, as a fraction of the orb's radius (just outside the ball). */
   inner?: number;
+  /** The faint silk lines fanning out (off inside a small capsule). */
+  silk?: boolean;
   className?: string;
 };
 
-export function HeroWaves({ mode, dark, voice, inner: innerAt = 0.98, className }: Props) {
+export function HeroWaves({ mode, dark, voice, inner: innerAt = 0.98, silk = true, className }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const modeRef = useRef(mode);
   const darkRef = useRef(dark);
@@ -127,10 +129,10 @@ export function HeroWaves({ mode, dark, voice, inner: innerAt = 0.98, className 
       const inner = R * innerRef.current;              // the bars start just outside the ball
       const outer = Math.min(cx - 12, inner + 560);    // and run out to here
       const span = Math.max(1, outer - inner);
-      const maxH = Math.min(H * 0.42, R * 0.84);
+      const maxH = Math.min(H * 0.5, R);
 
       /* Silk: three faint lines a side that gather into the orb. */
-      for (const side of [-1, 1]) {
+      for (const side of silk ? [-1, 1] : []) {
         const rgb = side < 0 ? pal.silkL : pal.silkR;
         for (let j = 0; j < 3; j++) {
           ctx.beginPath();
@@ -162,7 +164,7 @@ export function HeroWaves({ mode, dark, voice, inner: innerAt = 0.98, className 
           const k = Math.round((side === 'saathi' ? d : 1 - d) * (HIST - 1));
           const v = h[k];
           const base = baseHeight(side, d, i);
-          const breathe = reduced ? 0.3 : 0.24 + 0.07 * Math.sin(t * 1.1 - d * 6 + (side === 'family' ? 2 : 0)) + 0.12 * st.talk;
+          const breathe = reduced ? 0.45 : 0.4 + 0.1 * Math.sin(t * 1.1 - d * 6 + (side === 'family' ? 2 : 0)) + 0.12 * st.talk;
           const jitter = 0.6 + 0.8 * hash(i * 13 + flick + (side === 'family' ? 51 : 0));
           const think = st.think * Math.exp(-d * 7) * (0.3 + 0.2 * Math.sin(t * 6 - d * 20));
           const fade = Math.min(1, (1 - d) / 0.35);    // taper towards the far end
@@ -185,7 +187,7 @@ export function HeroWaves({ mode, dark, voice, inner: innerAt = 0.98, className 
       ctx.strokeStyle = grad;
       ctx.fillStyle = grad;
       ctx.lineCap = 'round';
-      const bw = Math.max(1.6, step * 0.3);
+      const bw = Math.max(1.8, step * 0.36);
       ctx.globalAlpha = night ? 0.14 : 0.08;           // a whisper of glow
       ctx.lineWidth = bw * 3;
       ctx.stroke(bars);
@@ -228,7 +230,7 @@ export function HeroWaves({ mode, dark, voice, inner: innerAt = 0.98, className 
       document.removeEventListener('visibilitychange', onVis);
       redraw.current = null;
     };
-  }, []);
+  }, [silk]);
 
   return <canvas ref={canvasRef} className={className} aria-hidden="true" />;
 }

@@ -729,6 +729,7 @@ export function SaathiBlob({ mode = 'idle', scale = 0.6, variant = 'night', clas
     lastSay: -10,                                     // when a real word last came (without words it makes up speech)
     levelAt: -10,
     level: 0,
+    loud: 0,                                          // the voice's loudness as last drawn (read by loudness())
     redraw: null as null | (() => void),  // set while reduced motion keeps the loop off
   });
 
@@ -750,6 +751,7 @@ export function SaathiBlob({ mode = 'idle', scale = 0.6, variant = 'night', clas
       e.levelAt = e.now;
     },
     echo: () => { engine.current.rings.push(engine.current.now); },
+    loudness: () => engine.current.loud,
   }));
 
   useEffect(() => { engine.current.mode = mode; engine.current.redraw?.(); }, [mode]);
@@ -988,6 +990,7 @@ export function SaathiBlob({ mode = 'idle', scale = 0.6, variant = 'night', clas
       st.hiss += (hissT - st.hiss) * ease(30);
       st.talk += ((speaking ? 0.35 + 0.65 * st.loud : 0) - st.talk) * ease(2.5);   // how much talking is going on
       const loud = st.loud * (m === 'family' ? 0.75 : 1);                           // listening is a little softer
+      e.loud = st.loud;
       histAcc += dt;
       for (let n = 0; histAcc >= HIST_DT && n < HIST; n++) {
         histAcc -= HIST_DT;

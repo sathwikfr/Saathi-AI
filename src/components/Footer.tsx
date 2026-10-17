@@ -19,9 +19,10 @@ export function Footer() {
           <div>
             <h4>Product</h4>
             <div style={{ display: 'grid', gap: '10px', fontSize: '0.9rem' }}>
-              <Link href="/#how">How it works</Link>
-              <Link href="/#why">Why a phone call</Link>
-              <Link href="/#plans">Pricing</Link>
+              <Link href="/#how">The morning call</Link>
+              <Link href="/#safety">Meet Saathi</Link>
+              <Link href="/#why">Why a call</Link>
+              <Link href="/#plans">Plans</Link>
               <Link href="/#faq">Questions</Link>
             </div>
           </div>

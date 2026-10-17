@@ -11,8 +11,9 @@ gsap.registerPlugin(useGSAP, ScrollTrigger);
  *  - The navbar takes a dark scene's colours while a `.stage-dark` is what sits right under it
  *    (`data-stage="on"|"off"` on the header). A hit test, not one trigger per scene, so light sheets
  *    sliding over a held scene switch it back at exactly their edge.
- *  - Hero hand-off (wide screens): as the hero scrolls away, the orb recedes and dims and the pitch
- *    drifts up and fades. On tablets and phones the two stack, so the hero is left alone there.
+ *  - Hero hand-off (wide screens): as the hero scrolls away, the camera pushes into the orb (it grows and
+ *    fades) while the pitch and the call column part to the sides and the promises drop away.
+ *    Below 1100px the hero stacks, so it is left alone there.
  *  - Depth (wide screens): `data-speed` parallax and `data-grow` grow-in, scrubbed with the scroll.
  *  - `data-stagger` lists arrive item by item (`data-pop` marks inside pop after); `data-spot` cards get a
  *    pointer-following light.
@@ -32,12 +33,15 @@ export function GsapScroll() {
     window.addEventListener('resize', syncHeader);
 
     const mm = gsap.matchMedia();
-    mm.add('(prefers-reduced-motion: no-preference) and (min-width: 1024px)', () => {
+    mm.add('(prefers-reduced-motion: no-preference) and (min-width: 1100px)', () => {
       const hero = document.querySelector('[data-scene="hero"]');
       if (!hero) return;
-      gsap.timeline({ scrollTrigger: { trigger: hero, start: 'top 68px', end: 'bottom 68px', scrub: true } })
-        .to(hero.querySelector('[data-hero-orb]'), { scale: 0.86, autoAlpha: 0.3, ease: 'none' }, 0)
-        .to(hero.querySelector('[data-hero-copy]'), { y: -80, autoAlpha: 0, ease: 'none' }, 0);
+      // Dolly and split: the camera pushes into the orb while the two columns part to the sides.
+      const q = (sel: string) => hero.querySelector(sel);
+      gsap.timeline({ scrollTrigger: { trigger: hero, start: 'top top', end: 'bottom top', scrub: 0.6 } })
+        .to(q('[data-hero-orb]'), { scale: 1.32, autoAlpha: 0, ease: 'power1.in' }, 0)
+        .to(q('[data-hero-copy]'), { x: -140, autoAlpha: 0, ease: 'power1.in' }, 0)
+        .to(q('[data-hero-side]'), { x: 140, autoAlpha: 0, ease: 'power1.in' }, 0);
 
       // Depth: [data-speed] drifts against the scroll (±speed × 100px across the screen), [data-grow] grows in.
       gsap.utils.toArray<HTMLElement>('[data-speed]').forEach((el) => {

@@ -32,7 +32,9 @@ export default function LandingPage() {
   const primaryLabel = user ? 'Go to your dashboard' : 'Start free trial';
 
   return (
-    <>
+    // One root element, not a fragment: on navigation Next scrolls each top-level element into view in turn,
+    // and with several (footer, main, fixed bar...) the footer won, so clicking the logo landed at the bottom.
+    <div>
       <ScrollProgress />
       <SmoothScroll />
       <GsapScroll />
@@ -84,6 +86,6 @@ export default function LandingPage() {
       </PageTransition>
 
       <Footer />
-    </>
+    </div>
   );
 }

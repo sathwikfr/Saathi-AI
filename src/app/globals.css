@@ -1066,18 +1066,53 @@ header.app-header.scrolled {
   box-shadow: 0 6px 20px -16px rgba(41, 30, 15, 0.22);
 }
 
+/* At the top of the landing the header is see-through: the hero's light runs up behind it. */
+body:has(#main > [data-scene='hero']:first-child) header.app-header:not(.scrolled):not([data-stage='on']) {
+  background: transparent;
+}
+
 /* Over a dark scene the header is part of it: no edge between them. */
 header.app-header[data-stage='on'].scrolled {
   border-bottom-color: transparent;
   box-shadow: none;
 }
 
+/* Brand | links (truly centred) | actions; the actions stay right when the links hide on phones. */
 .app-nav {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: 24px;
   height: 68px;
+}
+
+.app-nav > .nav-actions {
+  grid-column: 3;
+  justify-self: end;
+}
+
+/* Phones: the links are in the menu sheet, so just brand | actions (no empty middle column and its gaps). */
+@media (max-width: 900px) {
+  .app-nav {
+    grid-template-columns: 1fr auto;
+    gap: 12px;
+  }
+
+  .app-nav > .nav-actions {
+    grid-column: 2;
+  }
+}
+
+/* On the landing the bar spans the hero's width and lines up with its edges (voiceHero.module.css .panel). */
+.app-nav.app-nav-wide {
+  max-width: 1720px;
+  padding: 0 clamp(24px, 4.5vw, 88px);
+}
+
+@media (max-width: 1099px) {
+  .app-nav.app-nav-wide {
+    padding: 0 clamp(20px, 5vw, 48px);
+  }
 }
 
 .brand-link {
@@ -1196,6 +1231,292 @@ header.app-header[data-stage='on'].scrolled {
     grid-template-columns: 1fr 1fr;
     gap: 10px;
     margin-top: 18px;
+  }
+}
+
+/* Landing (header.float): the call island. At the top it is a normal see-through bar. Scrolled (.compact), the brand
+   and buttons step aside and the links fold into a dark capsule, like a phone's Dynamic Island (the How it works
+   phone has the same island), naming the section being read; hover or focus opens it back into the links.
+   The island is black in every theme, so it has its own tokens. */
+header.app-header.float,
+header.app-header.float.scrolled {
+  --island-bg: #0b0e13;
+  --island-ink: #f4f1ea;
+  --island-muted: rgba(244, 241, 234, 0.64);
+  --island-line: rgba(255, 255, 255, 0.16);
+  --island-hover: rgba(255, 255, 255, 0.1);
+  --island-live: #3ddc84;
+  background: transparent;
+  border-bottom-color: transparent;
+  box-shadow: none;
+}
+
+/* Keeps the bar above the full-screen menu sheet. */
+header.app-header.float .app-nav {
+  position: relative;
+  z-index: 1;
+}
+
+header.app-header.float .app-nav > .brand-link,
+header.app-header.float .nav-actions {
+  transition: opacity var(--dur) ease, transform var(--dur-slow) var(--ease-out);
+}
+
+header.app-header.float.compact .app-nav > .brand-link:not(:focus-visible),
+header.app-header.float.compact .nav-actions:not(:focus-within) {
+  opacity: 0;
+  transform: translateY(-10px);
+  pointer-events: none;
+}
+
+.island {
+  justify-self: center;
+  display: flex;
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--r-full);
+  transition: background-color var(--dur) ease, border-color var(--dur) ease, box-shadow var(--dur) ease,
+    padding var(--dur-slow) var(--ease-out);
+}
+
+/* Each part folds sideways: a 0fr -> 1fr grid column animates its width. */
+.island-fold {
+  display: grid;
+  grid-template-columns: 0fr;
+  opacity: 0;
+  transition: grid-template-columns var(--dur-slow) var(--ease-out), opacity var(--dur) ease;
+}
+
+.island-fold > div {
+  min-width: 0;
+  overflow: clip;
+  overflow-clip-margin: 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+header.app-header.float:not(.compact) .island-body-fold,
+header.app-header.float.compact .island:is(:hover, :focus-within) .island-body-fold,
+header.app-header.float.compact .island:not(:hover):not(:focus-within) .island-peek-fold {
+  grid-template-columns: 1fr;
+  opacity: 1;
+}
+
+/* At the top the bar has its own trial button. */
+header.app-header.float:not(.compact) .island-cta {
+  display: none;
+}
+
+header.app-header.float.compact .island {
+  padding: 5px;
+  background: var(--island-bg);
+  border-color: var(--island-line);
+  box-shadow: 0 18px 40px -18px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.16);
+}
+
+header.app-header.float .nav-link {
+  position: relative;
+  white-space: nowrap;
+}
+
+header.app-header.float .nav-link:hover,
+header.app-header.float .nav-link.active {
+  background: none;
+  box-shadow: none;
+}
+
+header.app-header.float .nav-link.active {
+  color: var(--ink);
+}
+
+header.app-header.float.compact .island .nav-link {
+  color: var(--island-muted);
+}
+
+header.app-header.float.compact .island .nav-link:hover,
+header.app-header.float.compact .island .nav-link.active {
+  color: var(--island-ink);
+}
+
+header.app-header.float.compact .nav-indicator {
+  background: var(--island-hover);
+  box-shadow: none;
+}
+
+.island-cta {
+  margin-left: 6px;
+  white-space: nowrap;
+}
+
+.island-peek {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 34px;
+  padding: 0 16px 0 4px;
+  border: 0;
+  border-radius: var(--r-full);
+  background: none;
+  color: var(--island-ink);
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.island-peek:focus-visible {
+  outline: 2px solid var(--island-live);
+  outline-offset: 2px;
+}
+
+.brand-heart.island-heart {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  box-shadow: none;
+}
+
+/* "On a call" light. */
+.island-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--island-live);
+  animation: islandLive 2s ease-out infinite;
+}
+
+@keyframes islandLive {
+  0% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--island-live) 65%, transparent); }
+  100% { box-shadow: 0 0 0 8px transparent; }
+}
+
+/* A new section name rises in. */
+.island-label {
+  animation: islandLabel 420ms var(--ease-out);
+}
+
+@keyframes islandLabel {
+  from { opacity: 0; transform: translateY(6px); filter: blur(3px); }
+  to { opacity: 1; transform: none; filter: none; }
+}
+
+/* One highlight slides between the links (Navbar.tsx placeIndicator): hover first, else the section being read. */
+.nav-links {
+  position: relative;
+}
+
+.nav-indicator {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  height: 36px;
+  width: var(--iw, 0);
+  transform: translate(var(--ix, 0), -50%);
+  border-radius: var(--r-full);
+  background: var(--teal-soft);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--teal) 14%, transparent) inset;
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 380ms var(--ease-out), width 380ms var(--ease-out), opacity var(--dur) ease;
+}
+
+.nav-links[data-indicator='on'] .nav-indicator {
+  opacity: 1;
+}
+
+.nav-link:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+
+@media (max-width: 900px) {
+  /* Brand, island and buttons share one row; the island sits in the middle over both. */
+  header.app-header.float .app-nav > .brand-link {
+    grid-area: 1 / 1;
+  }
+
+  header.app-header.float .island {
+    grid-area: 1 / 1 / 2 / -1;
+  }
+
+  header.app-header.float .app-nav > .nav-actions {
+    grid-row: 1;
+  }
+
+  /* Phones: the island is just the peek; a tap opens the menu sheet. */
+  header.app-header.float .island-body-fold {
+    display: none;
+  }
+
+  header.app-header.float:not(.compact) .island {
+    pointer-events: none;
+  }
+
+  /* Full-screen menu: big links that come in one after another, buttons at the bottom within thumb reach. */
+  header.app-header.float .mobile-sheet {
+    inset: 0;
+    height: 100dvh;
+    max-height: none;
+    display: flex;
+    flex-direction: column;
+    padding: 92px 24px calc(24px + env(safe-area-inset-bottom));
+    border-bottom: 0;
+    box-shadow: none;
+    transform: none;
+  }
+
+  header.app-header.float .mobile-sheet a.sheet-link {
+    font-family: var(--font-serif);
+    font-size: 1.75rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    padding: 16px 0;
+  }
+
+  header.app-header.float .mobile-sheet .sheet-actions {
+    margin-top: auto;
+  }
+
+  header.app-header.float .mobile-sheet .sheet-actions .btn {
+    min-height: 50px;
+  }
+
+  /* The sheet has its own trial button at the bottom; one is enough. */
+  header.app-header.float.sheet-open .nav-actions > .btn-primary {
+    visibility: hidden;
+  }
+
+  header.app-header.float .mobile-sheet a.sheet-link,
+  header.app-header.float .mobile-sheet .sheet-actions {
+    opacity: 0;
+    transform: translateY(14px);
+    transition: opacity 320ms var(--ease-out), transform 480ms var(--ease-out);
+  }
+
+  header.app-header.float .mobile-sheet.open a.sheet-link,
+  header.app-header.float .mobile-sheet.open .sheet-actions {
+    opacity: 1;
+    transform: none;
+    transition-delay: calc(80ms + var(--i, 0) * 45ms);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  header.app-header.float .app-nav > .brand-link,
+  header.app-header.float .nav-actions,
+  .island,
+  .island-fold,
+  .nav-indicator,
+  header.app-header.float .mobile-sheet a.sheet-link,
+  header.app-header.float .mobile-sheet .sheet-actions {
+    transition: none;
+  }
+
+  .island-dot,
+  .island-label {
+    animation: none;
   }
 }
 

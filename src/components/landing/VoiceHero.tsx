@@ -2,19 +2,29 @@
 
 import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
-import { ArrowRight, Play, Square, RotateCcw } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
+import { ArrowRight, BellRing, CirclePlay, Clock, Headphones, Languages, MessageCircle, Mic, Pause, PhoneCall, Play, RotateCcw, ShieldCheck, Sparkles, Square } from 'lucide-react';
+import { Ticker } from '@/components/motion/Ticker';
 import { type OrbMode, type SaathiOrbHandle } from '@/components/voice/SaathiOrb';
 import { SaathiBlob } from '@/components/voice/SaathiBlob';
 import { MagneticLink } from '@/components/motion/MagneticLink';
 import { WordReveal } from '@/components/motion/WordReveal';
+import { HeroWaves } from './HeroWaves';
+import { HeroFilmModal } from './HeroFilmModal';
+import { CALL_LANG_EVENT, isCallLang } from './callScript';
 import s from './voiceHero.module.css';
 
 /**
- * Landing hero: the pitch on the left, Saathi's voice orb (a living glass blob) on the right.
- * Tap it and Saathi greets Amma out loud (browser speech synthesis), Amma
- * answers, and Saathi says hello to you. The live captions appear inside the
- * orb, one sentence at a time with the spoken words lighting up, above its
- * centre; the language switch sits just under it.
+ * Landing hero, three columns on a soft aurora:
+ *  - left: the pitch and the trial button.
+ *  - centre: Saathi's voice orb (a living glass blob) with a dark capsule across it: the mic in the
+ *    middle plays a sample greeting (browser speech synthesis), and the capsule's waves move with the
+ *    voice, Saathi's on the left, Amma's on the right.
+ *  - right: the call as it happens: the words being said (spoken part lit), the
+ *    translation, "Hear a sample call" and "Watch video" (the call film, in a player that grows out
+ *    of the button).
+ * The greeting's language is picked under the buttons (CALL_LANG_EVENT, which the film follows too).
+ * It opens like a film (CSS: the light comes up, the orb forms, the capsule opens from the mic).
  */
 
 type LangKey = 'te' | 'hi' | 'en';
@@ -136,6 +146,11 @@ function loadVoices(synth: SpeechSynthesis): Promise<SpeechSynthesisVoice[]> {
 /* The accent line, word by word (so it can wrap on a phone). */
 const ACCENT = ['Peace', 'of', 'mind', 'for', 'you.'];
 
+const SUB_RIGHT = 'Short, friendly calls at medicine time, in their language, and an update on your WhatsApp after every call.';
+
+/* Opening-shot delay for the pieces that rise in (CSS reads --d). */
+const rise = (d: number) => ({ ['--d' as string]: d });
+
 /* ---------- The hero ---------- */
 
 export function VoiceHero({ primaryHref, primaryLabel, trialDays }: { primaryHref: string; primaryLabel: string; trialDays: number }) {
@@ -152,13 +167,18 @@ export function VoiceHero({ primaryHref, primaryLabel, trialDays }: { primaryHre
   const [script, setScript] = useState<Line[]>([]);
   const [missingVoice, setMissingVoice] = useState(false);
   const [noSpeech, setNoSpeech] = useState(false);
+  const [filmOpen, setFilmOpen] = useState(false);
   const timers = useRef<number[]>([]);
   const runId = useRef(0);
+  const statusRef = useRef<Status>('idle');
   const lineStart = useRef(0);
   const lineToken = useRef(0);        // which line the estimated word timers belong to
   const realWords = useRef(false);    // true once the browser reports word timing for this line
+  const filmBtn = useRef<HTMLButtonElement>(null);
 
   const clearTimers = () => { timers.current.forEach((t) => window.clearTimeout(t)); timers.current = []; };
+
+  useEffect(() => { statusRef.current = status; }, [status]);
 
   const stop = useCallback(() => {
     runId.current++;
@@ -287,8 +307,25 @@ export function VoiceHero({ primaryHref, primaryLabel, trialDays }: { primaryHre
     });
   }, [stop]);
 
-  const onCircle = () => (status === 'speaking' ? stop() : play(lang));
-  const chooseLang = (k: LangKey) => { setLang(k); if (status !== 'idle') play(k); };
+  // The language switch under the buttons (and the Languages section's "Hear it") pick the greeting language.
+  useEffect(() => {
+    const onLang = (e: Event) => {
+      const v = (e as CustomEvent).detail;
+      if (!isCallLang(v)) return;
+      setLang(v);
+      if (statusRef.current === 'speaking') play(v);
+    };
+    window.addEventListener(CALL_LANG_EVENT, onLang);
+    return () => window.removeEventListener(CALL_LANG_EVENT, onLang);
+  }, [play]);
+
+  const onPlay = () => (status === 'speaking' ? stop() : play(lang));
+  const openFilm = () => { stop(); setFilmOpen(true); };
+  const closeFilm = useCallback(() => {
+    setFilmOpen(false);
+    filmBtn.current?.focus();
+  }, []);
+  const voice = useCallback(() => orb.current?.loudness?.() ?? 0, []);
 
   // The caption: the chunk of the current line that is being said, its spoken part lit.
   const line = begun ? script[lineIdx] : undefined;
@@ -300,7 +337,17 @@ export function VoiceHero({ primaryHref, primaryLabel, trialDays }: { primaryHre
   const litTo = current ? Math.max(0, Math.min(current.text.length, reached - current.start)) : 0;
   const enParts = line?.en ? chunk(line.en) : [];
   const enText = enParts.length === parts.length ? enParts[ci]?.text : line?.en;
-  const who = line ? (line.to === 'parent' ? 'Saathi → Amma' : line.to === 'reply' ? 'Amma' : 'Saathi → you') : '';
+
+  const speaking = status === 'speaking';
+
+  const captionKey = status === 'idle' ? 'idle' : status === 'done' ? 'done' : line && current ? `${lang}-${lineIdx}-${ci}` : 'ring';
+  const caption = status === 'idle'
+    ? <>Hear how Saathi greets <em>Amma</em></>
+    : status === 'done'
+      ? <>“That’s how Saathi checks in, <em>every day”</em></>
+      : line && current
+        ? <><mark>{current.text.slice(0, litTo)}</mark>{current.text.slice(litTo)}</>
+        : <>Ringing Amma’s <em>phone…</em></>;
 
   const note = noSpeech && status !== 'idle'
     ? 'Your browser can’t play speech, so this preview shows the words only.'
@@ -312,97 +359,127 @@ export function VoiceHero({ primaryHref, primaryLabel, trialDays }: { primaryHre
 
   return (
     <section className={s.hero} data-scene="hero" aria-label="Meet Saathi">
+      {/* The backdrop: a slow aurora */}
+      <div className={s.aurora} aria-hidden="true" />
+
       <div className={s.panel}>
         {/* Left: the pitch */}
         <div className={s.left} data-hero-copy>
-          <div className={s.copy}>
-            <WordReveal as="h1" className={s.h1} delay={0.15} onLoad>
-              A daily call for<br />your parents.<br />
-              {ACCENT.flatMap((w, i) => [i ? ' ' : null, <em key={w} style={{ ['--i' as string]: i }}>{w}</em>])}
-            </WordReveal>
-            <p className={`${s.sub} anim-load d3`}>
-              Saathi phones your parents at medicine time, in their own language, and tells you how every call went.
-            </p>
+          <WordReveal as="h1" className={s.h1} delay={0.35} onLoad>
+            A daily call for<br />your parents.<br />
+            {ACCENT.flatMap((w, i) => [i ? ' ' : null, <em key={w} style={{ ['--i' as string]: i }}>{w}</em>])}
+          </WordReveal>
+          <p className={`${s.sub} ${s.rise}`} style={rise(6)}>
+            Aaptha calls your parents at medicine time, in their own language, and tells you how every call went.
+          </p>
+          <div className={`${s.ctas} ${s.rise}`} style={rise(7)}>
+            <MagneticLink href={primaryHref} className={`${s.btnGlow} btn-glow`}>{primaryLabel} <ArrowRight size={18} /></MagneticLink>
+            <Link href="#how" className={s.btnOutline}><CirclePlay size={20} strokeWidth={1.8} /> See how it works</Link>
           </div>
-
-          <div className={s.actions}>
-            <div className={`${s.ctas} anim-load d4`}>
-              <MagneticLink href={primaryHref} className={`${s.btnSolid} btn-glow`}>{primaryLabel} <ArrowRight size={18} /></MagneticLink>
-              <Link href="#how" className={s.btnGhost}>See how it works</Link>
-            </div>
-            <ul className={`${s.proof} anim-load d5`}>
-              <li>{trialDays}-day free trial</li>
-              <li>No app for your parents</li>
-              <li>9 Indian languages</li>
-            </ul>
-          </div>
+          <ul className={`${s.proof} ${s.rise}`} style={rise(8)}>
+            <li>{trialDays}-day free trial</li>
+            <li>No app for your parents</li>
+            <li>9 Indian languages</li>
+          </ul>
         </div>
 
-        {/* Right: the demo. The orb, with the live captions inside its ring */}
-        <div className={s.right}>
-          <div className={s.stage} data-hero-orb>
-            {/* The ring is the call, the waves are the voice: dead centre, captions above, pill below */}
-            <div className={s.orb} aria-hidden="true">
-              <SaathiBlob ref={orb} mode={orbMode} variant={dark ? 'night' : 'day'} scale={0.52} />
-            </div>
-
-            {/* Live captions, inside the ring above the waves */}
-            <div className={s.inside} aria-live="polite">
-              {status === 'idle' && (
-                <div className={s.insideIdle}>
-                  <span className={s.insideLabel}>Live preview</span>
-                  <p className={s.insideTitle}>Hear how Saathi greets Amma</p>
-                </div>
-              )}
-              {status === 'speaking' && !line && (
-                <div className={s.insideIdle}>
-                  <span className={s.insideLabel}>Calling Amma…</span>
-                </div>
-              )}
-              {status === 'speaking' && line && current && (
-                <div key={`${lang}-${lineIdx}-${ci}`} className={s.insideLine}>
-                  <span className={`${s.who} ${line.to === 'reply' ? s.whoWarm : ''}`}>{who}</span>
-                  <p className={s.insideText}><mark>{current.text.slice(0, litTo)}</mark>{current.text.slice(litTo)}</p>
-                  {enText && <small className={s.insideEn}>{enText}</small>}
-                </div>
-              )}
-              {status === 'done' && (
-                <div className={s.insideIdle}>
-                  <span className={s.insideLabel}>Call ended</span>
-                  <p className={s.insideTitle}>That’s how Saathi checks in, every day</p>
-                </div>
-              )}
-            </div>
-
-            {/* Tap the orb to hear Saathi */}
+        {/* Centre: the orb, and the capsule across it with the mic and the voice */}
+        <div className={s.stage} data-hero-orb>
+          <div className={s.orb} aria-hidden="true">
+            <SaathiBlob ref={orb} mode={orbMode} variant={dark ? 'night' : 'day'} scale={0.52} />
+          </div>
+          <div className={s.capsule} data-live={speaking || undefined}>
+            <HeroWaves className={s.waves} mode={orbMode} dark voice={voice} inner={1.4} silk={false} />
             <button
               type="button"
-              className={s.circle}
-              onClick={onCircle}
-              aria-pressed={status === 'speaking'}
-              aria-label={status === 'speaking' ? 'Stop Saathi' : 'Hear how Saathi greets Amma (plays sound)'}
+              className={s.mic}
+              onClick={onPlay}
+              aria-pressed={speaking}
+              aria-label={speaking ? 'Stop Saathi' : 'Hear how Saathi greets Amma (plays sound)'}
             >
-              <span className={s.circleHint}>
-                {status === 'speaking'
-                  ? <><span className={s.circleIcon}><Square size={11} fill="currentColor" /></span>Stop</>
-                  : status === 'done'
-                    ? <><span className={s.circleIcon}><RotateCcw size={14} /></span>Hear it again</>
-                    : <><span className={s.circleIcon}><Play size={13} fill="currentColor" /></span>Tap to hear Saathi</>}
-              </span>
+              {speaking ? <Square size={14} fill="currentColor" /> : <Mic size={19} strokeWidth={2} />}
             </button>
           </div>
+        </div>
 
-          {/* Under the ring: the greeting language, and one line about the preview voice */}
-          <div className={`${s.controls} anim-load d5`}>
-            <div className={s.langs} role="group" aria-label="Greeting language">
-              {(Object.keys(LANGS) as LangKey[]).map((k) => (
-                <button key={k} type="button" aria-pressed={lang === k} onClick={() => chooseLang(k)}>{LANGS[k].label}</button>
+        {/* Right: the call as it happens */}
+        <div className={s.right} data-hero-side>
+          {/* With the pitch on the left: the heading and its line at the top, then the buttons and the language + note level with the left's */}
+          <div className={s.rtop}>
+          <div className={`${s.caption} ${s.rise}`} style={rise(6)} aria-live="polite">
+            <AnimatePresence mode="popLayout" initial={false}>
+              <motion.p
+                key={captionKey}
+                className={`${s.quote} ${line && current && speaking ? s.quoteLive : ''}`}
+                data-who={line?.to}
+                initial={{ opacity: 0, y: 22, filter: 'blur(10px)' }}
+                animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+                exit={{ opacity: 0, y: -18, filter: 'blur(8px)' }}
+                transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
+              >
+                {caption}
+              </motion.p>
+            </AnimatePresence>
+          </div>
+          <p className={`${s.rsub} ${s.rise}`} style={rise(7)}>{speaking && enText ? enText : SUB_RIGHT}</p>
+            {/* What Saathi says, in the chosen language (the live captions take over while it plays) */}
+            {!speaking && (
+              <blockquote className={`${s.greet} ${s.rise}`} style={rise(8)}>
+                <p lang={lang}>“{LANGS[lang].native}”</p>
+                {LANGS[lang].en && <small>{LANGS[lang].en}</small>}
+                <footer><i aria-hidden="true" />Saathi · 8:30 AM morning call</footer>
+              </blockquote>
+            )}
+          </div>
+          <div className={`${s.rctas} ${s.rise}`} style={rise(8)}>
+            <button type="button" className={s.btnInk} onClick={onPlay} aria-pressed={speaking}>
+              {speaking ? <><Square size={14} fill="currentColor" /> Stop</>
+                : status === 'done' ? <><RotateCcw size={17} /> Hear it again</>
+                  : <><Headphones size={18} /> Hear a sample call</>}
+            </button>
+            <button ref={filmBtn} type="button" className={s.btnLight} onClick={openFilm}>
+              {!filmOpen && <motion.span layoutId="hero-film" className={s.btnLightBg} style={{ borderRadius: 999 }} />}
+              <Play size={14} fill="currentColor" /> Watch video
+            </button>
+          </div>
+          <div className={s.rfoot}>
+            {/* The greeting's language; the How it works film follows it too (CALL_LANG_EVENT). */}
+            <div className={`${s.langs} ${s.rise}`} style={rise(9)} role="group" aria-label="Greeting language">
+              {(['en', 'te', 'hi'] as LangKey[]).map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  aria-pressed={lang === k}
+                  onClick={() => window.dispatchEvent(new CustomEvent(CALL_LANG_EVENT, { detail: k }))}
+                >
+                  {LANGS[k].label}
+                </button>
               ))}
             </div>
-            <p className={s.note}>{note}</p>
+            <p className={`${s.note} ${s.rise}`} style={rise(10)}>{note}</p>
           </div>
         </div>
+
       </div>
+
+      {/* Along the bottom: what Saathi does, running past on a transparent strip (pauses on hover) */}
+      <Ticker
+        className={`${s.ticker} ${s.rise}`}
+        label="What Saathi does"
+        items={[
+          { icon: <Clock size={17} />, text: 'Calls at their medicine times' },
+          { icon: <PhoneCall size={17} />, text: 'Works on any phone, even a landline' },
+          { icon: <Languages size={17} />, text: '9 Indian languages' },
+          { icon: <MessageCircle size={17} />, text: 'A WhatsApp update after every call' },
+          { icon: <RotateCcw size={17} />, text: 'Tries again if they miss the call' },
+          { icon: <BellRing size={17} />, text: 'Urgent alerts to family and neighbours' },
+          { icon: <ShieldCheck size={17} />, text: 'Never gives medical advice' },
+          { icon: <Pause size={17} />, text: 'Pause any time for a trip' },
+          { icon: <Sparkles size={17} />, text: `${trialDays}-day free trial` },
+        ]}
+      />
+
+      <HeroFilmModal open={filmOpen} onClose={closeFilm} lang={lang} layoutId="hero-film" />
     </section>
   );
 }

@@ -6,13 +6,13 @@ import { usePathname } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { canAddParents, getEffectivePlan } from '@/lib/plans';
 import { ThemeToggle } from '@/components/ThemeToggle';
-import { Heart, User as UserIcon, LogOut, CreditCard, ChevronDown, LayoutDashboard, UserPlus, Menu, X, ShieldCheck } from 'lucide-react';
+import { Heart, User as UserIcon, LogOut, CreditCard, ChevronDown, LayoutDashboard, UserPlus, Menu, X, ShieldCheck, ArrowRight } from 'lucide-react';
 
 const MARKETING_LINKS = [
-  { href: '/#how', label: 'How it works' },
-  { href: '/#why', label: 'Why a phone call' },
-  { href: '/#safety', label: 'Safety' },
-  { href: '/#plans', label: 'Pricing' },
+  { href: '/#how', label: 'The morning call' },
+  { href: '/#safety', label: 'Meet Saathi' },
+  { href: '/#why', label: 'Why a call' },
+  { href: '/#plans', label: 'Plans' },
 ];
 
 const APP_LINKS = [
@@ -22,8 +22,15 @@ const APP_LINKS = [
 ];
 
 export function Brand({ href = '/' }: { href?: string }) {
+  const pathname = usePathname();
   return (
-    <Link href={href} className="brand-link" aria-label="Aaptha home">
+    <Link
+      href={href}
+      className="brand-link"
+      aria-label="Aaptha home"
+      // Already on that page: a link to it does nothing, so take the visitor back to the top instead.
+      onClick={() => { if (pathname === href) window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+    >
       <span className="brand-heart" aria-hidden="true">
         <Heart size={15} fill="white" strokeWidth={0} />
       </span>
@@ -32,13 +39,31 @@ export function Brand({ href = '/' }: { href?: string }) {
   );
 }
 
+// The sliding highlight sits behind `el` (the hovered link), else the active link, else hides.
+function placeIndicator(nav: HTMLElement | null, el?: HTMLElement) {
+  if (!nav) return;
+  const target = el ?? nav.querySelector<HTMLElement>('.nav-link[aria-current]');
+  if (!target) {
+    nav.dataset.indicator = 'off';
+    return;
+  }
+  nav.style.setProperty('--ix', `${target.offsetLeft}px`);
+  nav.style.setProperty('--iw', `${target.offsetWidth}px`);
+  nav.dataset.indicator = 'on';
+}
+
 export function Navbar() {
   const { user, logout } = useAuth();
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const [activeHash, setActiveHash] = useState('');
   const menuRef = useRef<HTMLDivElement>(null);
+  const navRef = useRef<HTMLElement>(null);
+  // On the landing the bar folds into the call island once scrolled and follows the section being read.
+  const float = pathname === '/';
+  const isActive = (href: string) => pathname === href || (float && activeHash !== '' && href === `/#${activeHash}`);
 
   // "Add a parent" only appears once a plan's AutoPay is set up (payment details come first).
   // Remind (WhatsApp reminders, one person) is set up from the dashboard instead.
@@ -52,6 +77,52 @@ export function Navbar() {
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
+
+  // Scroll-spy: the section crossing the middle of the screen is the active link.
+  useEffect(() => {
+    if (!float) return;
+    const sections = ['how', 'why', 'safety', 'plans']
+      .map((id) => document.getElementById(id))
+      .filter((el): el is HTMLElement => el !== null);
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) if (e.isIntersecting) setActiveHash(e.target.id);
+      },
+      { rootMargin: '-45% 0px -50% 0px' },
+    );
+    sections.forEach((s) => io.observe(s));
+    const onScroll = () => {
+      if (window.scrollY < 200) setActiveHash('');
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      io.disconnect();
+      window.removeEventListener('scroll', onScroll);
+    };
+  }, [float]);
+
+  const indicatorToActive = () => placeIndicator(navRef.current);
+  useEffect(() => placeIndicator(navRef.current), [activeHash, pathname]);
+
+  // Close the sheet when the window grows past the phone layout.
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 901px)');
+    const onChange = () => mq.matches && setSheetOpen(false);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+
+  // The full-screen sheet holds the page still behind it. On <body>, not <html>: body has overflow-x hidden,
+  // so hiding <html> would make body the scroller and the sticky header would scroll away.
+  useEffect(() => {
+    if (!sheetOpen) return;
+    const body = document.body;
+    const prev = body.style.overflow;
+    body.style.overflow = 'hidden';
+    return () => {
+      body.style.overflow = prev;
+    };
+  }, [sheetOpen]);
 
   useEffect(() => {
     if (!menuOpen && !sheetOpen) return;
@@ -77,22 +148,68 @@ export function Navbar() {
     setSheetOpen(false);
   };
 
+  // Folded into the island (landing, scrolled, menu sheet closed).
+  const compact = float && scrolled && !sheetOpen;
+  const islandLabel = links.find((l) => isActive(l.href))?.label ?? 'Aaptha';
+
+  const navEl = (
+    <nav ref={navRef} className="nav-links" aria-label="Main" onMouseLeave={indicatorToActive}>
+      {float && <span className="nav-indicator" aria-hidden="true" />}
+      {links.map((l) => (
+        <Link
+          key={l.href}
+          href={l.href}
+          className={`nav-link${isActive(l.href) ? ' active' : ''}`}
+          aria-current={isActive(l.href) ? 'true' : undefined}
+          onMouseEnter={(e) => placeIndicator(navRef.current, e.currentTarget)}
+          onFocus={(e) => placeIndicator(navRef.current, e.currentTarget)}
+          onBlur={indicatorToActive}
+        >
+          {l.label}
+        </Link>
+      ))}
+    </nav>
+  );
+
   return (
-    <header className={`app-header${scrolled || sheetOpen ? ' scrolled' : ''}`}>
-      <div className="wrap app-nav">
+    <header className={`app-header${float ? ' float' : ''}${scrolled || sheetOpen ? ' scrolled' : ''}${compact ? ' compact' : ''}${sheetOpen ? ' sheet-open' : ''}`}>
+      <div className={`wrap app-nav${float ? ' app-nav-wide' : ''}`}>
         <Brand href="/" />
 
-        <nav className="nav-links" aria-label="Main">
-          {links.map((l) => (
-            <Link
-              key={l.href}
-              href={l.href}
-              className={`nav-link${pathname === l.href ? ' active' : ''}`}
-            >
-              {l.label}
-            </Link>
-          ))}
-        </nav>
+        {float ? (
+          // The call island: links at the top; once scrolled it folds into a dark capsule that names the section
+          // being read, and opens back into the links on hover / focus (on phones a tap opens the menu sheet).
+          <div className="island">
+            <div className="island-fold island-peek-fold">
+              <div>
+                <button
+                  type="button"
+                  className="island-peek"
+                  tabIndex={compact ? 0 : -1}
+                  aria-label={`Menu. Now reading: ${islandLabel}`}
+                  onClick={() => {
+                    if (window.matchMedia('(max-width: 900px)').matches) setSheetOpen(true);
+                    else navRef.current?.querySelector<HTMLElement>('.nav-link')?.focus();
+                  }}
+                >
+                  <span className="brand-heart island-heart" aria-hidden="true"><Heart size={11} fill="currentColor" strokeWidth={0} /></span>
+                  <span className="island-dot" aria-hidden="true" />
+                  <span key={islandLabel} className="island-label">{islandLabel}</span>
+                </button>
+              </div>
+            </div>
+            <div className="island-fold island-body-fold">
+              <div>
+                {navEl}
+                {!user && (
+                  <Link href="/signup" className="btn btn-primary btn-sm island-cta" tabIndex={compact ? 0 : -1}>
+                    Try free
+                  </Link>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : navEl}
 
         <div className="nav-actions">
           <ThemeToggle />
@@ -147,7 +264,7 @@ export function Navbar() {
                 Log in
               </Link>
               <Link href="/signup" className="btn btn-primary btn-sm">
-                Get started
+                <span>Try<span className="hide-mobile"> 7 days</span> free</span> <ArrowRight size={15} className="hide-mobile" />
               </Link>
             </>
           )}
@@ -165,15 +282,22 @@ export function Navbar() {
       </div>
 
       <div id="mobile-sheet" className={`mobile-sheet${sheetOpen ? ' open' : ''}`} aria-hidden={!sheetOpen}>
-        {links.map((l) => (
-          <Link key={l.href} href={l.href} className="sheet-link" onClick={closeAll} tabIndex={sheetOpen ? 0 : -1}>
+        {links.map((l, i) => (
+          <Link
+            key={l.href}
+            href={l.href}
+            className="sheet-link"
+            onClick={closeAll}
+            tabIndex={sheetOpen ? 0 : -1}
+            style={{ '--i': i } as React.CSSProperties}
+          >
             {l.label}
           </Link>
         ))}
         {!user && (
-          <div className="sheet-actions">
+          <div className="sheet-actions" style={{ '--i': links.length } as React.CSSProperties}>
             <Link href="/login" className="btn btn-ghost" onClick={closeAll} tabIndex={sheetOpen ? 0 : -1}>Log in</Link>
-            <Link href="/signup" className="btn btn-primary" onClick={closeAll} tabIndex={sheetOpen ? 0 : -1}>Get started</Link>
+            <Link href="/signup" className="btn btn-primary" onClick={closeAll} tabIndex={sheetOpen ? 0 : -1}>Try 7 days free</Link>
           </div>
         )}
       </div>

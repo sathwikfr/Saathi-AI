@@ -38,6 +38,8 @@ export type SaathiOrbHandle = {
   say: (word: string, seconds?: number) => void;
   level: (v: number) => void;
   echo: () => void;
+  /** The voice's loudness right now, 0..1 (SaathiBlob only). */
+  loudness?: () => number;
 };
 
 /** Rough syllable count: vowel groups for Latin text, letters (less vowel signs) for Indian scripts. */

@@ -1,558 +1,1001 @@
 /* ==========================================================================
-   Landing hero on the page background, one centred composition:
-   - left: the pitch. Its headline lines up with the top of the orb and its
-     buttons with the bottom; the headline fills between.
-   - right: the demo. Saathi's voice orb (SaathiBlob.tsx, a living glass blob).
-     The live captions sit INSIDE the orb, above its centre; the language
-     switch and a one-line note sit under it.
-   Phones stack it: orb, its controls, then the pitch.
+   Landing hero (VoiceHero.tsx): three columns on a soft aurora.
+   - left: the pitch. centre: the orb with a dark capsule across it (mic +
+     voice waves). right: the call as it happens (words, buttons).
+   - a row of four promises underneath.
+   The hero slides up under the (transparent at the top) navbar, so the aurora
+   reaches the top of the screen. It opens like a film: the light comes up,
+   the orb forms out of a blur, the capsule opens from the mic, the rest rises.
+   Below 1100px it stacks: pitch, orb, call, promises.
+   The "Watch video" player (HeroFilmModal.tsx) is styled at the end.
    ========================================================================== */
 
-/* The orb's soft haze reaches past the panel: it is clipped at the screen edges
-   (here), not by the panel, where it would show as a faint box. */
 .hero {
-  padding: 8px 16px 0;
-  overflow-x: clip;
-}
+  /* Ball radius of the orb: from the width, capped so everything fits the screen height. */
+  --r: clamp(110px, min(10.6vw, (100svh - 220px) * 0.31), 205px);   /* capped so the side columns keep room on big screens */
 
-.panel {
-  /* The frame */
-  --edge: 56px;                       /* side margin */
-  --gutter: clamp(48px, 6vw, 120px);  /* between the pitch and the demo */
-  --controlsh: 78px;                  /* language switch + note under the orb */
-  /* The demo's footprint (half its height): as big as the window height allows
-     with the controls underneath, leaving the pitch at least 420px. The pitch is
-     as tall as this (2 x --hole), and the headline is sized from it.
-     (cqw: the panel's content width; these resolve on the panel's children.) */
-  --hole: min(300px,
-              calc((clamp(660px, 100svh - 84px, 980px) - var(--controlsh) - 70px) / 2),
-              calc((100cqw - var(--gutter) - 420px) / 2));
-  /* The orb's own footprint inside it, a little smaller so the orb doesn't
-     outweigh the headline; the captions and the tap pill are sized from it. */
-  --orb: calc(var(--hole) * 0.82);
-  --leftw: min(640px, calc(100cqw - var(--gutter) - var(--hole) * 2));   /* the pitch column */
-  --h1: clamp(56px, 6vw, 104px);      /* the most the headline may grow; .h1 fits it to the column */
-  --ui: clamp(15px, 1.05vw, 18px);
-  --btnh: 56px;
-
-  /* Light studio palette (the dark theme overrides these below) */
-  --ink: #151413;
-  --dim: rgba(21, 20, 19, 0.58);
-  --faint: rgba(21, 20, 19, 0.42);
-  --edge-line: rgba(21, 20, 19, 0.08);
-  --chips-bg: rgba(21, 20, 19, 0.06);
-  --chip-on-bg: #ffffff;
-  --chip-on-ink: #151413;
-  --chip-on-shadow: 0 1px 3px rgba(21, 20, 19, 0.12);
-  --solid-ink: #ffffff;
-  --ghost-edge: rgba(21, 20, 19, 0.55);
-  --ghost-hover: rgba(21, 20, 19, 0.05);
-  --who-saathi: #0a6fc2;              /* cyan-blue, like the orb when Saathi speaks */
-  --who-amma: #c0247a;                /* pink, like the orb when Amma speaks */
-  --grad: linear-gradient(90deg, #e0452a 0%, #9b4dff 50%, #2f5fe8 100%);
-  --bokeh: rgba(255, 255, 255, 0.7);
-  --pill-bg: rgba(255, 255, 255, 0.9);
-  --cap-halo: rgba(248, 245, 239, 0.78);   /* behind the captions, over the orb's light */
-  --pill-shadow: 0 10px 28px -12px rgba(21, 20, 19, 0.35);
-  --play: linear-gradient(135deg, #e0452a 0%, #9b4dff 50%, #2f5fe8 100%);
+  /* Light: pastel studio light (the dark theme overrides these below) */
+  --hero-bg: linear-gradient(180deg, #f6f4fb 0%, #f8f5f4 60%, var(--paper) 100%);
+  --au-1: rgba(255, 199, 214, 0.55);
+  --au-2: rgba(207, 198, 255, 0.62);
+  --au-3: rgba(255, 210, 236, 0.5);
+  --au-4: rgba(188, 218, 255, 0.6);
+  --au-5: rgba(255, 255, 255, 0.75);
+  --grad: linear-gradient(90deg, #1f5cff 0%, #5a4bff 45%, #a53df0 100%);
+  --dim: rgba(26, 26, 36, 0.66);
+  --faint: rgba(26, 26, 36, 0.45);
+  --soft-line: rgba(26, 26, 36, 0.1);
+  --glass: rgba(255, 255, 255, 0.72);
+  --glass-line: rgba(26, 26, 36, 0.09);
+  --ink-btn: #14151b;
+  --on-ink-btn: #ffffff;
+  /* The capsule stays dark in both themes: on the light page it is the crisp focal point in front of the orb
+     (a white one was tried on 2026-10-17 and washed out against the orb's bright lower half). */
+  --capsule: linear-gradient(180deg, rgba(40, 42, 54, 0.97) 0%, rgba(13, 14, 21, 0.97) 100%);
+  --capsule-line: rgba(255, 255, 255, 0.07);
+  --capsule-shadow: 0 26px 50px -20px rgba(28, 20, 80, 0.55), 0 8px 18px -10px rgba(0, 0, 0, 0.35);
+  --mic-face: radial-gradient(circle at 50% 38%, #2a2c3a, #101119 70%);
+  --mic-ink: #ffffff;
 
   position: relative;
   isolation: isolate;
-  container-type: inline-size;        /* so cqw lengths (columns, headline fit) follow the panel */
-  height: calc(100svh - 68px - 16px);
-  min-height: 660px;
-  max-height: 980px;
-  display: grid;
-  grid-template-columns: fit-content(640px) auto;
-  grid-template-rows: auto auto;
-  justify-content: center;            /* the composition hugs its content, centred */
-  align-content: center;
-  column-gap: var(--gutter);
-  row-gap: 18px;
-  padding: 0 var(--edge);
-  background: var(--paper);           /* same as the rest of the page, no separate card */
+  margin-top: -68px;                  /* under the navbar, which is see-through at the top */
+  padding-top: 68px;
+  overflow: clip;
+  background: var(--hero-bg);
   color: var(--ink);
 }
 
-/* Dark: the site's dark theme, and always on the landing's dark stage (.stage-dark). */
-:global(:root[data-theme='dark']) .panel,
-:global(.stage-dark) .panel {
-  --ink: #f4efe6;
-  --dim: rgba(244, 239, 230, 0.6);
-  --faint: rgba(244, 239, 230, 0.45);
-  --edge-line: rgba(244, 239, 230, 0.12);
-  --chips-bg: rgba(0, 0, 0, 0.35);
-  --chip-on-bg: rgba(244, 239, 230, 0.14);
-  --chip-on-ink: #f4efe6;
-  --chip-on-shadow: none;
-  --ghost-edge: rgba(244, 239, 230, 0.4);
-  --ghost-hover: rgba(244, 239, 230, 0.08);
-  --who-saathi: #7fd6ff;
-  --who-amma: #ff8fc8;
-  --grad: linear-gradient(90deg, #ff6a4d 0%, #c77dff 50%, #5b8cff 100%);
-  --bokeh: rgba(244, 239, 230, 0.05);
-  --pill-bg: rgba(32, 30, 28, 0.88);
-  --cap-halo: rgba(8, 8, 12, 0.55);
-  --pill-shadow: 0 10px 28px -12px rgba(0, 0, 0, 0.6);
-  --play: linear-gradient(135deg, #ff6a4d 0%, #c77dff 50%, #5b8cff 100%);
+:global(:root[data-theme='dark']) .hero {
+  --hero-bg: var(--paper);
+  --au-1: rgba(70, 82, 230, 0.24);
+  --au-2: rgba(150, 70, 230, 0.22);
+  --au-3: rgba(225, 60, 170, 0.15);
+  --au-4: rgba(40, 120, 235, 0.18);
+  --au-5: rgba(120, 100, 255, 0.1);
+  --grad: linear-gradient(90deg, #6f9bff 0%, #9d8bff 45%, #e08cff 100%);
+  --dim: rgba(243, 238, 230, 0.68);
+  --faint: rgba(243, 238, 230, 0.46);
+  --soft-line: rgba(243, 238, 230, 0.12);
+  --glass: rgba(255, 255, 255, 0.06);
+  --glass-line: rgba(255, 255, 255, 0.12);
+  --ink-btn: #f3eee6;
+  --on-ink-btn: #14151b;
+  --capsule: linear-gradient(180deg, rgba(30, 30, 46, 0.86) 0%, rgba(8, 8, 15, 0.86) 100%);
+  --capsule-line: rgba(255, 255, 255, 0.14);
+  --capsule-shadow: 0 26px 50px -20px rgba(0, 0, 0, 0.7);
+  --mic-face: radial-gradient(circle at 50% 38%, #2a2c3a, #101119 70%);
+  --mic-ink: #ffffff;
 }
 
-/* Soft out-of-focus dots on the studio wall, like a blurred scene behind glass. */
-.panel::before {
+/* The page under the hero picks up where its light ends. */
+.hero::after {
   content: '';
   position: absolute;
-  inset: 0;
+  inset: auto 0 0;
+  height: 120px;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent, var(--paper));
+}
+
+/* ---------- Backdrop ---------- */
+
+.aurora {
+  position: absolute;
+  inset: -12% -8% 0;
   z-index: 0;
   pointer-events: none;
   background:
-    radial-gradient(circle at 12% 78%, var(--bokeh), transparent 16px),
-    radial-gradient(circle at 21% 64%, var(--bokeh), transparent 9px),
-    radial-gradient(circle at 33% 86%, var(--bokeh), transparent 12px),
-    radial-gradient(circle at 41% 71%, var(--bokeh), transparent 7px),
-    radial-gradient(circle at 58% 90%, var(--bokeh), transparent 14px),
-    radial-gradient(circle at 66% 76%, var(--bokeh), transparent 8px),
-    radial-gradient(circle at 74% 84%, var(--bokeh), transparent 18px),
-    radial-gradient(circle at 87% 68%, var(--bokeh), transparent 10px),
-    radial-gradient(circle at 92% 88%, var(--bokeh), transparent 13px),
-    radial-gradient(circle at 27% 18%, var(--bokeh), transparent 11px),
-    radial-gradient(circle at 79% 14%, var(--bokeh), transparent 9px);
+    radial-gradient(38% 46% at 10% 28%, var(--au-1), transparent 72%),
+    radial-gradient(34% 44% at 90% 18%, var(--au-2), transparent 72%),
+    radial-gradient(42% 46% at 82% 74%, var(--au-3), transparent 72%),
+    radial-gradient(40% 40% at 22% 84%, var(--au-4), transparent 72%),
+    radial-gradient(28% 34% at 50% 42%, var(--au-5), transparent 72%);
+  animation: auroraUp 1.8s ease-out both, auroraDrift 26s ease-in-out 1.8s infinite alternate;
+}
+
+@keyframes auroraUp {
+  from { opacity: 0; }
+}
+
+@keyframes auroraDrift {
+  0% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(-2%, 1.5%, 0) scale(1.04); }
+  100% { transform: translate3d(2%, -1%, 0) scale(1.02); }
+}
+
+/* Soft out-of-focus dots, like light behind glass. */
+.aurora::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 18% 70%, var(--au-5), transparent 14px),
+    radial-gradient(circle at 34% 22%, var(--au-5), transparent 8px),
+    radial-gradient(circle at 62% 88%, var(--au-5), transparent 12px),
+    radial-gradient(circle at 76% 30%, var(--au-5), transparent 10px),
+    radial-gradient(circle at 92% 62%, var(--au-5), transparent 16px);
+}
+
+.hero {
+  --ticker-gap: clamp(16px, 3.5vh, 36px);
+}
+
+/* The feature ticker along the bottom (components/motion/Ticker): no background of its own, hairlines and
+   colours from the hero, violet icons, quiet dots between items. */
+.ticker {
+  position: relative;
+  z-index: 2;
+  border-block: 0;                     /* no hairlines: the words float on the light */
+  margin-bottom: var(--ticker-gap);    /* lifted off the bottom edge of the screen */
+  --d: 11;
+}
+
+.ticker :global(.ticker-track) {
+  animation-duration: 64s;
+}
+
+.ticker :global(.ticker-item) {
+  padding: 16px 30px;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ink);
+  opacity: 0.85;
+}
+
+.ticker :global(.ticker-item) svg {
+  color: #7a5cff;
+}
+
+.ticker :global(.ticker-item)::after {
+  margin-left: 30px;
+  background: var(--faint);
+  opacity: 0.8;
+}
+
+@media (max-width: 699px) {
+  .ticker :global(.ticker-item) {
+    padding: 12px 20px;
+    font-size: 13.5px;
+  }
+
+  .ticker :global(.ticker-item)::after {
+    margin-left: 20px;
+  }
+}
+
+/* ---------- The frame ---------- */
+
+.panel {
+  position: relative;
+  z-index: 1;
+  box-sizing: border-box;
+  max-width: 1720px;
+  margin: 0 auto;
+  /* Fills the first screen (so nothing below peeks in) but keeps its content near the top: a modest
+     margin under the navbar, and the spare height falls to the bottom.
+     (It used to centre its content, which left a wide empty band above the headline.) */
+  min-height: calc(100svh - 68px - 56px - var(--ticker-gap));   /* the screen, less the navbar and the ticker under it */
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) auto minmax(0, 1fr);
+  grid-template-rows: auto;
+  align-content: center;              /* the spare height splits above and below, never one big empty band */
+  align-items: center;
+  column-gap: clamp(12px, 1.4vw, 28px);
+  padding: clamp(32px, 6vh, 72px) clamp(24px, 4.5vw, 88px) clamp(32px, 5vh, 64px);
 }
 
 /* ---------- Left: the pitch ---------- */
 
-/* Beside the orb, centred on it: tag, headline, subline, then the buttons. */
 .left {
-  position: relative;
-  z-index: 2;
   grid-column: 1;
   grid-row: 1;
   align-self: stretch;
-  min-height: calc(var(--hole) * 2);
-  display: flex;
-  flex-direction: column;
   justify-content: center;
-  gap: 36px;
-  min-width: 0;
-  max-width: var(--leftw);
-}
-
-.copy {
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
-  gap: 26px;
+  align-items: flex-start;
+  min-width: 0;
+  position: relative;
+  z-index: 2;
 }
 
-/* Three lines; the widest, "Peace of mind for you.", is about 10.6em, and the
-   pitch (with its subline and buttons) must fit beside the orb. */
 .h1 {
-  font-size: min(var(--h1), calc(var(--leftw) / 10.8), calc((var(--hole) * 2 - 300px) / 3.15));
+  font-size: clamp(34px, 15cqi, 68px);
   font-weight: 650;
-  line-height: 1.02;
-  letter-spacing: -0.03em;
+  line-height: 1.04;
+  letter-spacing: -0.035em;
   color: var(--ink);
-  text-wrap: balance;
 }
 
-/* The accent line, one word per <em> so it can wrap on a phone. */
+/* "Peace of mind for you.": one gradient across the five words (each word shows its slice). */
 .h1 em {
   font-style: normal;
-  background: none; color: var(--teal);
-  padding-right: 0.03em;
+  background: var(--grad);
+  background-size: 480% 100%;
+  background-position: calc(var(--i, 0) * 25%) 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  padding-right: 0.04em;
 }
 
 .sub {
-  max-width: 34em;
-  font-size: calc(var(--ui) + 1px);
-  line-height: 1.6;
+  margin-top: clamp(18px, 2.6vh, 28px);
+  max-width: 30em;
+  font-size: clamp(15px, 1.12vw, 18px);
+  line-height: 1.62;
   color: var(--dim);
 }
 
-/* The buttons, with the three proof points small underneath. */
-.actions {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-}
-
-.proof {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 0;
-  padding: 0;
-  list-style: none;
-  font-size: 13.5px;
-  color: var(--faint);
-}
-
-.proof li + li::before {
-  content: '·';
-  margin: 0 10px;
-}
-
 .ctas {
+  margin-top: clamp(24px, 3.6vh, 40px);
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
 }
 
-.btnSolid,
-.btnGhost {
+.btnGlow,
+.btnOutline {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  height: var(--btnh);
-  padding: 0 32px;
+  gap: 10px;
+  height: clamp(50px, 6.2vh, 60px);
+  padding: 0 clamp(20px, 1.7vw, 32px);
   border-radius: var(--r-full);
-  font-size: calc(var(--ui) + 1px);
+  font-size: clamp(15px, 1.05vw, 17px);
   font-weight: 600;
   white-space: nowrap;
-  transition: background var(--dur) var(--ease-out), transform var(--dur) var(--ease-out);
 }
 
-.btnSolid {
-  color: var(--solid-ink);
+/* The trial button: the site's turning gradient, tuned to the hero's blue -> violet. */
+.btnGlow {
+  --glow-1: #2c66ff;
+  --glow-2: #5b4bff;
+  --glow-3: #b347f0;
+  box-shadow: 0 18px 36px -16px rgba(80, 60, 255, 0.65);
 }
 
-.btnSolid:hover {
-  transform: translateY(-1px);
-  filter: brightness(1.12);
-}
-
-.btnGhost {
+.btnOutline {
   color: var(--ink);
-  box-shadow: inset 0 0 0 1px var(--ghost-edge);
+  background: var(--glass);
+  box-shadow: inset 0 0 0 1px var(--glass-line), 0 6px 18px -12px rgba(26, 26, 36, 0.3);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  transition: transform var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out);
 }
 
-.btnGhost:hover {
-  background: var(--ghost-hover);
+.btnOutline:hover {
+  transform: translateY(-2px);
+  box-shadow: inset 0 0 0 1px var(--glass-line), 0 12px 26px -12px rgba(26, 26, 36, 0.35);
 }
 
-/* ---------- Right: the demo ---------- */
-
-/* The demo's pieces sit straight in the panel's grid: orb in row 1, controls in row 2. */
-.right {
-  display: contents;
+.proof {
+  margin-top: 22px;
+  display: flex;
+  flex-wrap: wrap;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  color: var(--faint);
 }
 
-/* The orb's footprint: a 2 x --orb square the tap target fills, centred beside the pitch. */
+.proof li + li::before {
+  content: '·';
+  margin: 0 8px;
+}
+
+/* ---------- Centre: the orb and the capsule ---------- */
+
 .stage {
-  position: relative;
-  z-index: 1;
   grid-column: 2;
   grid-row: 1;
-  justify-self: center;
   align-self: center;
-  flex: none;
-  width: calc(var(--orb) * 2);
-  height: calc(var(--orb) * 2);
+  justify-self: center;
+  position: relative;
+  z-index: 1;
+  width: calc(var(--r) * 3.3);
+  height: calc(var(--r) * 2.5);
+  margin: 0 calc(var(--r) * 0.1) 0 calc(var(--r) * -0.22);   /* reaches into the pitch's gutter, like the mockup */
 }
 
-/* The canvas is 2.9x --orb; the ball's outline sits at about 0.78 x --orb, and
-   its glow and dust fade out just inside the canvas edge. */
+/* The canvas is 3.85 x the ball's radius (scale 0.52): the glow and dust fade before its edge. */
 .orb {
   position: absolute;
-  z-index: 0;
   left: 50%;
   top: 50%;
-  width: calc(var(--orb) * 2.9);
-  height: calc(var(--orb) * 2.9);
+  width: calc(var(--r) * 3.85);
+  height: calc(var(--r) * 3.85);
   transform: translate(-50%, -50%);
   pointer-events: none;
-  /* The glow and dust fade out before the canvas edge (the orb's biggest bumps reach
-     ~76% of it), so it never shows a line where something cuts it, such as the header. */
   -webkit-mask-image: radial-gradient(closest-side, #000 80%, transparent 100%);
   mask-image: radial-gradient(closest-side, #000 80%, transparent 100%);
+  animation: orbForm 1.7s cubic-bezier(0.16, 1, 0.3, 1) 0.15s both;
 }
 
-/* ---------- Live captions, inside the orb ----------
-   Above the centre: bottom 0.22 x --orb above it, at most 0.44 x --orb tall and
-   0.9 x --orb wide, which keeps them inside the ball's outline. They grow upward. */
-.inside {
-  --cap: clamp(14px, calc(var(--orb) * 0.078), 24px);
+@keyframes orbForm {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(0.7); filter: blur(18px); }
+  to { opacity: 1; transform: translate(-50%, -50%) scale(1); filter: blur(0); }
+}
+
+.capsule {
+  --h: max(42px, calc(var(--r) * 0.34));        /* a slim bar across the orb, not a full-width band */
+  --mic: calc(var(--h) * 0.86);
   position: absolute;
-  z-index: 1;
   left: 50%;
-  bottom: calc(50% + var(--orb) * 0.22);
-  transform: translateX(-50%);
-  width: calc(var(--orb) * 0.9);
-  max-height: calc(var(--orb) * 0.44);
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
+  top: 50%;
+  width: calc(var(--r) * 2.05);
+  max-width: 100%;
+  height: var(--h);
+  translate: -50% -50%;
+  border-radius: var(--r-full);
+  background: var(--capsule);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), inset 0 0 0 1px var(--capsule-line), var(--capsule-shadow);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  /* Opens from the mic outward, like a film's letterbox. */
+  animation: capsuleOpen 1.1s cubic-bezier(0.7, 0, 0.2, 1) 0.75s both;
+}
+
+@keyframes capsuleOpen {
+  from { clip-path: inset(0 calc(50% - var(--mic) / 2) round 999px); }
+  to { clip-path: inset(-80px -80px round 999px); }
+}
+
+.waves {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+}
+
+/* The mic: a dark disc in a blue -> violet -> pink ring. Plays and stops the sample greeting. */
+.mic {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--mic);
+  height: var(--mic);
+  translate: -50% -50%;
+  border: 0;
+  border-radius: 50%;
+  display: inline-flex;
   align-items: center;
-  text-align: center;
-  overflow: hidden;
+  justify-content: center;
+  color: var(--mic-ink);
+  cursor: pointer;
+  background:
+    var(--mic-face) padding-box,
+    conic-gradient(from 200deg, #2c66ff, #8b4bff, #ff4fbf, #6d6bff, #2c66ff) border-box;
+  border: 3px solid transparent;
+  box-shadow: 0 0 0 5px rgba(120, 100, 255, 0.16), 0 0 28px 2px rgba(120, 96, 255, 0.55);
+  animation: micPop 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) 0.45s both;
+  transition: transform var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out);
+}
+
+.mic:hover {
+  transform: scale(1.06);
+  box-shadow: 0 0 0 6px rgba(120, 100, 255, 0.22), 0 0 36px 4px rgba(120, 96, 255, 0.7);
+}
+
+.mic:focus-visible {
+  outline: 2px solid #8fb0ff;
+  outline-offset: 4px;
+}
+
+@keyframes micPop {
+  from { transform: scale(0); opacity: 0; }
+}
+
+/* While Saathi talks, rings breathe out of the mic. */
+.mic::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 2px solid rgba(160, 140, 255, 0.7);
+  opacity: 0;
   pointer-events: none;
-  /* A soft halo behind the words, so they stay crisp over the orb's inner light. */
-  background: radial-gradient(ellipse at 50% 55%, var(--cap-halo), transparent 70%);
 }
 
-.insideLabel,
-.insideTitle,
-.insideText,
-.insideEn,
-.who {
-  text-shadow: 0 0 14px var(--cap-halo), 0 0 3px var(--cap-halo);
+.capsule[data-live] .mic::after {
+  animation: micRing 1.4s ease-out infinite;
 }
 
-.insideIdle,
-.insideLine {
+@keyframes micRing {
+  from { opacity: 0.8; transform: scale(1); }
+  to { opacity: 0; transform: scale(1.55); }
+}
+
+/* ---------- Right: the call as it happens ---------- */
+
+.right {
+  grid-column: 3;
+  grid-row: 1;
+  align-self: stretch;                 /* runs from the left headline's top line to its last line */
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 6px;
+  align-items: flex-start;
+  min-width: 0;
+  position: relative;
+  z-index: 2;
 }
 
-.insideLine {
-  animation: lineIn 320ms var(--ease-out) both;
+/* The words: a fixed box so the column never jumps; one caption at a time cuts to the next. */
+.caption {
+  --qfs: clamp(26px, 12.6cqi, 52px);
+  position: relative;
+  width: 100%;
+  height: calc(var(--qfs) * 1.1 * 3);
+  display: flex;
+  align-items: flex-start;             /* the heading starts level with the left headline */
 }
 
-.insideLabel {
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--dim);
-}
-
-.insideTitle {
+.quote {
   font-family: var(--font-serif);
-  font-size: var(--cap);
-  font-weight: 600;
-  line-height: 1.2;
-  letter-spacing: -0.02em;
+  font-size: var(--qfs);
+  font-weight: 650;
+  line-height: 1.08;
+  letter-spacing: -0.03em;
   color: var(--ink);
   text-wrap: balance;
 }
 
-.insideText {
-  font-size: var(--cap);
-  font-weight: 600;
-  line-height: 1.28;
-  color: var(--faint);
-  text-wrap: balance;
+.quote em {
+  font-style: normal;
+  background: var(--grad);
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: gradSweep 2.2s cubic-bezier(0.16, 1, 0.3, 1) 0.2s both;
 }
 
-/* Words already spoken light up. */
-.insideText mark {
+@keyframes gradSweep {
+  from { background-position: 100% 0; }
+  to { background-position: 0 0; }
+}
+
+/* Words being said: smaller, the spoken part lit, the rest waiting. */
+.quoteLive {
+  font-size: clamp(20px, 8.4cqi, 34px);
+  line-height: 1.22;
+  letter-spacing: -0.02em;
+  color: var(--faint);
+}
+
+.quoteLive mark {
   background: none;
   color: var(--ink);
 }
 
-.insideEn {
-  font-size: clamp(12px, calc(var(--orb) * 0.052), 16px);
-  line-height: 1.35;
+.rsub {
+  margin-top: clamp(16px, 2.4vh, 24px);
+  min-height: 3.24em;
+  max-width: 28em;
+  font-size: clamp(15px, 1.05vw, 17px);
+  line-height: 1.62;
   color: var(--dim);
-  text-wrap: balance;
 }
 
-.who {
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--who-saathi);
-}
-
-.whoWarm {
-  color: var(--who-amma);
-}
-
-@keyframes lineIn {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: none; }
-}
-
-/* ---------- The tap target over the orb ---------- */
-
-.circle {
-  position: absolute;
-  z-index: 2;
-  inset: 0;
-  border: 0;
-  border-radius: 50%;
-  background: transparent;
-  color: var(--ink);
-  cursor: pointer;
+.rctas {
+  margin-top: auto;                    /* the buttons, language and note sit at the bottom, level with the left */
+  padding-top: clamp(20px, 3vh, 30px);
   display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  /* The pill's top sits 0.24 x --orb below centre, well inside the ball's outline. */
-  padding-top: calc(var(--orb) * 1.24);
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
-.circle:focus-visible {
-  outline: 2px solid #5b8cff;
-  outline-offset: 6px;
-  border-radius: 50%;
-}
-
-/* A light pill with a small red-to-blue play button, like the orb's colours. */
-.circleHint {
+.btnInk,
+.btnLight {
+  position: relative;
+  isolation: isolate;
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  padding: 6px 18px 6px 6px;
+  height: clamp(48px, 6vh, 56px);
+  padding: 0 clamp(16px, 1.3vw, 26px);
+  border: 0;
   border-radius: var(--r-full);
-  background: var(--pill-bg);
-  border: 1px solid var(--edge-line);
-  box-shadow: var(--pill-shadow);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
-  font-size: 0.92rem;
+  font: inherit;
+  font-size: clamp(14px, 0.98vw, 16px);
   font-weight: 600;
   white-space: nowrap;
+  cursor: pointer;
   transition: transform var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out);
-  animation: pillFloat 4.5s ease-in-out infinite;   /* `translate` composes with the hover `transform` */
 }
 
-@keyframes pillFloat {
-  0%, 100% { translate: 0 0; }
-  50% { translate: 0 -5px; }
+.btnInk {
+  background: var(--ink-btn);
+  color: var(--on-ink-btn);
+  box-shadow: 0 14px 28px -14px rgba(10, 10, 20, 0.6);
 }
 
-.circleIcon {
-  width: 30px;
-  height: 30px;
-  flex: none;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--play);
-  color: #ffffff;
+.btnLight {
+  background: transparent;
+  color: var(--ink);
 }
 
-.circle:hover .circleHint {
+/* The light button's face: a separate layer, so it can grow into the video player. */
+.btnLightBg {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--glass);
+  box-shadow: inset 0 0 0 1px var(--glass-line), 0 8px 20px -12px rgba(26, 26, 36, 0.3);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+
+.btnInk:hover,
+.btnLight:hover {
   transform: translateY(-2px);
-  box-shadow: 0 14px 32px -12px rgba(21, 20, 19, 0.4);
 }
 
-/* ---------- Under the ring: language switch + note ---------- */
-
-.controls {
-  position: relative;
-  z-index: 2;
-  grid-column: 2;
-  grid-row: 2;
-  justify-self: center;
-  margin-top: calc(var(--orb) - var(--hole));   /* up against the (smaller, centred) orb */
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  max-width: calc(var(--hole) * 2);
-  text-align: center;
+.btnInk:focus-visible,
+.btnLight:focus-visible,
+.btnOutline:focus-visible {
+  outline: 2px solid #5b8cff;
+  outline-offset: 3px;
 }
 
+/* The greeting's language: a small segmented switch under the buttons. */
 .langs {
-  display: flex;
-  gap: 4px;
+  margin-top: 16px;
+  display: inline-flex;
+  gap: 2px;
   padding: 3px;
   border-radius: var(--r-full);
-  background: var(--chips-bg);
+  background: var(--glass, rgba(255, 255, 255, 0.6));
+  box-shadow: inset 0 0 0 1px var(--soft-line, rgba(0, 0, 0, 0.08));
 }
 
 .langs button {
-  border: 0;
   padding: 6px 14px;
+  border: 0;
   border-radius: var(--r-full);
-  background: transparent;
+  background: none;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
   color: var(--dim);
-  font-size: 0.84rem;
-  font-weight: 600;
   cursor: pointer;
+  transition: background var(--dur-fast) ease, color var(--dur-fast) ease, box-shadow var(--dur-fast) ease;
+}
+
+.langs button:hover {
+  color: var(--ink);
 }
 
 .langs button[aria-pressed='true'] {
-  background: var(--chip-on-bg);
-  color: var(--chip-on-ink);
-  box-shadow: var(--chip-on-shadow);
+  background: var(--panel-elevated);
+  color: var(--ink);
+  box-shadow: 0 1px 3px rgba(20, 16, 40, 0.12);
+}
+
+.langs button:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
 }
 
 .note {
-  max-width: 440px;
-  font-size: 0.78rem;
+  margin-top: 10px;
+  max-width: 30em;
+  font-size: 12.5px;
   line-height: 1.45;
   color: var(--faint);
 }
 
-/* ---------- Pixel steps ---------- */
+/* ---------- The opening shot ---------- */
 
-@media (min-width: 1600px) {
+.rise {
+  animation: rise 0.95s cubic-bezier(0.16, 1, 0.3, 1) calc(0.45s + var(--d, 0) * 0.08s) both;
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(22px); filter: blur(8px); }
+}
+
+/* ---------- Wide screens: the two text columns share four rows ----------
+   Left: headline | subline | buttons | proof. Right: heading (+ its line) | language | buttons | note.
+   So the headings start on one line, the two button rows sit level and the small print lines up. */
+
+@media (min-width: 1100px) {
   .panel {
-    --btnh: 60px;
+    grid-template-rows: repeat(4, auto);
+  }
+
+  .stage {
+    grid-row: 1 / -1;
+  }
+
+  /* A size container can't share its parent's rows (subgrid is ignored under layout containment), so here the
+     columns aren't containers and their type is sized from the viewport (each column is ~28% of it). */
+  .left,
+  .right {
+    grid-row: 1 / -1;
+    align-self: start;
+    display: grid;
+    grid-template-rows: subgrid;
+    justify-items: start;
+    container-type: normal;
+  }
+
+  .h1 { font-size: clamp(34px, 3.9vw, 68px); }
+  .caption { --qfs: clamp(26px, 3vw, 52px); }
+  .quoteLive { font-size: clamp(20px, 2vw, 34px); }
+
+  .caption,
+  .h1 {
+    align-self: start;
+  }
+
+  .sub {
+    align-self: start;
+    margin-top: clamp(16px, 2.4vh, 24px);
+  }
+
+  /* The right heading and its line stay together at the top, across the left's headline + subline rows. */
+  .rtop {
+    grid-row: 1 / 3;
+    align-self: start;
+    width: 100%;
+  }
+
+  /* The idle heading is two lines; words being said may need more and push its line down a little. */
+  .caption {
+    height: auto;
+    min-height: calc(var(--qfs) * 1.1 * 2);
+  }
+
+  .ctas,
+  .rctas {
+    align-self: end;
+  }
+
+  .rctas {
+    margin-top: 14px;
+    padding-top: 0;
+  }
+
+  .proof,
+  .rfoot {
+    align-self: end;
+  }
+
+  .rfoot .langs {
+    margin-top: 0;
   }
 }
 
-@media (max-width: 1279px) {
-  .panel {
-    --edge: 32px;
-    --h1: clamp(40px, 5.6vw, 72px);
-    --ui: 15px;
-    --btnh: 50px;
-  }
-
-  .btnSolid, .btnGhost { padding: 0 22px; }
+/* What Saathi says, as a quote card under the right heading (it hides while the live captions play). */
+.greet {
+  position: relative;
+  text-align: left;                    /* stays a left-aligned card even where the column centres its text */
+  margin-top: clamp(18px, 2.8vh, 28px);
+  max-width: 30em;
+  padding: 16px 18px 14px 20px;
+  border-radius: 18px;
+  background: var(--glass);
+  box-shadow: inset 0 0 0 1px var(--glass-line), 0 18px 40px -28px rgba(76, 58, 170, 0.45);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
 }
 
-/* ---------- Stacked: tablets and phones ----------
-   The two columns dissolve (display: contents) so the pieces can be ordered:
-   the pitch and its buttons first, then the orb and its controls. */
+/* A thin bar down the left edge in the orb's colours. */
+.greet::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 14px;
+  bottom: 14px;
+  width: 3px;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #5b8cff, #9b4dff, #ff6ab4);
+}
 
-@media (max-width: 1023px) {
+.greet p {
+  margin: 0;
+  font-size: clamp(15px, 1.05vw, 17px);
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+.greet small {
+  display: block;
+  margin-top: 4px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--dim);
+}
+
+.greet footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--faint);
+}
+
+.greet footer i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #30d158;
+}
+
+/* The language switch with its one-line note beside it. */
+.rfoot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+
+.rfoot .note {
+  margin-top: 0;
+}
+
+/* ---------- Stacked: tablets and phones ---------- */
+
+@media (max-width: 1099px) {
   .hero {
-    padding: 6px 0 0;
+    --r: clamp(96px, 26vw, 170px);
   }
 
   .panel {
-    --edge: 34px;
-    --hole: min(190px, 50cqw);
-    --orb: var(--hole);                 /* phones keep the full size: the captions need the room */
-    --h1: 58px;
-    --ui: 16px;
-    --btnh: 52px;
-
     height: auto;
     min-height: 0;
     max-height: none;
     display: flex;
     flex-direction: column;
-    gap: 28px;
-    padding: 40px var(--edge) 64px;
+    align-items: stretch;
+    gap: 36px;
+    padding: 40px clamp(20px, 5vw, 48px) 8px;
   }
 
   .left,
   .right {
-    display: contents;
+    align-self: stretch;             /* full width (they size their text from it) */
+    align-items: center;
+    text-align: center;
   }
 
-  .copy { order: 1; gap: 16px; }
-  .actions { order: 2; }
-  .stage { order: 3; align-self: center; }
-  .controls { order: 4; align-self: center; max-width: none; margin-top: -8px; }
+  .h1 { font-size: clamp(38px, 11cqi, 64px); }
+  .ctas, .rctas, .proof, .rfoot { justify-content: center; }
+  .sub, .rsub, .note { margin-left: auto; margin-right: auto; }
 
-  .h1 { font-size: var(--h1); }
+  .stage {
+    align-self: center;
+    width: min(100%, calc(var(--r) * 3.3));
+    height: calc(var(--r) * 2.4);
+    margin: -6px 0;
+  }
+
+  .caption { justify-content: center; --qfs: clamp(28px, 7.6cqi, 46px); }
+  .caption { height: auto; min-height: calc(var(--qfs) * 1.1 * 2); align-items: flex-start; }
+  .rfoot { flex-direction: column; }
+  .quoteLive { font-size: clamp(20px, 5.4cqi, 30px); }
 }
 
-@media (max-width: 560px) {
-  .panel {
-    --edge: 28px;
-    --h1: 46px;
-    --ui: 15px;
-    --btnh: 50px;
-  }
-
-  .ctas a { flex: 1 1 0; padding: 0 12px; }
-  .proof { gap: 4px 16px; }
+@media (max-width: 480px) {
+  .ctas > *, .rctas > * { flex: 1 1 auto; }
+  .proof { gap: 4px 14px; }
   .proof li + li::before { content: none; }
-  .circleHint { font-size: 0.84rem; padding: 5px 14px 5px 5px; }
-  .circleIcon { width: 26px; height: 26px; }
-  .inside { max-height: calc(var(--orb) * 0.48); }
-  .insideEn { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .insideLine, .circleHint { animation: none; }
+  .aurora, .orb, .capsule, .mic, .rise, .quote em {
+    animation: none !important;
+  }
+  .capsule[data-live] .mic::after { animation: none; }
+}
+
+/* ==========================================================================
+   "Watch video": the call film in a player that grows out of the button
+   ========================================================================== */
+
+.filmBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(8, 8, 18, 0.55);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  backdrop-filter: blur(14px) saturate(1.2);
+}
+
+.filmCard {
+  position: relative;
+  width: min(1040px, 100%);
+  height: min(700px, calc(100svh - 32px));
+  overflow: hidden;
+  color: #f3eee6;
+  background:
+    radial-gradient(60% 70% at 78% 40%, rgba(110, 90, 255, 0.35), transparent 70%),
+    radial-gradient(50% 60% at 15% 90%, rgba(230, 70, 180, 0.22), transparent 70%),
+    linear-gradient(160deg, #141626, #07070d);
+  box-shadow: 0 40px 120px -30px rgba(0, 0, 0, 0.8), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.filmInner {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  padding: clamp(18px, 3vw, 32px);
+  gap: 16px;
+}
+
+.filmTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.filmTitle {
+  font-size: clamp(15px, 1.4vw, 18px);
+  font-weight: 600;
+  color: rgba(243, 238, 230, 0.75);
+}
+
+.filmIconBtn {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  cursor: pointer;
+  transition: background var(--dur-fast) ease;
+}
+
+.filmIconBtn:hover { background: rgba(255, 255, 255, 0.18); }
+.filmIconBtn:focus-visible { outline: 2px solid #8fb0ff; outline-offset: 2px; }
+
+.filmBody {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(16px, 4vw, 56px);
+}
+
+.filmText {
+  position: relative;
+  padding-left: clamp(0px, 2vw, 24px);
+}
+
+.filmKicker {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #9fb4ff;
+}
+
+.filmCaption {
+  margin-top: 12px;
+  font-family: var(--font-serif);
+  font-size: clamp(24px, 3.2vw, 42px);
+  font-weight: 650;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+}
+
+.filmSlot {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+}
+
+/* A light behind the phone: blue on the call, green on WhatsApp. */
+.filmSlot::before {
+  content: '';
+  position: absolute;
+  inset: 10% 5%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, var(--film-glow, rgba(80, 120, 255, 0.45)), transparent);
+  filter: blur(30px);
+  transition: background 800ms ease;
+}
+
+.filmSlot[data-chapter='2'],
+.filmSlot[data-chapter='3'] { --film-glow: rgba(37, 211, 102, 0.35); }
+
+.filmScreen {
+  position: relative;
+}
+
+.filmFrame {
+  --ios-green: #30d158;
+  --ios-red: #ff453a;
+  --ios-red-end: #ff3b30;
+  --ios-red-text: #ff7a70;
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  font-family: var(--font-sans);
+  color: var(--ink);
+}
+
+.filmControls {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.filmChapters {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Each chapter: a track with its played part filled. */
+.filmChapters button {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 20px;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.filmChapters button::before,
+.filmChapters i {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 8px;
+  height: 4px;
+  border-radius: 2px;
+}
+
+.filmChapters button::before {
+  content: '';
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.filmChapters i {
+  background: linear-gradient(90deg, #4f7bff, #b05cff);
+  transform-origin: 0 50%;
+}
+
+.filmChapters button:focus-visible { outline: 2px solid #8fb0ff; outline-offset: 2px; }
+
+@media (max-width: 760px) {
+  .filmBody {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+    text-align: center;
+  }
+
+  .filmText { padding-left: 0; }
+  .filmCaption { font-size: clamp(20px, 6vw, 28px); }
 }
