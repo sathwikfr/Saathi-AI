@@ -11,8 +11,9 @@ import x from './safety.module.css';
 /**
  * "A companion, not a doctor": the four safety promises as equal cards, each
  * showing a tiny example of the promise in action (like the phone demo above)
- * with a title and one line under it. The examples play once as the card
- * scrolls into view. Everything here is illustrative; nothing is fetched.
+ * with a title and one line under it. Once a card has scrolled into view its example plays as a
+ * short loop (each card a little out of step with the others, a soft tint of its own behind it).
+ * Everything here is illustrative; nothing is fetched.
  */
 
 function DoctorDemo() {
@@ -22,7 +23,9 @@ function DoctorDemo() {
         <small>Amma</small>Can I take two tablets for the pain?
       </span>
       <span className={`${x.bubble} ${x.fromSaathi}`}>
-        <small>Saathi</small>I can’t advise on medicines. Please ask your doctor, and I’ll tell your family.
+        <small>Saathi</small>
+        <span className={x.reply}>I can’t advise on medicines. Please ask your doctor, and I’ll tell your family.</span>
+        <span className={x.dots}><i /><i /><i /></span>
       </span>
     </div>
   );
@@ -101,10 +104,10 @@ function FilmSlot() {
 }
 
 const PROMISES = [
-  { title: 'Never plays doctor', body: 'Saathi doesn’t diagnose or give medical advice. Health questions go to their doctor, or to you.', Demo: DoctorDemo },
-  { title: 'Listens for warning signs', body: 'A fall, chest pain, feeling faint: Saathi stays calm, asks them to get help, and tells you straight away.', Demo: WarningDemo },
-  { title: 'Consent comes first', body: 'Calls only start once your parent has agreed. Pause or stop them at any time.', Demo: ConsentDemo },
-  { title: 'You confirm every medicine', body: 'We draft the list from a prescription photo. Nothing is saved until you have checked it.', Demo: MedsDemo },
+  { title: 'Never plays doctor', body: 'Saathi doesn’t diagnose or give medical advice. Health questions go to their doctor, or to you.', Demo: DoctorDemo, tint: 'var(--green-soft)' },
+  { title: 'Listens for warning signs', body: 'A fall, chest pain, feeling faint: Saathi stays calm, asks them to get help, and tells you straight away.', Demo: WarningDemo, tint: 'var(--red-soft)' },
+  { title: 'Consent comes first', body: 'Calls only start once your parent has agreed. Pause or stop them at any time.', Demo: ConsentDemo, tint: 'var(--teal-soft)' },
+  { title: 'You confirm every medicine', body: 'We draft the list from a prescription photo. Nothing is saved until you have checked it.', Demo: MedsDemo, tint: 'var(--blue-soft)' },
 ];
 
 export function SafetySection() {
@@ -124,8 +127,14 @@ export function SafetySection() {
           </Reveal>
 
           <div className={x.grid}>
-            {PROMISES.map(({ title, body, Demo }, i) => (
-              <Reveal key={title} delay={i * 90} className={x.card}>
+            {PROMISES.map(({ title, body, Demo, tint }, i) => (
+              <Reveal
+                key={title}
+                delay={i * 90}
+                className={x.card}
+                data-spot
+                style={{ ['--phase' as string]: `${i * -1.75}s`, ['--tint' as string]: tint }}
+              >
                 <div className={x.demo} aria-hidden="true"><Demo /></div>
                 <div className={x.text}>
                   <h3>{title}</h3>

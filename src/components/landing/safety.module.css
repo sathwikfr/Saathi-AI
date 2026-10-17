@@ -63,6 +63,18 @@
   background: var(--panel-elevated);
   border: 1px solid var(--line-subtle);
   box-shadow: var(--shadow-sm);
+  /* The lift uses translate so the scroll entrance keeps its own transform transition. */
+  transition: opacity 700ms var(--ease-out), transform 700ms var(--ease-out),
+    translate var(--dur-slow) var(--ease-out), box-shadow var(--dur-slow) var(--ease-out), border-color var(--dur) ease;
+  transition-delay: var(--reveal-delay, 0ms), var(--reveal-delay, 0ms), 0ms, 0ms, 0ms;
+}
+
+@media (hover: hover) {
+  .card:hover {
+    translate: 0 -5px;
+    box-shadow: var(--shadow-lg);
+    border-color: var(--line);
+  }
 }
 
 /* The example: a quiet inset stage of the same height on every card */
@@ -75,6 +87,7 @@
   border-radius: 18px;
   background:
     radial-gradient(circle at 1px 1px, var(--line-subtle) 1px, transparent 0) 0 0 / 16px 16px,
+    radial-gradient(120% 90% at 100% 0%, var(--tint, transparent), transparent 70%),
     var(--paper);
   border: 1px solid var(--line-subtle);
   overflow: hidden;
@@ -141,6 +154,36 @@
 }
 
 .fromSaathi small { color: var(--green); }
+
+/* Saathi is typing: three dots over the reply until the reply arrives. */
+.fromSaathi {
+  position: relative;
+}
+
+.dots {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+}
+
+.dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+  animation: dotBounce 900ms ease-in-out infinite;
+}
+
+.dots i:nth-child(2) { animation-delay: 150ms; }
+.dots i:nth-child(3) { animation-delay: 300ms; }
+
+@keyframes dotBounce {
+  0%, 60%, 100% { transform: none; opacity: 0.5; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}
 
 /* ---------- 2. Warning signs: an alert, sent to you ---------- */
 
@@ -266,6 +309,7 @@
 }
 
 .pauseBtn {
+  transition: color var(--dur) ease, border-color var(--dur) ease, background var(--dur) ease;
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -280,11 +324,27 @@
 /* ---------- 4. Medicines: a checked draft list ---------- */
 
 .meds {
+  position: relative;
   width: 100%;
   max-width: 340px;
   display: flex;
   flex-direction: column;
   gap: 7px;
+}
+
+/* The scan line that reads the prescription (animated in the loop below). */
+.meds::after {
+  content: '';
+  position: absolute;
+  left: -6px;
+  right: -6px;
+  top: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--teal), transparent);
+  box-shadow: 0 0 12px var(--teal-glow);
+  opacity: 0;
+  pointer-events: none;
 }
 
 .medsHead {
@@ -367,40 +427,136 @@
   color: var(--ink);
 }
 
-/* ---------- Play once on entry ---------- */
+/* ---------- The examples, looping ----------
+   Once a card is in view (.in from <Reveal>) its example plays a 7 s loop. --phase (a negative delay
+   set per card) puts the four cards out of step. Outside the loop windows each piece rests hidden. */
 
-.card:global(.in) .fromAmma { animation: popIn 420ms var(--ease-out) 350ms both; }
-.card:global(.in) .fromSaathi { animation: popIn 420ms var(--ease-out) 1100ms both; }
+.card:global(.in) .fromAmma { animation: docAmma 7s var(--ease-out) var(--phase, 0s) infinite both; }
+.card:global(.in) .fromSaathi { animation: docSaathi 7s var(--ease-out) var(--phase, 0s) infinite both; }
+.card:global(.in) .dots { animation: docDots 7s ease var(--phase, 0s) infinite both; }
+.card:global(.in) .reply { animation: docReply 7s ease var(--phase, 0s) infinite both; }
 
-.card:global(.in) .alert { animation: slideIn 520ms var(--ease-out) 350ms both; }
-.card:global(.in) .sent { animation: popIn 420ms var(--ease-out) 1050ms both; }
-
-.card:global(.in) .okDot { animation: popIn 380ms var(--ease-out) 350ms both; }
-.card:global(.in) .toggle { animation: toggleBg 420ms ease 800ms both; }
-.card:global(.in) .toggle::after { animation: toggleKnob 420ms var(--ease-out) 800ms both; }
-
-.card:global(.in) .med:nth-of-type(2) .box { animation: popIn 360ms var(--ease-out) 450ms both; }
-.card:global(.in) .med:nth-of-type(3) .box { animation: popIn 360ms var(--ease-out) 800ms both; }
-.card:global(.in) .confirm { animation: popIn 420ms var(--ease-out) 1200ms both; }
-
-@keyframes popIn {
-  from { opacity: 0; transform: translateY(6px) scale(0.94); }
-  to { opacity: 1; transform: none; }
+@keyframes docAmma {
+  0%, 4% { opacity: 0; transform: translateY(8px) scale(0.95); }
+  10%, 88% { opacity: 1; transform: none; }
+  94%, 100% { opacity: 0; transform: translateY(-4px); }
 }
 
-@keyframes slideIn {
-  from { opacity: 0; transform: translateY(-14px); }
-  to { opacity: 1; transform: none; }
+@keyframes docSaathi {
+  0%, 16% { opacity: 0; transform: translateY(8px) scale(0.95); }
+  22%, 88% { opacity: 1; transform: none; }
+  94%, 100% { opacity: 0; transform: translateY(-4px); }
 }
 
-@keyframes toggleBg {
-  from { background: var(--line); }
-  to { background: var(--teal-fill); }
+@keyframes docDots {
+  0%, 19% { opacity: 0; }
+  23%, 33% { opacity: 1; }
+  36%, 100% { opacity: 0; }
 }
 
-@keyframes toggleKnob {
-  from { left: 3px; }
-  to { left: 19px; }
+@keyframes docReply {
+  0%, 34% { opacity: 0; }
+  40%, 100% { opacity: 1; }
+}
+
+.card:global(.in) .alert { animation: warnAlert 7s var(--ease-out) var(--phase, 0s) infinite both; }
+.card:global(.in) .alertIcon { animation: warnPulse 7s ease-out var(--phase, 0s) infinite both; }
+.card:global(.in) .sent { animation: warnSent 7s var(--ease-out) var(--phase, 0s) infinite both; }
+
+@keyframes warnAlert {
+  0%, 6% { opacity: 0; transform: translateY(-14px); }
+  14%, 88% { opacity: 1; transform: none; }
+  94%, 100% { opacity: 0; transform: translateY(-6px); }
+}
+
+@keyframes warnPulse {
+  0%, 14% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--red) 45%, transparent); }
+  26% { box-shadow: 0 0 0 12px transparent; }
+  27%, 30% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--red) 45%, transparent); }
+  42%, 100% { box-shadow: 0 0 0 12px transparent; }
+}
+
+@keyframes warnSent {
+  0%, 40% { opacity: 0; transform: translateY(6px) scale(0.94); }
+  46%, 88% { opacity: 1; transform: none; }
+  94%, 100% { opacity: 0; }
+}
+
+.card:global(.in) .okDot { animation: conOk 7s var(--ease-out) var(--phase, 0s) infinite both; }
+.card:global(.in) .toggle { animation: conToggle 7s ease var(--phase, 0s) infinite both; }
+.card:global(.in) .toggle::after { animation: conKnob 7s var(--ease-out) var(--phase, 0s) infinite both; }
+.card:global(.in) .pauseBtn { animation: conPause 7s ease var(--phase, 0s) infinite both; }
+
+@keyframes conOk {
+  0%, 6% { opacity: 0; transform: scale(0.4); }
+  13%, 90% { opacity: 1; transform: none; }
+  96%, 100% { opacity: 0; transform: scale(0.4); }
+}
+
+@keyframes conToggle {
+  0%, 24% { background: var(--line); }
+  30%, 90% { background: var(--teal-fill); }
+  96%, 100% { background: var(--line); }
+}
+
+@keyframes conKnob {
+  0%, 24% { left: 3px; }
+  30%, 90% { left: 19px; }
+  96%, 100% { left: 3px; }
+}
+
+@keyframes conPause {
+  0%, 52% { transform: none; }
+  55% { transform: scale(0.9); }
+  58%, 76% { transform: none; color: var(--teal); border-color: var(--teal); background: var(--teal-soft); }
+  82%, 100% { transform: none; }
+}
+
+.card:global(.in) .meds::after { animation: medScan 7s ease-in-out var(--phase, 0s) infinite both; }
+.card:global(.in) .med:nth-of-type(2) { animation: medRow1 7s var(--ease-out) var(--phase, 0s) infinite both; }
+.card:global(.in) .med:nth-of-type(3) { animation: medRow2 7s var(--ease-out) var(--phase, 0s) infinite both; }
+.card:global(.in) .med:nth-of-type(2) .box { animation: medTick1 7s var(--ease-out) var(--phase, 0s) infinite both; }
+.card:global(.in) .med:nth-of-type(3) .box { animation: medTick2 7s var(--ease-out) var(--phase, 0s) infinite both; }
+.card:global(.in) .confirm { animation: medConfirm 7s var(--ease-out) var(--phase, 0s) infinite both; }
+
+/* A scan line reads down the prescription, then each medicine is ticked, then the list is confirmed. */
+@keyframes medScan {
+  0% { top: 0; opacity: 0; }
+  3% { opacity: 1; }
+  24% { top: 100%; opacity: 1; }
+  27%, 100% { top: 100%; opacity: 0; }
+}
+
+@keyframes medRow1 {
+  0%, 8% { opacity: 0; transform: translateY(6px); }
+  13%, 88% { opacity: 1; transform: none; }
+  94%, 100% { opacity: 0; }
+}
+
+@keyframes medRow2 {
+  0%, 15% { opacity: 0; transform: translateY(6px); }
+  20%, 88% { opacity: 1; transform: none; }
+  94%, 100% { opacity: 0; }
+}
+
+@keyframes medTick1 {
+  0%, 30% { opacity: 0; transform: scale(0.3); }
+  35%, 88% { opacity: 1; transform: none; }
+  94%, 100% { opacity: 0; }
+}
+
+@keyframes medTick2 {
+  0%, 39% { opacity: 0; transform: scale(0.3); }
+  44%, 88% { opacity: 1; transform: none; }
+  94%, 100% { opacity: 0; }
+}
+
+@keyframes medConfirm {
+  0%, 50% { opacity: 0; transform: translateY(6px); }
+  55% { opacity: 1; transform: none; }
+  64% { transform: scale(0.92); }
+  68%, 88% { opacity: 1; transform: none; box-shadow: 0 0 0 5px var(--teal-soft); }
+  94%, 100% { opacity: 0; }
 }
 
 @media (max-width: 820px) {
@@ -427,15 +583,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .card:global(.in) .fromAmma,
-  .card:global(.in) .fromSaathi,
-  .card:global(.in) .alert,
-  .card:global(.in) .sent,
-  .card:global(.in) .okDot,
-  .card:global(.in) .toggle,
-  .card:global(.in) .toggle::after,
-  .card:global(.in) .box,
-  .card:global(.in) .confirm {
-    animation: none;
+  .card:global(.in) *,
+  .card:global(.in) *::after {
+    animation: none !important;
   }
 }
