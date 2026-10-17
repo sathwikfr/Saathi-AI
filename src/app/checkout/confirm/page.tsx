@@ -50,7 +50,7 @@ function ConfirmContent() {
     }
 
     setLoading(true);
-    router.push(`/checkout/payment?plan=${plan.id}${add.healthMonitor ? '&monitor=1' : ''}`);
+    router.push(`/checkout/payment?plan=${plan.id}${add.healthMonitor ? '&monitor=1' : ''}`, { transitionTypes: ['nav-forward'] });
   };
 
   return (

@@ -127,7 +127,7 @@ function PaymentContent() {
     if (!res.ok) {
       throw new Error(verifyData.error || 'Payment verification failed. You have not been charged twice — please contact support if money was debited.');
     }
-    router.push(`/checkout/success?plan=${plan.id}&sub_id=${encodeURIComponent(resp.razorpay_subscription_id)}`);
+    router.push(`/checkout/success?plan=${plan.id}&sub_id=${encodeURIComponent(resp.razorpay_subscription_id)}`, { transitionTypes: ['nav-forward'] });
   };
 
   const handleRazorpayCheckout = async () => {

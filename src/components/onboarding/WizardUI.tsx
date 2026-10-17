@@ -1,6 +1,8 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
+import { PageTransition } from '@/components/motion/PageTransition';
 import Link from 'next/link';
 import { Check, X } from 'lucide-react';
 import { Brand } from '@/components/Navbar';
@@ -14,6 +16,13 @@ export const WHATSAPP_STEPS = ['Who', 'Medicines', 'Reminder times', 'Start'];
 /** Focused full-page frame for the onboarding wizard. */
 export function WizardShell({ step, steps = STEPS, children }: { step: number; steps?: string[]; children: React.ReactNode }) {
   const pct = Math.min(100, ((step - 1) / steps.length) * 100 + (step > steps.length ? 0 : 100 / steps.length / 2));
+  // Which way the last step change went: forward slides in from the right, back from the left.
+  const [last, setLast] = useState(step);
+  const [dir, setDir] = useState(1);
+  if (last !== step) {
+    setDir(step > last ? 1 : -1);
+    setLast(step);
+  }
   return (
     <>
       <header className="wizard-top">
@@ -30,6 +39,7 @@ export function WizardShell({ step, steps = STEPS, children }: { step: number; s
           <i style={{ width: `${step > steps.length ? 100 : pct}%` }} />
         </div>
       </header>
+      <PageTransition>
       <main id="main" className="wrap" style={{ paddingBottom: '80px', flex: 1 }}>
         {step <= steps.length && (
           <ol className="wizard-steps" aria-label="Setup progress" style={{ listStyle: 'none' }}>
@@ -45,8 +55,27 @@ export function WizardShell({ step, steps = STEPS, children }: { step: number; s
             })}
           </ol>
         )}
-        <div className="wizard-panel">{children}</div>
+        {/* Each step slides in from the side you are heading to (Motion: steps are state, not navigations). */}
+        <AnimatePresence mode="wait" initial={false} custom={dir}>
+          <motion.div
+            key={step}
+            className="wizard-panel"
+            custom={dir}
+            variants={{
+              in: (d: number) => ({ opacity: 0, x: 36 * d, filter: 'blur(3px)' }),
+              on: { opacity: 1, x: 0, filter: 'blur(0px)' },
+              out: (d: number) => ({ opacity: 0, x: -36 * d, filter: 'blur(3px)' }),
+            }}
+            initial="in"
+            animate="on"
+            exit="out"
+            transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+          >
+            {children}
+          </motion.div>
+        </AnimatePresence>
       </main>
+      </PageTransition>
     </>
   );
 }

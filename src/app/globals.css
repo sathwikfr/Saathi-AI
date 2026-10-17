@@ -1645,8 +1645,9 @@ header.app-header[data-stage='on'].scrolled {
   inset: -20% -30% auto auto;
   width: 640px;
   height: 640px;
-  background: radial-gradient(closest-side, rgba(242, 163, 58, 0.20), transparent 70%);
+  background: radial-gradient(closest-side, rgba(155, 77, 255, 0.24), transparent 70%);
   z-index: -1;
+  animation: auth-glow 14s ease-in-out infinite alternate;
 }
 
 .auth-aside::after {
@@ -1655,8 +1656,9 @@ header.app-header[data-stage='on'].scrolled {
   inset: auto auto -25% -20%;
   width: 520px;
   height: 520px;
-  background: radial-gradient(closest-side, rgba(71, 172, 229, 0.2), transparent 70%);
+  background: radial-gradient(closest-side, rgba(71, 172, 229, 0.24), transparent 70%);
   z-index: -1;
+  animation: auth-glow 17s ease-in-out -6s infinite alternate-reverse;
 }
 
 .auth-aside h2 {
@@ -1667,7 +1669,7 @@ header.app-header[data-stage='on'].scrolled {
 }
 
 .auth-aside h2 em {
-  color: var(--marigold);
+  color: #8ccdf7;
 }
 
 /* Example morning in the auth side panel: the call, then the WhatsApp update. */
@@ -1686,7 +1688,9 @@ header.app-header[data-stage='on'].scrolled {
   top: 10px;
   bottom: 10px;
   width: 1px;
-  background: linear-gradient(rgba(125, 211, 252, 0.5), rgba(242, 163, 58, 0.5));
+  background: linear-gradient(rgba(125, 211, 252, 0.6), rgba(199, 125, 255, 0.6));
+  transform-origin: 50% 0;
+  animation: auth-line 900ms var(--ease-out) 450ms both;
 }
 
 .auth-day > li {
@@ -1707,7 +1711,7 @@ header.app-header[data-stage='on'].scrolled {
 }
 
 .auth-day > li + li::before {
-  border-color: var(--marigold);
+  border-color: #c77dff;
 }
 
 .auth-day-time {
@@ -1812,6 +1816,27 @@ header.app-header[data-stage='on'].scrolled {
   color: #7dd3fc;
 }
 
+/* The panel tells its morning in order: title, the call, the line down, the WhatsApp update, the points. */
+.auth-aside h2 { animation: auth-in 700ms var(--ease-out) 100ms both; }
+.auth-day > li { animation: auth-in 700ms var(--ease-out) 350ms both; }
+.auth-day > li + li { animation-delay: 1050ms; }
+.auth-points li { animation: auth-in 600ms var(--ease-out) both; }
+.auth-points li:nth-child(1) { animation-delay: 1400ms; }
+.auth-points li:nth-child(2) { animation-delay: 1500ms; }
+.auth-points li:nth-child(3) { animation-delay: 1600ms; }
+
+@keyframes auth-in {
+  from { opacity: 0; translate: 0 16px; filter: blur(3px); }
+}
+
+@keyframes auth-line {
+  from { transform: scaleY(0); }
+}
+
+@keyframes auth-glow {
+  to { translate: -60px 40px; scale: 1.15; }
+}
+
 /* Short screens: the quote is the first thing to go so the panel never clips. */
 @media (max-height: 760px) {
   .auth-day-quote { display: none; }
@@ -1832,7 +1857,7 @@ header.app-header[data-stage='on'].scrolled {
 }
 
 .auth-points svg {
-  color: var(--marigold);
+  color: #8ccdf7;
   flex-shrink: 0;
   margin-top: 3px;
 }
@@ -4098,14 +4123,68 @@ table.data tr:hover td {
   }
 }
 
-/* Page content settles in on every route change */
-main {
-  animation: reveal-fade 400ms ease both;
+/* ==========================================================================
+   Page transitions (React <ViewTransition> via components/motion/PageTransition):
+   the old page leaves quickly, the new one settles in a little slower and rises a
+   few pixels; checkout steps tagged nav-forward / nav-back slide sideways instead.
+   ========================================================================== */
+
+::view-transition {
+  pointer-events: none;            /* clicks during a transition reach the live page */
 }
 
-/* ...except a page that opens on a dark scene: fading it in would flash the light page behind it. */
-main:has(> .stage-dark:first-child) {
-  animation: none;
+::view-transition-old(.page) {
+  animation: 160ms ease-in both vt-fade reverse;
+}
+
+::view-transition-new(.page) {
+  animation:
+    300ms var(--ease-out) 120ms both vt-fade,
+    520ms var(--ease-out) both vt-rise;
+}
+
+::view-transition-old(.nav-forward) {
+  --vt-slide: -60px;
+  animation: 160ms ease-in both vt-fade reverse, 420ms var(--ease-out) both vt-slide reverse;
+}
+
+::view-transition-new(.nav-forward) {
+  --vt-slide: 60px;
+  animation: 240ms ease-out 140ms both vt-fade, 420ms var(--ease-out) both vt-slide;
+}
+
+::view-transition-old(.nav-back) {
+  --vt-slide: 60px;
+  animation: 160ms ease-in both vt-fade reverse, 420ms var(--ease-out) both vt-slide reverse;
+}
+
+::view-transition-new(.nav-back) {
+  --vt-slide: -60px;
+  animation: 240ms ease-out 140ms both vt-fade, 420ms var(--ease-out) both vt-slide;
+}
+
+@keyframes vt-fade {
+  from { opacity: 0; filter: blur(4px); }
+  to { opacity: 1; filter: blur(0); }
+}
+
+@keyframes vt-rise {
+  from { translate: 0 14px; }
+  to { translate: 0 0; }
+}
+
+@keyframes vt-slide {
+  from { translate: var(--vt-slide) 0; }
+  to { translate: 0 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(*),
+  ::view-transition-new(*),
+  ::view-transition-group(*) {
+    animation-duration: 0s !important;
+    animation-delay: 0s !important;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

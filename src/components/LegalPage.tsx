@@ -1,4 +1,5 @@
 import React from 'react';
+import { PageTransition } from '@/components/motion/PageTransition';
 import Link from 'next/link';
 import { Navbar } from '@/components/Navbar';
 import { Footer } from '@/components/Footer';
@@ -22,6 +23,7 @@ export function LegalPage({ title, intro, children }: { title: string; intro: st
   return (
     <>
       <Navbar />
+      <PageTransition>
       <main>
         <div className="wrap-narrow" style={{ padding: '56px 20px 96px' }}>
           <article className="legal">
@@ -43,6 +45,7 @@ export function LegalPage({ title, intro, children }: { title: string; intro: st
           .legal .callout { border: 1px solid var(--line); background: var(--panel); border-radius: 12px; padding: 14px 16px; margin: 18px 0; }
         `}</style>
       </main>
+      </PageTransition>
       <Footer />
     </>
   );

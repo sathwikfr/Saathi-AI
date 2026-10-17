@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { PageTransition } from '@/components/motion/PageTransition';
 import Link from 'next/link';
 import { Navbar } from '@/components/Navbar';
 
@@ -16,6 +17,7 @@ export function AccountShell({
   return (
     <>
       <Navbar />
+      <PageTransition>
       <main id="main" className="wrap dash-page">
         <div className="dash-head" style={{ marginBottom: '20px' }}>
           <div>
@@ -33,6 +35,7 @@ export function AccountShell({
         </nav>
         <div className="animate-fade-in">{children}</div>
       </main>
+      </PageTransition>
     </>
   );
 }

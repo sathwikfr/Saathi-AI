@@ -22,6 +22,7 @@ import s from '@/components/landing/home.module.css';
 import { FREE_TRIAL_DAYS } from '@/lib/plans';
 import { PlanId } from '@/lib/types';
 import { useAuth } from '@/context/AuthContext';
+import { PageTransition } from '@/components/motion/PageTransition';
 
 export default function LandingPage() {
   const { user } = useAuth();
@@ -37,6 +38,7 @@ export default function LandingPage() {
       <GsapScroll />
       <Navbar />
 
+      <PageTransition>
       <main id="main">
         {/* HERO */}
         <VoiceHero primaryHref={primaryHref} primaryLabel={primaryLabel} trialDays={FREE_TRIAL_DAYS} />
@@ -79,6 +81,7 @@ export default function LandingPage() {
         <FinalCta primaryHref={primaryHref} primaryLabel={primaryLabel} trialDays={FREE_TRIAL_DAYS} />
 
       </main>
+      </PageTransition>
 
       <Footer />
     </>

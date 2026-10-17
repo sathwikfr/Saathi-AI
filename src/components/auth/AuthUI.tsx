@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { PageTransition } from '@/components/motion/PageTransition';
 import Link from 'next/link';
 import { ArrowLeft, Check, CheckCheck, Eye, EyeOff, MessageCircle } from 'lucide-react';
 import { Brand } from '@/components/Navbar';
@@ -27,6 +28,7 @@ const DEFAULT_POINTS = [
 export function AuthShell({ children, asideTitle, asidePoints = DEFAULT_POINTS }: AuthShellProps) {
   return (
     <div className="auth-shell">
+      <PageTransition>
       <main id="main" className="auth-main">
         <div className="auth-top">
           <Brand />
@@ -39,6 +41,7 @@ export function AuthShell({ children, asideTitle, asidePoints = DEFAULT_POINTS }
         </div>
         <div className="auth-body animate-fade-in">{children}</div>
       </main>
+      </PageTransition>
 
       <aside className="auth-aside" aria-hidden="true">
         <div>

@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { PageTransition } from '@/components/motion/PageTransition';
 import Link from 'next/link';
 import { Check, Lock } from 'lucide-react';
 import { Brand } from '@/components/Navbar';
@@ -26,6 +27,7 @@ export function CheckoutShell({ step, children, wide = true }: { step: 1 | 2 | 3
           <i style={{ width: `${(step / STEPS.length) * 100}%` }} />
         </div>
       </header>
+      <PageTransition>
       <main id="main" className="wrap" style={{ flex: 1, paddingBottom: '80px' }}>
         <ol className="wizard-steps" aria-label="Checkout progress" style={{ listStyle: 'none' }}>
           {STEPS.map((label, i) => {
@@ -43,6 +45,7 @@ export function CheckoutShell({ step, children, wide = true }: { step: 1 | 2 | 3
           {children}
         </div>
       </main>
+      </PageTransition>
     </>
   );
 }
@@ -93,7 +96,7 @@ export function SummaryRow({ label, value, strong, tone }: { label: React.ReactN
 
 export function BackLink({ href, children }: { href: string; children: React.ReactNode }) {
   return (
-    <Link href={href} className="btn btn-quiet btn-sm" style={{ marginBottom: '8px' }}>
+    <Link href={href} transitionTypes={['nav-back']} className="btn btn-quiet btn-sm" style={{ marginBottom: '8px' }}>
       {children}
     </Link>
   );

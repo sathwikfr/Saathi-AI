@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { PageTransition } from '@/components/motion/PageTransition';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { Users, AlertTriangle } from 'lucide-react';
@@ -47,6 +48,7 @@ export default function InvitePage() {
   return (
     <>
       <Navbar />
+      <PageTransition>
       <main id="main" className="wrap-narrow" style={{ padding: '56px 16px 96px' }}>
         <div className="panel" style={{ maxWidth: '520px', margin: '0 auto', padding: '36px 28px' }}>
           {error ? (
@@ -85,6 +87,7 @@ export default function InvitePage() {
           )}
         </div>
       </main>
+      </PageTransition>
     </>
   );
 }

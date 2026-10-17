@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, Suspense } from 'react';
+import { PageTransition } from '@/components/motion/PageTransition';
 import Link from 'next/link';
 import { AnimatePresence, motion } from 'motion/react';
 import { Navbar } from '@/components/Navbar';
@@ -1051,11 +1052,13 @@ export default function DashboardPage() {
   return (
     <>
       <Navbar />
+      <PageTransition>
       <main id="main" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
         <Suspense fallback={<div className="wrap dash-page"><div className="skeleton" style={{ height: '320px' }} /></div>}>
           <DashboardContent />
         </Suspense>
       </main>
+      </PageTransition>
     </>
   );
 }
