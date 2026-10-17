@@ -65,12 +65,12 @@ function inOut(t: number, a: number, b: number, dur = 500, rise = 14) {
 
 /* ---------- Phone geometry ---------- */
 
-const DW = 240;                          // device width, CSS px
-const DH = (DW * 147.6) / 71.6;          // device height
+export const DW = 240;                          // device width, CSS px
+export const DH = (DW * 147.6) / 71.6;          // device height
 const INSET = DW * 0.0454;               // screen inset
 const PT = DW * 0.0023135;               // one iOS point
 
-type Cam = { x: number; y: number; s: number };
+export type Cam = { x: number; y: number; s: number };
 const centred = (cx: number, cy: number, sc: number): Cam => ({ x: cx - (DW / 2) * sc, y: cy - (DH / 2) * sc, s: sc });
 const mixCam = (a: Cam, b: Cam, p: number): Cam => ({ x: lerp(a.x, b.x, p), y: lerp(a.y, b.y, p), s: lerp(a.s, b.s, p) });
 /** Put device point (dx, dy) at film point (fx, fy) at scale sc. */
@@ -242,7 +242,7 @@ const CONTROLS = [
  * Amma's phone: the landing page's "How it works" call, driven by film time. Also used by the landing's
  * scroll film (components/landing/HowFilm.tsx), which passes the call language.
  */
-export function CallPhone({ t, lang = 'en' }: { t: number; lang?: CallLang }) {
+export function CallPhone({ t, lang = 'en', still }: { t: number; lang?: CallLang; still?: Cam }) {
   const onCall = t >= ANSWER_AT;
   const callMs = Math.max(0, t - CALL_AT);
   const talking = speakerAt(t) !== null;
@@ -251,7 +251,7 @@ export function CallPhone({ t, lang = 'en' }: { t: number; lang?: CallLang }) {
   const out = easeIn(prog(t, CUT_WA - 350, CUT_WA + 50));
 
   return (
-    <Shell cam={camCall(t)} ringing={!onCall} style={{ opacity: 1 - out, translate: `0 ${-out * 60}px` }}>
+    <Shell cam={still ?? camCall(t)} ringing={!onCall} style={{ opacity: 1 - out, translate: `0 ${-out * 60}px` }}>
       <div className={c.screen} data-screen={onCall ? 'call' : 'incoming'}>
         <div className={c.wallpaper} />
         <StatusBar />
@@ -341,7 +341,7 @@ function Highlight({ p, children }: { p: number; children: React.ReactNode }) {
   return <mark className={s.hl} style={{ backgroundSize: `${p * 100}% 100%` }}>{children}</mark>;
 }
 
-export function WaPhone({ t }: { t: number }) {
+export function WaPhone({ t, still }: { t: number; still?: Cam }) {
   const msgIn = expoOut(prog(t, MSG_AT, MSG_AT + 450));
   const tap = prog(t, TAP_AT, TAP_AT + 600);
   const pressed = t >= TAP_AT && t < TAP_AT + 320;
@@ -349,7 +349,12 @@ export function WaPhone({ t }: { t: number }) {
   if (t < CUT_WA) return null;
 
   return (
-    <Shell cam={camWa(t)} style={{ opacity: 1 - out, translate: `0 ${out * 90}px` }}>
+    <Shell
+      cam={still ?? camWa(t)}
+      style={still
+        ? { opacity: expoOut(prog(t, CUT_WA + 100, CUT_WA + 850)) * (1 - out), translate: `0 ${(1 - expoOut(prog(t, CUT_WA + 100, CUT_WA + 850))) * 40 + out * 90}px` }
+        : { opacity: 1 - out, translate: `0 ${out * 90}px` }}
+    >
       <div className={c.screen} style={{ background: '#efe7dd', color: '#111b21' }}>
         <StatusBar time="8:31" color="#111b21" />
         <div className={c.island} data-mode="idle"><span className={c.lens} /></div>

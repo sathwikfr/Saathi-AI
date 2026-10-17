@@ -1,7 +1,6 @@
 /* ==========================================================================
-   "How it works" as a scroll film (HowFilm.tsx). The section is tall; inside it a
-   sticky frame holds the film while the scroll plays it: big captions on the
-   left (above on phones), the 360x640 film screen on the right.
+   "How it works" as a short self-playing film (HowFilm.tsx): big captions on the
+   left (above on phones), the whole phone on the right, scaled to fit.
    ========================================================================== */
 
 @property --glow {
@@ -10,25 +9,28 @@
   initial-value: rgba(56, 122, 255, 0.55);
 }
 
+/* The section is one screen under the navbar (88px: where "#how" links stop), so the captions and the
+   whole phone are in view together. */
 .film {
-  --len: 520svh;                 /* how much scrolling the film takes: the one knob for its pace */
+  --pad: clamp(20px, 3svh, 36px);
+  padding: var(--pad) 0;
   position: relative;
-  height: var(--len);
+  overflow-x: clip;
+  min-height: calc(100svh - 88px);
+  display: flex;
+  align-items: center;
   background: var(--paper);
 }
 
-.sticky {
-  position: sticky;
-  top: 68px;                     /* under the navbar */
-  height: calc(100svh - 68px);
-  overflow: clip;
+.film > :global(.wrap) {
+  width: 100%;
+}
+
+.grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: clamp(32px, 6vw, 96px);
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 24px 24px 32px;
 }
 
 /* ---------- Left: the captions ---------- */
@@ -98,6 +100,11 @@
   color: var(--teal);
 }
 
+.kickers,
+.bodies {
+  display: grid;
+}
+
 .kicker,
 .body {
   grid-area: 1 / 1;
@@ -114,11 +121,6 @@
   transition-delay: 220ms;
 }
 
-.kickers,
-.bodies {
-  display: grid;
-}
-
 .kicker {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
@@ -132,7 +134,7 @@
   color: var(--ink-muted);
 }
 
-/* The five steps as a row of bars, each filling as its part of the film plays. */
+/* The five parts as bars that fill as the film plays; tap one to jump there. */
 .steps {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
@@ -141,18 +143,36 @@
   list-style: none;
 }
 
-.steps li {
+.steps button {
+  display: block;
+  width: 100%;
+  padding: 8px 0;                /* a comfortable target around the 3px bar */
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.steps button::before {
+  content: '';
+  display: block;
   height: 3px;
   border-radius: 3px;
   background: var(--line);
-  overflow: hidden;
 }
 
 .steps i {
   display: block;
-  height: 100%;
+  height: 3px;
+  margin-top: -3px;
+  border-radius: 3px;
   background: var(--teal);
   transform-origin: 0 50%;
+}
+
+.steps button:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 .langs {
@@ -183,51 +203,38 @@
   box-shadow: var(--shadow-xs);
 }
 
-/* ---------- Right: the film screen ---------- */
+/* ---------- Right: the phone ---------- */
 
+/* The space the phone fits into (HowFilm scales the phone to it). */
 .slot {
   position: relative;
-  align-self: stretch;
-  height: 100%;
-  min-height: 0;
   display: grid;
   place-items: center;
-  width: min(46vw, 520px);
+  width: min(40vw, 460px);
+  height: clamp(420px, calc(100svh - 88px - var(--pad) * 2), 780px);
 }
 
-/* A soft light behind the screen, blue while Amma is on the call, WhatsApp green after. */
+/* A soft light behind the phone, blue on the call, violet while she talks, WhatsApp green after. */
 .glow {
   position: absolute;
-  inset: 4% -6%;
+  inset: 6% -10%;
   border-radius: 50%;
   background: radial-gradient(closest-side, var(--glow), transparent);
   filter: blur(40px);
-  opacity: 0.55;
+  opacity: 0.5;
   transition: --glow 900ms ease;
   pointer-events: none;
 }
 
+.slot[data-beat='2'] .glow { --glow: rgba(199, 125, 255, 0.5); }
 .slot[data-beat='3'] .glow,
-.slot[data-beat='4'] .glow {
-  --glow: rgba(37, 211, 102, 0.42);
-}
-
-.slot[data-beat='2'] .glow {
-  --glow: rgba(199, 125, 255, 0.5);
-}
+.slot[data-beat='4'] .glow { --glow: rgba(37, 211, 102, 0.42); }
 
 .screen {
   position: relative;
-  border-radius: 30px;
-  overflow: clip;
-  background:
-    radial-gradient(70% 45% at 20% 0%, rgba(56, 122, 255, 0.28), transparent 70%),
-    radial-gradient(60% 40% at 100% 100%, rgba(255, 106, 180, 0.18), transparent 70%),
-    var(--band-2);
-  box-shadow: 0 40px 90px -40px rgba(1, 13, 22, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.06) inset;
 }
 
-/* The film is laid out at 360x640 and scaled to fit (--k from HowFilm). */
+/* The film is laid out at its own size and scaled to fit. */
 .frame {
   --ios-green: #30d158;
   --ios-red: #ff453a;
@@ -236,77 +243,56 @@
   position: absolute;
   left: 0;
   top: 0;
-  width: 360px;
-  height: 640px;
   transform-origin: 0 0;
   font-family: var(--font-sans);
   color: var(--ink);
 }
 
-/* The camera zooms the phone up to 1.7x: keep its text sharp. */
+/* Keep the phone's text sharp at the scaled size. */
 .frame > div {
   will-change: auto !important;
 }
 
-.bar {
-  position: absolute;
-  left: 18px;
-  right: 18px;
-  bottom: 8px;
-  z-index: 2;
-  height: 2px;
-  border-radius: 2px;
-  background: rgba(244, 239, 230, 0.14);
-}
-
-.bar i {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: rgba(244, 239, 230, 0.75);
-  transform-origin: 0 50%;
-}
-
-/* ---------- Tablets and phones: captions above, film below ---------- */
+/* ---------- Tablets and phones: captions above, phone below ---------- */
 
 @media (max-width: 899px) {
-  .film {
-    --len: 440svh;
-  }
-
-  .sticky {
+  .grid {
     grid-template-columns: 1fr;
-    grid-template-rows: auto minmax(0, 1fr);
-    gap: 18px;
-    padding: 18px 20px 20px;
-    align-items: stretch;
+    gap: 14px;
   }
 
   .copy {
-    gap: 12px;
+    gap: 10px;
     text-align: center;
     align-items: center;
   }
 
   .titles {
-    font-size: clamp(1.7rem, 7.4vw, 2.6rem);
-    min-height: 2.1em;
+    font-size: clamp(1.6rem, 7vw, 2.4rem);
   }
 
   .body {
-    font-size: 0.98rem;
+    font-size: 0.95rem;
+    line-height: 1.45;
   }
 
-  .steps,
-  .eyebrow {
+  .eyebrow,
+  .kickers {
     display: none;
+  }
+
+  .steps {
+    width: 100%;
+    max-width: 320px;
   }
 
   .langs {
     align-self: center;
   }
 
+  /* What's left of the screen under the captions (about 290px of them). */
   .slot {
     width: 100%;
+    height: clamp(340px, calc(100svh - 88px - var(--pad) * 2 - 304px), 620px);
   }
 }
