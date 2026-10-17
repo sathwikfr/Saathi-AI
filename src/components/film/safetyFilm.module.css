@@ -1,20 +1,57 @@
-/* "If something is wrong" (SafetyFilm.tsx): a 360x640 film on the dark navy film screen,
-   Saathi green / Amma red like the phone demo. */
+/* "If something is wrong" (SafetyFilm.tsx): a 360x640 film, Saathi green / Amma red like the phone demo.
+   It follows the site theme: a light card in the light theme, the film navy in the dark one. */
 
 .film {
+  --f-bg: var(--panel-elevated);
+  --f-ink: var(--ink);
+  --f-muted: var(--ink-muted);
+  --f-faint: var(--ink-subtle);
+  --f-line: var(--line);
+  --f-surface: var(--panel);
+  --f-glow: 0.16;
+  --f-saathi: #1d8a42;
+  --f-saathi-bg: rgba(48, 209, 88, 0.1);
+  --f-saathi-edge: rgba(29, 138, 66, 0.4);
+  --f-amma: #c62f35;
+  --f-amma-bg: rgba(255, 69, 58, 0.08);
+  --f-amma-edge: rgba(198, 47, 53, 0.38);
+  --f-flag: #b42318;
+  --f-flag-bg: rgba(255, 69, 58, 0.1);
+  --f-card-edge: var(--line);
+  --f-card-shadow: 0 18px 40px -24px rgba(41, 30, 15, 0.35);
   overflow: hidden;
-  background: #010d16;
-  color: #f3eee6;
+  background: var(--f-bg);
+  color: var(--f-ink);
   font-family: var(--font-sans);
+}
+
+:global(:root[data-theme='dark']) .film {
+  --f-bg: #010d16;
+  --f-ink: #f3eee6;
+  --f-muted: rgba(243, 238, 230, 0.62);
+  --f-faint: rgba(243, 238, 230, 0.5);
+  --f-line: rgba(243, 238, 230, 0.14);
+  --f-surface: rgba(243, 238, 230, 0.07);
+  --f-glow: 0.3;
+  --f-saathi: #30d158;
+  --f-saathi-bg: rgba(48, 209, 88, 0.12);
+  --f-saathi-edge: rgba(48, 209, 88, 0.45);
+  --f-amma: #ff7a70;
+  --f-amma-bg: rgba(255, 69, 58, 0.14);
+  --f-amma-edge: rgba(255, 69, 58, 0.5);
+  --f-flag: #ffb3ad;
+  --f-flag-bg: rgba(255, 69, 58, 0.16);
+  --f-card-edge: transparent;
+  --f-card-shadow: 0 24px 50px -24px rgba(0, 0, 0, 0.8);
 }
 
 .bg {
   position: absolute;
   inset: -40px -40px -80px;
   background:
-    radial-gradient(70% 40% at 15% 5%, rgba(56, 122, 255, 0.3), transparent 70%),
-    radial-gradient(60% 35% at 100% 70%, rgba(255, 90, 120, 0.16), transparent 70%),
-    radial-gradient(50% 30% at 0% 100%, rgba(199, 125, 255, 0.14), transparent 70%);
+    radial-gradient(70% 40% at 15% 5%, rgb(56 122 255 / var(--f-glow)), transparent 70%),
+    radial-gradient(60% 35% at 100% 70%, rgb(255 90 120 / calc(var(--f-glow) * 0.55)), transparent 70%),
+    radial-gradient(50% 30% at 0% 100%, rgb(199 125 255 / calc(var(--f-glow) * 0.5)), transparent 70%);
 }
 
 .inner {
@@ -33,8 +70,8 @@
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: rgba(243, 238, 230, 0.62);
-  border: 1px solid rgba(243, 238, 230, 0.18);
+  color: var(--f-muted);
+  border: 1px solid var(--f-line);
 }
 
 .captions {
@@ -79,7 +116,7 @@
 }
 
 .callHead small {
-  color: rgba(243, 238, 230, 0.55);
+  color: var(--f-muted);
   font-variant-numeric: tabular-nums;
 }
 
@@ -110,19 +147,19 @@
 
 .saathi {
   align-self: flex-start;
-  background: rgba(48, 209, 88, 0.12);
-  border: 1px solid rgba(48, 209, 88, 0.45);
+  background: var(--f-saathi-bg);
+  border: 1px solid var(--f-saathi-edge);
 }
 
-.saathi small { color: #30d158; }
+.saathi small { color: var(--f-saathi); }
 
 .amma {
   align-self: flex-end;
-  background: rgba(255, 69, 58, 0.14);
-  border: 1px solid rgba(255, 69, 58, 0.5);
+  background: var(--f-amma-bg);
+  border: 1px solid var(--f-amma-edge);
 }
 
-.amma small { color: #ff7a70; }
+.amma small { color: var(--f-amma); }
 
 .flag {
   align-self: flex-end;
@@ -133,8 +170,8 @@
   border-radius: 999px;
   font-size: 12px;
   font-weight: 600;
-  color: #ffb3ad;
-  background: rgba(255, 69, 58, 0.16);
+  color: var(--f-flag);
+  background: var(--f-flag-bg);
 }
 
 /* ---------- Act 2: the alert ---------- */
@@ -146,7 +183,8 @@
   border-radius: 20px;
   background: #fff;
   color: #1f1c18;
-  box-shadow: 0 24px 50px -24px rgba(0, 0, 0, 0.8);
+  border: 1px solid var(--f-card-edge);
+  box-shadow: var(--f-card-shadow);
 }
 
 .alertBadge {
@@ -193,8 +231,8 @@
   padding: 11px 14px;
   border-radius: 14px;
   font-size: 14px;
-  background: rgba(243, 238, 230, 0.07);
-  border: 1px solid rgba(243, 238, 230, 0.12);
+  background: var(--f-surface);
+  border: 1px solid var(--f-line);
 }
 
 .wa svg { color: #25d366; }
@@ -207,8 +245,8 @@
   gap: 12px;
   padding: 13px 14px;
   border-radius: 18px;
-  background: rgba(243, 238, 230, 0.07);
-  border: 1px solid rgba(243, 238, 230, 0.12);
+  background: var(--f-surface);
+  border: 1px solid var(--f-line);
   transition: border-color 200ms;
 }
 
@@ -228,7 +266,7 @@
 }
 
 .ring[data-ok] { background: #30d158; box-shadow: 0 0 0 5px rgba(48, 209, 88, 0.22); }
-.ring[data-wait] { background: rgba(243, 238, 230, 0.1); color: rgba(243, 238, 230, 0.6); }
+.ring[data-wait] { background: var(--f-surface); color: var(--f-muted); box-shadow: inset 0 0 0 1px var(--f-line); }
 
 .rowText {
   display: flex;
@@ -239,7 +277,7 @@
 
 .rowText small {
   font-size: 13px;
-  color: rgba(243, 238, 230, 0.62);
+  color: var(--f-muted);
 }
 
 .stamp {
@@ -286,7 +324,7 @@
 
 .doneSub {
   font-size: 14.5px;
-  color: rgba(243, 238, 230, 0.7);
+  color: var(--f-muted);
   max-width: 26ch;
 }
 
@@ -294,5 +332,5 @@
   font-size: 11.5px;
   line-height: 1.45;
   text-align: center;
-  color: rgba(243, 238, 230, 0.5);
+  color: var(--f-faint);
 }

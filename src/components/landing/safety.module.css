@@ -25,8 +25,15 @@
   aspect-ratio: 9 / 16;
   border-radius: 30px;
   overflow: clip;
+  background: var(--panel-elevated);
+  border: 1px solid var(--line-subtle);
+  box-shadow: var(--shadow-lg);
+}
+
+/* Dark theme: the film's own navy, edge to edge. */
+:global(:root[data-theme='dark']) .film {
   background: #010d16;
-  box-shadow: 0 40px 90px -40px rgba(1, 13, 22, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.06) inset;
+  border-color: rgba(255, 255, 255, 0.06);
 }
 
 @media (max-width: 1023px) {
