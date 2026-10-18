@@ -3,6 +3,7 @@ import { PageTransition } from '@/components/motion/PageTransition';
 import Link from 'next/link';
 import { Navbar } from '@/components/Navbar';
 import { Footer } from '@/components/Footer';
+import { BusinessDetails } from '@/components/BusinessDetails';
 
 /**
  * Contact address for legal requests. Set NEXT_PUBLIC_SUPPORT_EMAIL; without it the pages tell people to
@@ -33,6 +34,7 @@ export function LegalPage({ title, intro, children }: { title: string; intro: st
             <h1 style={{ fontSize: 'clamp(2rem, 4vw, 2.6rem)', marginBottom: '14px' }}>{title}</h1>
             <p className="legal-intro">{intro}</p>
             {children}
+            <BusinessDetails style={{ marginTop: '28px', fontSize: '0.88rem', color: 'var(--ink-muted)' }} />
           </article>
         </div>
         <style>{`

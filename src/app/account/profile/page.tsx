@@ -5,7 +5,7 @@ import { AccountShell } from '@/components/account/AccountUI';
 import { PasswordField, StrengthMeter } from '@/components/auth/AuthUI';
 import { useAuth } from '@/context/AuthContext';
 import { NotificationPreferences } from '@/lib/types';
-import { User as UserIcon, Mail, Lock, Bell, CheckCircle2, AlertCircle, ShieldCheck, KeyRound, Save, Smartphone, X } from 'lucide-react';
+import { User as UserIcon, Mail, Lock, Bell, CheckCircle2, AlertCircle, ShieldCheck, KeyRound, Save, Smartphone, Trash2, X } from 'lucide-react';
 import { WhatsAppSettings } from '@/components/account/WhatsAppSettings';
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -31,7 +31,7 @@ export default function EditProfilePage() {
   const { user, refreshUser, setUserDirectly } = useAuth();
 
   // Active sub-tab: 'profile' | 'security' | 'notifications'
-  const [activeTab, setActiveTab] = useState<'profile' | 'security' | 'notifications'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'security' | 'notifications' | 'delete'>('profile');
 
   // Profile Form state
   const [name, setName] = useState('');
@@ -40,6 +40,12 @@ export default function EditProfilePage() {
   const [profilePassword, setProfilePassword] = useState('');
   const [avatar, setAvatar] = useState('');
   const [profileSaving, setProfileSaving] = useState(false);
+
+  // Delete-account state
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleteConfirm, setDeleteConfirm] = useState('');
+  const [showDeletePassword, setShowDeletePassword] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   // Password Form state
   const [currentPassword, setCurrentPassword] = useState('');
@@ -146,6 +152,27 @@ export default function EditProfilePage() {
     } finally {
       setProfileSaving(false);
     }
+  };
+
+  const handleDeleteAccount = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setDeleting(true);
+    try {
+      const res = await fetch('/api/account/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: deletePassword || undefined, confirm: deleteConfirm })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        window.location.href = '/';
+        return;
+      }
+      setNotification({ type: 'error', message: data.error || 'Could not delete your account.' });
+    } catch {
+      setNotification({ type: 'error', message: 'Network error. Nothing was deleted.' });
+    }
+    setDeleting(false);
   };
 
   // Handle Update Password
@@ -258,7 +285,8 @@ export default function EditProfilePage() {
   const SECTIONS = [
     { id: 'profile' as const, label: 'Personal details', icon: UserIcon },
     { id: 'security' as const, label: 'Password', icon: KeyRound },
-    { id: 'notifications' as const, label: 'Alerts', icon: Bell }
+    { id: 'notifications' as const, label: 'Alerts', icon: Bell },
+    { id: 'delete' as const, label: 'Delete account', icon: Trash2 }
   ];
 
   return (
@@ -550,6 +578,36 @@ export default function EditProfilePage() {
               <div className="wizard-nav" style={{ justifyContent: 'flex-end' }}>
                 <button type="submit" disabled={notifSaving} className="btn btn-primary" style={{ flex: 'none' }}>
                   {notifSaving ? <><span className="spinner" /> Saving…</> : <><Save size={16} /> Save preferences</>}
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* DELETE ACCOUNT */}
+          {activeTab === 'delete' && (
+            <form onSubmit={handleDeleteAccount} className="panel animate-fade-in" noValidate>
+              <div className="panel-head">
+                <div>
+                  <h2 style={{ fontSize: '1.3rem' }}>Delete your account</h2>
+                  <p>
+                    This cancels your plan now and stops every call and WhatsApp message. Your parents&apos; profiles are archived
+                    (family members you invited lose access), your contact details are removed and you are signed out everywhere.
+                    Invoices are kept because tax law requires it. To have archived records about your parent erased for good, write to us after deleting.
+                    This cannot be undone.
+                  </p>
+                </div>
+              </div>
+              <div className="form-group">
+                <label className="form-label" htmlFor="del-password">Your password</label>
+                <PasswordField id="del-password" value={deletePassword} onChange={setDeletePassword} show={showDeletePassword} onToggle={() => setShowDeletePassword(v => !v)} placeholder="Leave empty if you signed in with Google or a code" />
+              </div>
+              <div className="form-group">
+                <label className="form-label" htmlFor="del-confirm">Type DELETE to confirm</label>
+                <input id="del-confirm" className="form-input" value={deleteConfirm} onChange={(e) => setDeleteConfirm(e.target.value)} autoComplete="off" />
+              </div>
+              <div className="wizard-nav" style={{ justifyContent: 'flex-end' }}>
+                <button type="submit" disabled={deleting || deleteConfirm !== 'DELETE'} className="btn btn-danger" style={{ flex: 'none' }}>
+                  {deleting ? <><span className="spinner" /> Deleting…</> : <><Trash2 size={16} /> Delete my account</>}
                 </button>
               </div>
             </form>

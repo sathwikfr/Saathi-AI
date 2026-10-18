@@ -1,6 +1,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { Brand } from '@/components/Navbar';
+import { BusinessDetails } from '@/components/BusinessDetails';
 
 export function Footer() {
   return (
@@ -57,11 +58,12 @@ export function Footer() {
             color: 'rgba(255,255,255,0.5)'
           }}
         >
-          <span>© {new Date().getFullYear()} Aaptha</span>
+          <span>© {new Date().getFullYear()} Aaptha<BusinessDetails style={{ margin: '6px 0 0', maxWidth: '520px' }} /></span>
           <span style={{ display: 'inline-flex', gap: '18px', flexWrap: 'wrap' }}>
             <Link href="/terms">Terms</Link>
             <Link href="/privacy">Privacy</Link>
             <span>Made in India, for families who live apart.</span>
+            <Link href="/refunds">Refunds</Link>
           </span>
         </div>
       </div>

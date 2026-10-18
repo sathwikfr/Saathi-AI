@@ -86,9 +86,9 @@ export default function TermsPage() {
           &quot;Ask about your parent&quot; is limited each month by plan ({PLANS.solo.askPerMonth} questions on {PLANS.solo.name},
           {' '}{PLANS.family.askPerMonth} on {PLANS.family.name}, {PLANS.extended.askPerMonth} on {PLANS.extended.name}; not part of {PLANS.essential.name}).
         </li>
-        <li>Prices are in Indian rupees per month. Taxes such as GST are charged where they apply and shown at checkout.</li>
+        <li>Prices are in Indian rupees per month and include all taxes. The amount shown at checkout is the amount charged, with no extra fees.</li>
         <li>Paid plans renew monthly through Razorpay AutoPay. You will not be charged during a free trial if you cancel before it ends.</li>
-        <li>You can cancel any time from the billing page. You keep access until the end of the period you have paid for, and we do not refund part-months unless the law requires it.</li>
+        <li>You can cancel any time from the billing page. You keep access until the end of the period you have paid for, and we do not refund part-months unless the law requires it. See the <Link href="/refunds">Refund &amp; Cancellation Policy</Link> for the full rules.</li>
         <li>We may change prices with at least 30 days&apos; notice. The change applies from your next renewal.</li>
       </ul>
 

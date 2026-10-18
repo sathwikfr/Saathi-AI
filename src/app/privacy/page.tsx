@@ -80,8 +80,10 @@ export default function PrivacyPage() {
         We keep your information while your account is open. The full word-by-word transcript of each call is deleted after
         90 days; the short summary, the medicine answers, the mood and any alerts stay so you can see how your parent has
         been over time. When you delete a parent profile, their calls stop and the profile is archived; ask us and we will
-        permanently erase it along with the call history and vault files. When you close your account, we erase your data
-        except records we must keep by law, such as invoices.
+        permanently erase it along with the call history and vault files. You can delete your account yourself under
+        Profile &rarr; Delete account: it cancels your plan, stops all calls and messages, removes your contact details and
+        archives your parents&apos; profiles (we erase those for good when you write to us). We keep only records we must
+        keep by law, such as invoices.
       </p>
 
       <h2>7. Your choices and rights</h2>
@@ -109,7 +111,16 @@ export default function PrivacyPage() {
       <h2>9. Children</h2>
       <p>Aaptha is for adults. We do not knowingly collect information from anyone under 18.</p>
 
-      <h2>10. Changes and contact</h2>
+      <h2>10. Cookies</h2>
+      <p>
+        We use only the cookies and browser storage the service needs to work: a sign-in cookie that keeps you logged in, and
+        your light/dark theme choice and a dismissed-notice flag stored in your browser. We do not use advertising or
+        analytics cookies, so there is no cookie banner to accept. When you pay with Razorpay or sign in with Google, those
+        companies load their own scripts and may set their own cookies under their own policies. You can clear cookies in your
+        browser at any time; you will simply be signed out.
+      </p>
+
+      <h2>11. Changes and contact</h2>
       <p>
         If we change this policy in a way that matters, we will tell you by email or in the app before it takes effect. For
         questions or to exercise your rights, write to <ContactLine />. See also our <Link href="/terms">Terms of Service</Link>.

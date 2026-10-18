@@ -5133,3 +5133,14 @@ svg .steam + .steam {
 .duo-grid > .panel + .panel { margin-top: 0; }
 @media (max-width: 900px) { .duo-grid { grid-template-columns: 1fr; } }
 
+
+/* Keyboard focus: inputs removed the browser outline, so the only cue was a pale 1px border. Give them a real ring. */
+.form-input:focus-visible,
+.input-affix:focus-within {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+.input-affix > select:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: -2px;
+}

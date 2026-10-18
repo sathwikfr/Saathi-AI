@@ -16,6 +16,8 @@
 > When code and this file disagree, **trust the code** and update this file.
 
 ## 1. Rules for working in this repo (read first)
+> **Legal pass (2026-10-19, uncommitted):** self-serve account deletion (`POST /api/account/delete`, Profile -> Delete account tab: password + type DELETE; cancels Razorpay now, archives parents, wipes contact details/WhatsApp opt-ins/Google link, revokes sessions, keeps invoices; archived parent rows are still erased only on request), cookies section in Privacy, `/refunds` page (footer, Terms, checkout link), `BusinessDetails` (env `NEXT_PUBLIC_BUSINESS_NAME/ADDRESS/GSTIN` + support phone; shows nothing until set), prices are stated as tax-inclusive (checkout row + Terms: the amount charged = the price shown), real focus ring on inputs. Refund/GST wording is a business decision: review before launch.
+
 
 1. **Never run destructive DB operations.** No `prisma migrate reset`, no `prisma db push --accept-data-loss`, no bulk `deleteMany` on user data, and never run `scripts/clear-database.ts` (it wipes every table). There is **no `prisma/migrations` folder**; the schema has been synced with `prisma db push`, so schema changes must be **additive only** (new nullable columns / new tables). Take a Supabase backup and show the user the diff first.
 2. **Never touch Groq vision internals** (`src/lib/groqVision.ts`, `src/lib/medicineExtractor.ts`) unless the user explicitly asks. Extraction is always an **editable draft the user confirms**; manual entry stays as the fallback.

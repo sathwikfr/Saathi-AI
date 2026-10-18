@@ -136,6 +136,7 @@ function ConfirmContent() {
                 <SummaryRow label={`Due today (${plan.trialDays}-day trial)`} value="₹0" tone="green" strong />
                 <SummaryRow label={`First charge on ${formattedTrialEnd}`} value={`₹${price}`} />
                 <SummaryRow label="After that" value={`₹${price} every month`} />
+                <SummaryRow label="Taxes" value="Included. No extra charges" />
                 {add.healthMonitor && (
                   <SummaryRow label="Includes" value={`${plan.name} ₹${plan.priceMonthly} + ${HEALTH_MONITOR.name} ₹${healthMonitorPrice(plan.id)}`} />
                 )}
@@ -166,7 +167,7 @@ function ConfirmContent() {
           )}
           <CheckRow checked={termsChecked} onChange={(v) => { setTermsChecked(v); setErrorNotice(''); }} title="Not a medical service">
             I understand Aaptha is a family check-in companion, not a doctor or an emergency service.
-            {' '}By continuing I agree to the <Link href="/terms" target="_blank">Terms of Service</Link> and <Link href="/privacy" target="_blank">Privacy Policy</Link>.
+            {' '}By continuing I agree to the <Link href="/terms" target="_blank">Terms of Service</Link>, <Link href="/privacy" target="_blank">Privacy Policy</Link> and <Link href="/refunds" target="_blank">Refund Policy</Link>.
           </CheckRow>
 
           {errorNotice && (
