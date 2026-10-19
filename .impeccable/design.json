@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-19T00:00:00Z",
+  "title": "Design System: Aaptha",
+  "extensions": {
+    "colorMeta": {
+      "ocean-blue": { "role": "primary", "displayName": "Ocean Blue", "canonical": "#006baa" },
+      "marigold": { "role": "secondary", "displayName": "Marigold", "canonical": "#f2a33a" },
+      "ivory-paper": { "role": "neutral", "displayName": "Ivory Paper", "canonical": "#f8f5ef" }
+    },
+    "shadows": [
+      { "name": "hairline", "value": "0 1px 2px rgba(41,30,15,0.05)", "purpose": "Cards at rest." },
+      { "name": "soft", "value": "0 1px 2px rgba(41,30,15,0.04), 0 4px 12px -4px rgba(41,30,15,0.08)", "purpose": "Panels." },
+      { "name": "lift", "value": "0 2px 4px rgba(41,30,15,0.04), 0 18px 36px -14px rgba(41,30,15,0.16)", "purpose": "Hovered cards." },
+      { "name": "float", "value": "0 4px 8px rgba(41,30,15,0.04), 0 40px 72px -28px rgba(0,32,56,0.32)", "purpose": "Hero and modal objects." }
+    ],
+    "motion": [
+      { "name": "ease-out", "value": "cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "Default easing." },
+      { "name": "dur-fast", "value": "150ms", "purpose": "Input feedback." },
+      { "name": "dur", "value": "240ms", "purpose": "Buttons and hovers." },
+      { "name": "dur-slow", "value": "600ms", "purpose": "Reveals." }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Main action; ocean-blue pill.",
+      "html": "<button class=\"ds-btn-primary\">Start free trial</button>",
+      "css": ".ds-btn-primary{min-height:46px;padding:0 22px;border-radius:9999px;border:1px solid transparent;background:#006baa;color:#fff;font:600 .95rem Figtree,system-ui,sans-serif;cursor:pointer;transition:background .24s,transform .24s}.ds-btn-primary:hover{background:#005187;transform:translateY(-1px)}.ds-btn-primary:focus-visible{outline:3px solid rgba(0,107,170,.4);outline-offset:2px}"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Secondary action on paper.",
+      "html": "<button class=\"ds-btn-ghost\">Learn more</button>",
+      "css": ".ds-btn-ghost{min-height:46px;padding:0 22px;border-radius:9999px;border:1px solid #e2dbcf;background:#fff;color:#1f1c18;font:600 .95rem Figtree,system-ui,sans-serif;cursor:pointer;transition:border-color .24s,transform .24s}.ds-btn-ghost:hover{border-color:#cdc3b3;transform:translateY(-1px)}.ds-btn-ghost:focus-visible{outline:3px solid rgba(0,107,170,.4);outline-offset:2px}"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Form field with blue focus ring.",
+      "html": "<input class=\"ds-input\" placeholder=\"Parent's phone\">",
+      "css": ".ds-input{width:100%;min-height:48px;padding:12px 16px;border-radius:16px;border:1px solid #e2dbcf;background:#fff;color:#1f1c18;font:.96rem Figtree,system-ui,sans-serif;outline:none;box-sizing:border-box}.ds-input:focus{border-color:#006baa;box-shadow:0 0 0 4px rgba(0,107,170,.08)}"
+    },
+    {
+      "name": "Status Badge",
+      "kind": "chip",
+      "refersTo": "badge-teal",
+      "description": "Small tinted pill.",
+      "html": "<span class=\"ds-badge\">Taken</span>",
+      "css": ".ds-badge{display:inline-flex;padding:4px 12px;border-radius:9999px;background:#e4f5ff;color:#006baa;font:600 .76rem Figtree,system-ui,sans-serif}"
+    },
+    {
+      "name": "Panel",
+      "kind": "card",
+      "refersTo": "panel",
+      "description": "Dashboard card.",
+      "html": "<div class=\"ds-panel\"><strong>Today</strong><p>All medicines taken.</p></div>",
+      "css": ".ds-panel{padding:24px;border-radius:32px;border:1px solid #ece6dc;background:#fff;box-shadow:0 1px 2px rgba(41,30,15,.04),0 4px 12px -4px rgba(41,30,15,.08);font-family:Figtree,system-ui,sans-serif;color:#1f1c18}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Kitchen-Table Ledger",
+    "overview": "A warm, well-kept notebook on a kitchen table: ivory paper, a steady blue pen, a marigold marker for what needs a glance.",
+    "keyCharacteristics": ["Warm ivory paper", "Pill buttons and large rounded cards", "Ocean blue with marigold accent", "Bricolage Grotesque + Figtree", "Light and dark themes"],
+    "rules": [
+      { "name": "The Status-Only Rule", "body": "Green, amber and red appear only to report status.", "section": "colors" },
+      { "name": "The No-Teal Rule", "body": "The brand is ocean blue; do not drift back to green/teal or violet.", "section": "colors" },
+      { "name": "The Quiet-At-Rest Rule", "body": "Surfaces are nearly flat at rest; depth grows on hover and focus.", "section": "elevation" }
+    ],
+    "dos": ["Do use ocean blue for primary actions", "Do read colours from tokens", "Do keep emergency copy calm"],
+    "donts": ["Don't use green/teal or violet as brand", "Don't introduce Tailwind or shadcn", "Don't use more than one .btn-glow per view"]
+  }
+}
