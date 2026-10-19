@@ -2,6 +2,7 @@ import React from 'react';
 import { Check, Minus, Heart } from 'lucide-react';
 import { Reveal } from '@/components/Reveal';
 import { WordReveal } from '@/components/motion/WordReveal';
+import { PLANS, FREE_TRIAL_DAYS } from '@/lib/plans';
 import s from './home.module.css';
 import x from './compare.module.css';
 
@@ -22,7 +23,7 @@ const ROWS: { label: string; us: Cell; others: [Cell, Cell, Cell] }[] = [
   { label: 'In their own language', us: true, others: [true, 'Depends', false] },
   { label: 'A written record you can look back on', us: true, others: [false, false, 'Partly'] },
   { label: 'Tells you when something seems off', us: true, others: [false, 'Depends', false] },
-  { label: 'Cost', us: 'Free to start', others: ['Your time, daily', 'A monthly salary', 'Free'] },
+  { label: 'Cost', us: `From ₹${PLANS.essential.priceMonthly}/month, ${FREE_TRIAL_DAYS} days free`, others: ['Your time, daily', 'A monthly salary', 'Free'] },
 ];
 
 function Value({ v, ours }: { v: Cell; ours?: boolean }) {

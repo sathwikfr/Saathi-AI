@@ -22,7 +22,7 @@ const PAID: PlanId[] = PAID_PLAN_IDS;
 const EVERY_PLAN = [
   'Works on any phone, even a landline',
   '9 Indian languages',
-  'A missed call is tried once more, then you are told',
+  'If Saathi can’t reach them, we try once more, then tell you',
   'Emergency alerts to family and neighbours',
   'Doctor and lab visit reminders',
   'Pause anytime (travel, hospital stay)',
@@ -40,15 +40,14 @@ function perDay(id: PlanId) {
 function factsFor(id: PlanId): string[] {
   const p = PLANS[id];
   if (p.channel === 'whatsapp') {
-    return [`WhatsApp check at each medicine time, up to ${p.remindersPerDay} a day`, 'Asked again if there is no reply', 'Optional caretaker told when one is missed'];
+    return [`WhatsApp check at each medicine time (no calls), up to ${p.remindersPerDay} a day`, 'Asked again if there is no reply', 'Optional caretaker told when one is missed'];
   }
   const many = p.parentsIncluded > 1;
   return [
     many ? `Up to ${p.parentsIncluded} parents` : '1 parent',
     `${p.callsPerDay} calls a day${many ? ' each' : ''}`,
     `WhatsApp updates for ${p.whatsappPeople} ${p.whatsappPeople === 1 ? 'person' : 'people'}`,
-    `Ask about their week, ${p.askPerMonth} a month`,
-    ...(p.premium ? ['Timeline and a doctor summary'] : []),
+    p.premium ? `Ask ${p.askPerMonth} questions a month, timeline, doctor summary` : `Ask questions about their week (${p.askPerMonth} a month)`,
     ...(id === 'extended' ? ['Priority support'] : [])
   ];
 }
@@ -84,6 +83,7 @@ export function PricingSection({ planHref }: { planHref: (id: PlanId) => string 
                 <ul className={x.facts}>
                   {factsFor(id).map(f => <li key={f}><Check size={15} strokeWidth={2.5} />{f}</li>)}
                 </ul>
+                {plan.channel === 'whatsapp' && <Link href="/#remind" className={x.more}>See how the WhatsApp reminders work</Link>}
 
                 <Link href={planHref(id)} className={`btn btn-block ${featured ? 'btn-primary btn-glow' : 'btn-ghost'} ${x.cta}`}>
                   Start {plan.trialDays}-day free trial
