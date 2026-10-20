@@ -193,6 +193,7 @@ model ParentProfile {
   reminderOptInAt           DateTime?
   reminderOptOutAt          DateTime? // STOP; START turns reminders back on
   discreetReminders         Boolean   @default(false) // no medicine names in the message (lock screens)
+  useOfficialNames          Boolean   @default(false) // calls + WhatsApp also say Medicine.officialName (off = nicknames only)
   // Remind plan, opt-in (2026-10-08): one WhatsApp a week, Sunday evening, "you took 13 of 14". Off unless the person turns it on.
   weeklyProgress            Boolean   @default(false)
   weeklyProgressToCaretaker Boolean   @default(false)
@@ -252,6 +253,8 @@ model Medicine {
   frequency        String        @default("daily")
   isActive         Boolean       @default(true)
   purpose          String? // the family's one-line reason ("keeps your BP steady"); Saathi repeats it, never invents one
+  officialName     String? // the prescription's name ("Amlodipine 5 mg"); `name` is the nickname Saathi says. Inside Aaptha only
+
   endsOn           String? // last day of a course (IST YYYY-MM-DD); reminders and calls leave it out afterwards
   // Remind plan (2026-10-05): tablets left, counted down on each "Yes"; one "running out" note ~3 days before.
   tabletsLeft      Int?

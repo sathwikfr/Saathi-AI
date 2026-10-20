@@ -32,7 +32,7 @@ import { readSnapshot, CallSnapshot, CallExtras, PartnerSnapshot, NON_RETRY_SLOT
 import { findAlertAttempt, processAlertCallResult } from './escalation';
 import { runInsightsForParent } from './insights';
 import { buildAgentVariables, OutboundCallInput } from './sarvam';
-import { slotMedicines } from './callDispatch';
+import { medicineMaps, slotMedicines } from './callDispatch';
 import { LinkedMedicineDetail } from './types';
 
 /** First try + one retry (decided 2026-10-04): a missed call is tried once more, then the family is told. */
@@ -641,15 +641,14 @@ async function unconfirmedToday(parent: Awaited<ReturnType<typeof parentsForCall
   const today = istDateString(now);
   const logs = await prisma.callLog.findMany({ where: { parentId: parent.id, callDate: today }, orderBy: { createdAt: 'desc' } });
   const nowMin = istMinutesOfDay(now);
-  const inactive = new Set(parent.medicines.filter(m => !m.isActive).map(m => m.name));
-  const purposes = new Map(parent.medicines.filter(m => m.isActive && m.purpose).map(m => [m.name, m.purpose!]));
+  const { inactiveNames: inactive, purposes, officials } = medicineMaps(parent.medicines, today, parent.useOfficialNames);
   const out: LinkedMedicineDetail[] = [];
   for (const slot of parent.callSchedule) {
     const t = parseClockTime(slot.time);
     if (t === null || t > nowMin) continue;
     const latest = logs.find(l => l.slotId === slot.id);
     if (latest?.status === 'answered' && latest.medicationConfirmed) continue;
-    for (const m of slotMedicines(slot, inactive, purposes)) if (!out.some(o => o.name === m.name)) out.push(m);
+    for (const m of slotMedicines(slot, inactive, purposes, officials)) if (!out.some(o => o.name === m.name)) out.push(m);
   }
   return out;
 }

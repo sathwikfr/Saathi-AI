@@ -205,7 +205,8 @@ export async function POST(req: Request) {
               isActive: true,
               purpose: typeof m.purpose === 'string' ? m.purpose : undefined,
               endsOn: typeof m.endsOn === 'string' ? m.endsOn : undefined,
-              tabletsLeft: cleanTabletCount(m.tabletsLeft) ?? undefined
+              tabletsLeft: cleanTabletCount(m.tabletsLeft) ?? undefined,
+              officialName: typeof m.officialName === 'string' ? m.officialName : undefined
             };
           });
         if (formattedMeds.length > 0) {

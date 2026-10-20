@@ -102,6 +102,9 @@ function partA() {
   check('"Iron 30", "30 iron tablets", "bought 30 Folic acid"', JSON.stringify(parseTopUp('Iron 30', two)) === '{"name":"Iron","count":30}' && parseTopUp('30 iron tablets', two)?.name === 'Iron' && parseTopUp('bought 30 Folic acid', two)?.name === 'Folic acid');
   check('bare number: the one counted medicine', parseTopUp('30', two)?.name === 'Iron' && parseTopUp('30', [{ name: 'A', counted: true }, { name: 'B', counted: true }])?.name === null);
   check('not a refill: "fever 102", "I took 2", two numbers, zero', [parseTopUp('fever 102', two), parseTopUp('I took 2', two), parseTopUp('Iron 30 Folic acid 20', two), parseTopUp('0', two)].every(x => x === null));
+  const bpLow = REMINDER_REPLIES.runningLow([{ name: 'BP tablet', left: 0, days: 0 }]);
+  const bpTop = REMINDER_REPLIES.toppedUp('BP tablet', 30);
+  check('nickname: no "tablet tablets"', !/tablets? tablet/i.test(bpLow + bpTop + REMINDER_REPLIES.toppedUp('BP tablets', 1)) && bpLow.startsWith('By my count your BP tablets have run out.') && bpTop.startsWith('Got it: 30 BP tablets.'), [bpLow, bpTop]);
   check('running-low wording', REMINDER_REPLIES.runningLow([{ name: 'Iron', left: 6, days: 3 }]).startsWith('Iron is running low: 6 tablets left, about 3 days.') && REMINDER_REPLIES.runningLow([{ name: 'Iron', left: 0, days: 0 }]).startsWith('By my count your Iron tablets have run out.'));
 
   console.log('\nA2e. Check-up reminders on WhatsApp');

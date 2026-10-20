@@ -8,6 +8,7 @@ import { Check, X } from 'lucide-react';
 import { Brand } from '@/components/Navbar';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { FoodRelation, MedicineTimingSlot } from '@/lib/types';
+import { istLastDayOfCourse } from '@/lib/ist';
 
 const STEPS = ['Parent', 'Medicines', 'Call times', 'Emergency plan', 'Consent'];
 /** Remind (WhatsApp reminders): no call times, no emergency plan. */
@@ -119,6 +120,162 @@ export function SlotPicker({ isSelected, onToggle }: { isSelected: (s: MedicineT
     </div>
   );
 }
+
+/** Everyday names a parent knows tablets by, so nobody has to share a prescription or a drug name. No digits: "Iron 30" is a WhatsApp refill reply. */
+const NAME_CHIPS = [
+  'BP tablet', 'Sugar tablet', 'Thyroid tablet', 'Heart tablet', 'Cholesterol tablet', 'Gas tablet', 'Acidity tablet',
+  'Pain tablet', 'Vitamin', 'Calcium', 'Morning tablets', 'Night tablets'
+];
+/** Shown after "More names". */
+const MORE_NAME_CHIPS = [
+  'Afternoon tablets', 'Fever tablet', 'Antibiotic tablet', 'Blood thinner', 'Iron tablet', 'Sleep tablet',
+  'Allergy tablet', 'Constipation tablet', 'Uric acid tablet', 'Prostate tablet', 'Kidney tablet', 'Syrup', 'Ointment',
+  'Eye drops', 'Inhaler', 'Insulin'
+];
+
+const DOSE_CHIPS = ['1 tablet', '2 tablets', 'Half tablet', '1 spoon', '2 drops', '1 puff'];
+
+/** One tap fills a text field with a common answer; `more` waits behind a "More" button. */
+function QuickChips({ options, more = [], label, value, onPick }: { options: string[]; more?: string[]; label: string; value: string; onPick: (v: string) => void }) {
+  const picked = (n: string) => value.trim().toLowerCase() === n.toLowerCase();
+  const [open, setOpen] = useState(() => more.some(picked));
+  return (
+    <div className="pill-group" role="group" aria-label={label} style={{ marginTop: '8px' }}>
+      {[...options, ...(open ? more : [])].map((n) => (
+        <button key={n} type="button" className="pill-toggle soft" aria-pressed={picked(n)} onClick={() => onPick(n)}>
+          {n}
+        </button>
+      ))}
+      {more.length > 0 && (
+        <button type="button" className="pill-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
+          {open ? 'Fewer' : `More names (${more.length})`}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** `folded`: just a "Pick a common name" link until tapped (photo reviews, where a name is already filled in). */
+export function MedicineNameChips({ value, onPick, folded = false }: { value: string; onPick: (name: string) => void; folded?: boolean }) {
+  // An empty name starts with the list open (that's the quickest way to fill it); a filled one starts folded.
+  const [open, setOpen] = useState(!folded || !value.trim());
+  if (!open) {
+    return (
+      <button type="button" className="link-btn" style={{ marginTop: '2px', fontSize: '0.84rem', alignSelf: 'flex-start' }} onClick={() => setOpen(true)}>
+        Pick a common name
+      </button>
+    );
+  }
+  if (!folded) return <QuickChips options={NAME_CHIPS} more={MORE_NAME_CHIPS} label="Quick names" value={value} onPick={onPick} />;
+  // Folded lists close again: by picking a name, or with "Hide common names".
+  return (
+    <>
+      <QuickChips options={NAME_CHIPS} more={MORE_NAME_CHIPS} label="Quick names" value={value} onPick={(n) => { onPick(n); setOpen(false); }} />
+      <button type="button" className="link-btn" style={{ marginTop: '2px', fontSize: '0.84rem', alignSelf: 'flex-start' }} onClick={() => setOpen(false)}>
+        Hide common names
+      </button>
+    </>
+  );
+}
+
+export function DoseChips({ value, onPick }: { value: string; onPick: (dose: string) => void }) {
+  return <QuickChips options={DOSE_CHIPS} label="Quick doses" value={value} onPick={onPick} />;
+}
+
+const DAY_CHOICES: { days: number | null; label: string }[] = [
+  { days: null, label: 'Ongoing' },
+  { days: 3, label: '3 days' },
+  { days: 5, label: '5 days' },
+  { days: 7, label: '1 week' },
+  { days: 10, label: '10 days' },
+  { days: 15, label: '15 days' },
+  { days: 30, label: '1 month' },
+];
+
+/** Marks a field the prescription line filled in, so the family knows to check it. */
+export function FromPrescription() {
+  return <span className="tag-filled" title="Filled in from the prescription. Please check it.">From prescription</span>;
+}
+
+/** "Saathi may say it's for infection": the reader's guess is only used once the family ticks it. */
+export function PurposeSuggestion({ suggestion, value, onChange }: { suggestion: string; value?: string; onChange: (purpose: string | undefined) => void }) {
+  return (
+    <label style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', fontSize: '0.88rem', cursor: 'pointer' }}>
+      <input type="checkbox" checked={value === suggestion} onChange={(e) => onChange(e.target.checked ? suggestion : undefined)} style={{ width: '17px', height: '17px', accentColor: 'var(--teal)', marginTop: '2px' }} />
+      <span>
+        Saathi may say it&apos;s <b>&ldquo;{suggestion}&rdquo;</b>
+        <span className="form-hint" style={{ display: 'block' }}>Read from the prescription. Tick only if it&apos;s right.</span>
+      </span>
+    </label>
+  );
+}
+
+/** "For how many more days?": Ongoing for regular medicines, or a course that ends by itself. */
+export function CourseDays({ id, value, onChange, suggestedDays }: { id: string; value?: number | null; onChange: (days: number | null) => void; suggestedDays?: number }) {
+  const [other, setOther] = useState(value && !DAY_CHOICES.some((c) => c.days === value) ? String(value) : '');
+  const days = value ?? null;
+  const lastDay = days ? new Date(`${istLastDayOfCourse(days)}T00:00:00Z`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'UTC' }) : null;
+  return (
+    <>
+      <div className="pill-group" role="radiogroup" aria-label="For how many more days?">
+        {DAY_CHOICES.map((c) => (
+          <button
+            key={c.label}
+            type="button"
+            role="radio"
+            aria-checked={!other && days === c.days}
+            className="pill-toggle soft"
+            onClick={() => { setOther(''); onChange(c.days); }}
+          >
+            {c.label}
+          </button>
+        ))}
+        <label htmlFor={id} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.86rem' }}>
+          Other
+          <input
+            id={id}
+            type="number"
+            inputMode="numeric"
+            min={1}
+            max={365}
+            placeholder="days"
+            value={other}
+            onChange={(e) => {
+              setOther(e.target.value);
+              const n = parseInt(e.target.value, 10);
+              onChange(n >= 1 && n <= 365 ? n : null);
+            }}
+            className="form-input"
+            style={{ width: '84px', padding: '4px 10px', minHeight: '32px', height: '32px', borderRadius: 'var(--r-full)', fontSize: '0.84rem' }}
+          />
+        </label>
+      </div>
+      <span className="form-hint" style={{ display: 'block', marginTop: '6px' }}>
+        {lastDay
+          ? `Last day: ${lastDay}, counting from today. If they started earlier, pick fewer days. After that we stop asking about it.`
+          : 'Keeps going every day until you stop it.'}
+      </span>
+      {!days && suggestedDays ? (
+        <span className="form-hint" style={{ display: 'block', marginTop: '6px' }}>
+          The prescription says {suggestedDays} days. For BP or sugar tablets that usually means &ldquo;until the next visit&rdquo;, so we keep asking.{' '}
+          <button
+            type="button"
+            className="btn btn-quiet btn-sm"
+            onClick={() => {
+              setOther(DAY_CHOICES.some((c) => c.days === suggestedDays) ? '' : String(suggestedDays));
+              onChange(suggestedDays);
+            }}
+          >
+            Stop after {suggestedDays} days
+          </button>
+        </span>
+      ) : null}
+    </>
+  );
+}
+
+/** Under every medicine name field. */
+export const NAME_HINT = "A real name isn't needed. We use exactly this name when we ask about it.";
 
 const FOOD_OPTIONS: { val: FoodRelation; label: string }[] = [
   { val: 'before_food', label: 'Before food' },

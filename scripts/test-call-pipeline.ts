@@ -10,13 +10,19 @@
 import 'dotenv/config';
 import './lib/testDb';
 import { prisma } from '../src/lib/prisma';
-import { newId, createUser, updateUserSubscription } from '../src/lib/db';
+import { newId, createUser, updateUserSubscription, getMedicinesForParent } from '../src/lib/db';
+import { applyConfirmedMedicines } from '../src/lib/prescriptionConfirm';
 import { getEffectivePlan, freeTrialDaysLeft, freeTrialEnd, FREE_TRIAL_DAYS } from '../src/lib/plans';
-import { toSarvamLanguage, buildOutboundRequest, getSarvamConfig, SarvamConfig } from '../src/lib/sarvam';
-import { istDateString, istMinutesOfDay, isSlotDue, parseClockTime, formatIstClock } from '../src/lib/ist';
+import { toSarvamLanguage, buildOutboundRequest, getSarvamConfig, SarvamConfig, firstMedicineSpoken } from '../src/lib/sarvam';
+import { generateMedicineCheckinQuestion, renameMedicineInSlot } from '../src/lib/scheduleGenerator';
+import { readInstructions, fillFromInstructions } from '../src/lib/prescriptionHints';
+import { istDateString, istMinutesOfDay, isSlotDue, parseClockTime, formatIstClock, istLastDayOfCourse } from '../src/lib/ist';
 import { scanForEmergency } from '../src/lib/safety';
-import { interpretCallResult, decideAlerts, ALERT_TITLES } from '../src/lib/callInterpretation';
-import { runDispatch, placeManualCall, slotMedicines } from '../src/lib/callDispatch';
+import { interpretCallResult, decideAlerts, ALERT_TITLES, nameTaken, freeNickname } from '../src/lib/callInterpretation';
+import { withNicknames } from '../src/lib/prescriptionHints';
+import { buildMedicineChecklist } from '../src/lib/sarvam';
+import { reminderMedicineText } from '../src/lib/reminders';
+import { runDispatch, placeManualCall, slotMedicines, medicineMaps } from '../src/lib/callDispatch';
 import { processSarvamWebhook, raiseToolEscalation, RESULT_NOT_RECEIVED } from '../src/lib/callResults';
 import { LinkedMedicineDetail } from '../src/lib/types';
 
@@ -140,6 +146,101 @@ function partA() {
   check('no data at all → not assumed silent', unknown.noResponse === false);
   check('no medicines → never noResponse', interpretCallResult({ final_agent_variables: { mood: 'calm' }, interaction_transcript: silentTranscript }, [], 'Appa').noResponse === false);
 
+  console.log('\nA4b. Family nicknames ("BP tablet" instead of the drug name)');
+  const spoken = (name: string) => firstMedicineSpoken([{ name, dosage: '', questionScript: '' }]);
+  check('greeting keeps "BP tablet"', spoken('BP tablet') === 'BP tablet', spoken('BP tablet'));
+  check('greeting drops a leading "Tablet"', spoken('Tablet Telma 40') === 'Telma 40', spoken('Tablet Telma 40'));
+  check('greeting drops "Tab." and brackets', spoken('Tab. Telmisartan (BP Tablet)') === 'Telmisartan', spoken('Tab. Telmisartan (BP Tablet)'));
+  check('"Captopril" stays whole', spoken('Captopril') === 'Captopril', spoken('Captopril'));
+  check('"Tablet" alone is still said', spoken('Tablet') === 'Tablet', spoken('Tablet'));
+  const q = generateMedicineCheckinQuestion('my BP tablet', 'after_food', 'morning');
+  check('question: no "your my"', q === 'Did you have your BP tablet after breakfast?', q);
+  const whites: LinkedMedicineDetail[] = [
+    { name: 'White tablet', dosage: '1 tablet', questionScript: '' },
+    { name: 'Small white tablet', dosage: '1 tablet', questionScript: '' }
+  ];
+  const oneMissed = interpretCallResult({ final_agent_variables: { all_medicines_taken: 'partial', medicines_taken: 'Small white tablet', medicines_missed: 'White tablet' } }, whites, 'Amma');
+  check('"White tablet" missed, "Small white tablet" taken', oneMissed.medicineResults[0].status === 'missed' && oneMissed.medicineResults[1].status === 'taken', oneMissed.medicineResults);
+  const looseStill = interpretCallResult({ final_agent_variables: { medicines_taken: 'metformin, telmisartan 40mg' } }, meds, 'Amma');
+  check('loose names still match real medicines', looseStill.medicineResults.every(r => r.status === 'taken'), looseStill.medicineResults);
+  check('ointment is used, not taken', generateMedicineCheckinQuestion('Ointment', 'after_food', 'morning') === 'Did you use your Ointment after breakfast?' && generateMedicineCheckinQuestion('Eye drops', 'not_specified', 'bedtime') === 'Did you use your Eye drops before going to bed?');
+  check('"Gelusil" is still taken', generateMedicineCheckinQuestion('Gelusil', 'not_specified', 'morning') === 'Did you take your Gelusil?');
+  const syrup = interpretCallResult({ final_agent_variables: { all_medicines_taken: 'partial', medicines_taken: 'BP tablet', medicines_missed: 'Syrup' } }, [{ name: 'BP tablet', dosage: '', questionScript: '' }, { name: 'Syrup', dosage: '', questionScript: '' }], 'Amma');
+  check('a bare "Syrup" is still matched', syrup.medicineResults[0].status === 'taken' && syrup.medicineResults[1].status === 'missed', syrup.medicineResults);
+  const lateNightUtc = new Date(Date.UTC(2026, 9, 19, 20, 0)); // 20 Oct 01:30 IST
+  check('course: 1 day = today (IST)', istLastDayOfCourse(1, lateNightUtc) === '2026-10-20', istLastDayOfCourse(1, lateNightUtc));
+  check('course: 5 days ends on day 5', istLastDayOfCourse(5, lateNightUtc) === '2026-10-24', istLastDayOfCourse(5, lateNightUtc));
+  check('course: 1 month = 30 days', istLastDayOfCourse(30, lateNightUtc) === '2026-11-18', istLastDayOfCourse(30, lateNightUtc));
+  const bp = [{ name: 'BP tablet' }];
+  check('nickname taken at any time', !!nameTaken('bp Tablet', bp) && !nameTaken('Night BP tablet', bp));
+  check('free nickname: its time first, then a number', freeNickname('BP tablet', ['bedtime'], ['BP tablet']) === 'Night BP tablet' && freeNickname('BP tablet', ['bedtime'], ['BP tablet', 'Night BP tablet']) === 'BP tablet 2' && freeNickname('Sugar tablet', ['morning'], ['BP tablet']) === 'Sugar tablet');
+
+  console.log('\nA4e. Official name + nickname');
+  const draft = (name: string, category: string | undefined, slots: ('morning' | 'bedtime')[], form?: 'capsule') =>
+    ({ name, dosage: '1 tab', timeOfDay: 'morning' as const, timingSlots: slots, confidence: 'high' as const, category, form });
+  const named = withNicknames([
+    draft('Tab. Amlodipine 5mg', 'Blood Pressure', ['morning']),
+    draft('Tab. Telmisartan 40', 'Blood Pressure / ARB', ['bedtime']),
+    draft('Cap. Pan-D', 'GERD & Acidity', ['morning'], 'capsule'),
+    draft('Tab. Zyx 10', undefined, ['morning'])
+  ], ['Sugar tablet']);
+  check('category → nickname, kept unique in the batch', named[0].nickname === 'BP tablet' && named[1].nickname === 'Night BP tablet', named.map(n => n.nickname));
+  check('capsule form and unknown category', named[2].nickname === 'Gas capsule' && named[3].nickname === 'Zyx 10' && named[3].suggestedNickname === false, named.map(n => n.nickname));
+  check('already-used nickname on the account is avoided', withNicknames([draft('Glycomet 500', 'Diabetes', ['morning'])], ['Sugar tablet'])[0].nickname === 'Morning Sugar tablet');
+  const realSlot = { id: 'slot_real', time: '08:15 AM', label: 'Morning', slot: 'morning', linkedMedicineNames: ['BP tablet'], linkedMedicinesJson: JSON.stringify([{ name: 'BP tablet', dosage: '1 tablet', questionScript: 'Did you have your BP tablet after breakfast?' }]) };
+  const quiet = medicineMaps([{ name: 'BP tablet', isActive: true, purpose: null, officialName: 'Amlodipine 5mg' }], '2026-10-19');
+  const loud = medicineMaps([{ name: 'BP tablet', isActive: true, purpose: null, officialName: 'Amlodipine 5mg' }], '2026-10-19', true);
+  const quietMeds = slotMedicines(realSlot, quiet.inactiveNames, quiet.purposes, quiet.officials);
+  const loudMeds = slotMedicines(realSlot, loud.inactiveNames, loud.purposes, loud.officials);
+  check('switch off: calls never get the real name', !quietMeds[0].officialName && !buildMedicineChecklist(quietMeds).includes('Amlodipine') && !reminderMedicineText(quietMeds, false).includes('Amlodipine'));
+  check('switch on: said after the nickname', loudMeds[0].questionScript === 'Did you have your BP tablet (Amlodipine 5mg) after breakfast?' && buildMedicineChecklist(loudMeds).includes('[also called: Amlodipine 5mg]') && firstMedicineSpoken(loudMeds) === 'BP tablet (Amlodipine 5mg)' && reminderMedicineText(loudMeds, false).startsWith('BP tablet – Amlodipine 5mg'), [loudMeds[0].questionScript, firstMedicineSpoken(loudMeds)]);
+  const loudResult = interpretCallResult({ final_agent_variables: { all_medicines_taken: 'partial', medicines_missed: 'BP tablet (Amlodipine 5mg)' } }, loudMeds, 'Amma');
+  check('results still match the nickname', loudResult.medicineResults[0].status === 'missed', loudResult.medicineResults);
+
+  console.log('\nA4c. Renaming a medicine rewrites its call slots');
+  const morningSlot = {
+    slot: 'morning',
+    label: 'Morning Medicine Reminder — Telmisartan 40, Iron Plus, Iron +2 more',
+    linkedMedicineNames: ['Telmisartan 40', 'Iron Plus', 'Iron'],
+    linkedMedicines: [
+      { name: 'Telmisartan 40', foodRelation: 'after_food' as const, questionScript: 'Did you have your Telmisartan 40 after breakfast?' },
+      { name: 'Iron Plus', foodRelation: 'not_specified' as const, questionScript: 'Did you take your Iron Plus?' },
+      { name: 'Iron', foodRelation: 'not_specified' as const, questionScript: 'Did you take your Iron?' }
+    ]
+  };
+  const renamed = renameMedicineInSlot(morningSlot, 'Telmisartan 40', 'BP tablet', 'after_food', ['morning']);
+  check('rename: label', renamed?.label === 'Morning Medicine Reminder — BP tablet, Iron Plus, Iron +2 more', renamed?.label);
+  check('rename: names list', JSON.stringify(renamed?.linkedMedicineNames) === '["BP tablet","Iron Plus","Iron"]', renamed?.linkedMedicineNames);
+  check('rename: fresh question', renamed?.linkedMedicines?.[0].name === 'BP tablet' && renamed.linkedMedicines[0].questionScript === 'Did you have your BP tablet after breakfast?', renamed?.linkedMedicines?.[0]);
+  check('rename: other entries untouched', JSON.stringify(renamed?.linkedMedicines?.slice(1)) === JSON.stringify(morningSlot.linkedMedicines.slice(1)));
+  const iron = renameMedicineInSlot(morningSlot, 'Iron', 'Calcium', 'not_specified', ['morning']);
+  check('rename "Iron": "Iron Plus" stays', iron?.label === 'Morning Medicine Reminder — Telmisartan 40, Iron Plus, Calcium +2 more' && JSON.stringify(iron.linkedMedicineNames) === '["Telmisartan 40","Iron Plus","Calcium"]', iron);
+  const spokenLabel = renameMedicineInSlot({ slot: 'evening', label: 'Evening Medicine Reminder — Telma 40', linkedMedicineNames: ['Tablet Telma 40'] }, 'Tablet Telma 40', 'my BP tablet', 'not_specified', ['evening']);
+  check('rename: spoken-name label, no JSON stays none', spokenLabel?.label === 'Evening Medicine Reminder — BP tablet' && spokenLabel.linkedMedicines === undefined && spokenLabel.linkedMedicineNames[0] === 'my BP tablet', spokenLabel);
+  const ridesAlong = renameMedicineInSlot({ slot: 'morning', label: 'Morning', linkedMedicineNames: ['Gel'], linkedMedicines: [{ name: 'Gel', questionScript: '' }] }, 'Gel', 'Knee gel', 'not_specified', ['as_needed']);
+  check('rename: riding along → as-needed question', ridesAlong?.linkedMedicines?.[0].questionScript === 'Did you need to take or apply your Knee gel today?', ridesAlong?.linkedMedicines);
+  check('rename: slot without it → null', renameMedicineInSlot(morningSlot, 'Metformin', 'Sugar tablet', 'not_specified', ['morning']) === null);
+  const merged = renameMedicineInSlot({ slot: 'morning', label: '', linkedMedicineNames: ['Telma', 'BP tablet'], linkedMedicines: [{ name: 'Telma' }, { name: 'BP tablet' }] }, 'Telma', 'bp tablet', 'not_specified', ['morning']);
+  check('rename: never two entries with one name', JSON.stringify(merged?.linkedMedicineNames) === '["BP tablet"]' && merged?.linkedMedicines?.length === 1, merged);
+  const caseOnly = renameMedicineInSlot({ slot: 'morning', label: 'Morning Medicine Reminder — bp tablet', linkedMedicineNames: ['bp tablet'] }, 'bp tablet', 'BP tablet', 'not_specified', ['morning']);
+  check('rename: case-only change', caseOnly?.label === 'Morning Medicine Reminder — BP tablet' && caseOnly.linkedMedicineNames[0] === 'BP tablet', caseOnly);
+
+  console.log('\nA4d. Reading the prescription line');
+  const rd = readInstructions;
+  check('"x 5 days" → 5', rd('1 tab BD (1-0-1 Morning & Night after food) x 5 days').days === 5);
+  check('"x 7 days" not fooled by "30 mins"', rd('1 tab OD (1-0-0 Morning 30 mins before breakfast) x 7 days').days === 7);
+  check('5/7, 2/52, 1/12 shorthand', rd('1 tab BD x 5/7').days === 5 && rd('1 tab OD x 2/52').days === 14 && rd('1 tab x 1/12').days === 30);
+  check('"for 1 week", "x 1 month", bare "x 5"', rd('1 tab for 1 week').days === 7 && rd('1 tab x 1 month').days === 30 && rd('1 tab BD x 5').days === 5);
+  check('no length → none ("twice daily", "x 2 times")', rd('1 tablet twice daily (1-0-1)').days === undefined && rd('1 tab x 2 times a day').days === undefined);
+  check('food: before / after / with', rd('1 tab 30 mins before breakfast').food === 'before_food' && rd('1 tab after food').food === 'after_food' && rd('1 tab with meals').food === 'with_food' && rd('1 tab OD BBF').food === 'before_food');
+  check('dose tidied', rd('1 tab BD (1-0-1)').dose === '1 tablet' && rd('½ tab OD').dose === 'Half tablet' && rd('15ml at bedtime').dose === '15 ml' && rd('2 drops twice daily').dose === '2 drops' && rd('Apply gently over affected area').dose === 'Apply');
+  const aug = fillFromInstructions({ name: 'Tab. Augmentin 625mg', dosage: '1 tab BD (1-0-1 Morning & Night after food) x 5 days', timeOfDay: 'morning', timingSlots: ['morning', 'bedtime'], foodRelation: 'not_specified', confidence: 'high', category: 'Antibiotic' });
+  check('short course set, food + dose filled, purpose only suggested', aug.courseDays === 5 && aug.foodRelation === 'after_food' && aug.dosage === '1 tablet' && !!aug.prescriptionText?.includes('x 5 days') && aug.suggestedPurpose === 'for infection' && aug.purpose === undefined && aug.autoFilled?.join() === 'days,food,dose', aug);
+  const telma = fillFromInstructions({ name: 'Tab. TELMISARTAN 40 MG', dosage: '1 tab OD (1-0-0 Morning after breakfast) x 90 days', timeOfDay: 'morning', foodRelation: 'before_food', confidence: 'high', category: 'Blood Pressure / ARB' });
+  check('"x 90 days" only suggested, never set', !telma.courseDays && telma.suggestedDays === 90, telma);
+  check("the reader's own food wins", telma.foodRelation === 'before_food');
+  check('unknown category → no purpose', fillFromInstructions({ name: 'X', dosage: '', timeOfDay: 'morning', confidence: 'high', category: 'Topical Application' }).suggestedPurpose === undefined);
+
   console.log('\nA5. Outbound request');
   const cfg = fakeConfig();
   const body = buildOutboundRequest(cfg, {
@@ -159,6 +260,8 @@ function partA() {
   const slot = { id: 's', slot: 'morning', time: '08:30 AM', label: 'x', linkedMedicineNames: ['Old Med'], linkedMedicinesJson: null };
   check('falls back to names + generated question', slotMedicines(slot, new Set()).length === 1 && !!slotMedicines(slot, new Set())[0].questionScript);
   check('drops paused medicines', slotMedicines(slot, new Set(['Old Med'])).length === 0);
+  const twin = medicineMaps([{ name: 'BP tablet', isActive: false, purpose: null }, { name: 'BP tablet', isActive: true, purpose: null }], '2026-10-19');
+  check('a paused twin does not hide the current "BP tablet"', slotMedicines({ ...slot, linkedMedicineNames: ['BP tablet'] }, twin.inactiveNames).length === 1);
 
   console.log('\nA7. Free 7-day trial and effective plan');
   const DAY = 864e5;
@@ -488,10 +591,13 @@ async function partB() {
 
     // ---- B14 free trial over: no scheduled calls, no test calls ---------------------
     console.log('\nB14. Free trial ended');
-    await prisma.user.update({ where: { id: user.id }, data: { createdAt: new Date(Date.now() - 10 * 864e5) } });
-    await prisma.userSubscription.update({ where: { userId: user.id }, data: { planId: 'free', status: 'free', currentPeriodEnd: new Date(Date.now() - 3 * 864e5) } });
+    // The dispatch below runs on a fixed clock and the test call on the real one: the trial must be over for both.
+    const b14Now = new Date(Date.UTC(2026, 9, 15, 3, 30));
+    const b14Base = Math.min(Date.now(), b14Now.getTime());
+    await prisma.user.update({ where: { id: user.id }, data: { createdAt: new Date(b14Base - 10 * 864e5) } });
+    await prisma.userSubscription.update({ where: { userId: user.id }, data: { planId: 'free', status: 'free', currentPeriodEnd: new Date(b14Base - 3 * 864e5) } });
     const sarvam14 = makeFakeSarvam();
-    const s14 = await runDispatch({ now: new Date(Date.UTC(2026, 9, 15, 3, 30)), fetchImpl: sarvam14.fetchImpl, config: cfg, alertDeps, parentIds: scope });
+    const s14 = await runDispatch({ now: b14Now, fetchImpl: sarvam14.fetchImpl, config: cfg, alertDeps, parentIds: scope });
     check('expired trial: no calls placed', s14.placed === 0 && sarvam14.calls.length === 0, s14);
     const m14 = await placeManualCall({ parentId: parent.id, requesterId: user.id, kind: 'test' }, { config: cfg, fetchImpl: sarvam14.fetchImpl });
     check('expired trial: test call refused (402 TRIAL_ENDED)', !m14.ok && m14.status === 402 && m14.code === 'TRIAL_ENDED', m14);
@@ -511,6 +617,36 @@ async function partB() {
     const after = await prisma.userSubscription.findUnique({ where: { userId: trialUser.id } });
     check('switching to Free does not restart the trial', !!after && after.currentPeriodEnd.getTime() < Date.now(), after?.currentPeriodEnd);
     await prisma.user.delete({ where: { id: trialUser.id } });
+
+    // ---- B16 a new prescription replaces a medicine: nickname kept, old one archived ----
+    console.log('\nB16. New prescription replaces a medicine');
+    const rxParent = await prisma.parentProfile.create({
+      data: {
+        id: newId('parent'), userId: user.id, name: 'Rx Amma', relationship: 'Mother', phone: '+919000012399', language: 'English', consentGiven: true,
+        callSchedule: { create: [{ id: newId('slot'), time: '08:30 AM', slot: 'morning', label: 'Morning Medicine Reminder — BP tablet', linkedMedicineNames: ['BP tablet'], linkedMedicinesJson: JSON.stringify([med('BP tablet', '1 tablet')]) }] },
+        medicines: { create: [{ id: newId('med'), name: 'BP tablet', officialName: 'Amlodipine 5mg', dosage: '1 tablet', timeOfDay: 'morning', timingSlots: ['morning'], foodRelation: 'after_food', frequency: 'daily' }] }
+      },
+      include: { medicines: true }
+    });
+    const oldBp = rxParent.medicines[0];
+    const rxRow = (name: string, officialName: string, replacesId?: string) => ({
+      med: { id: newId('med'), parentId: rxParent.id, name, officialName, dosage: '1 tablet', timeOfDay: 'morning' as const, timingSlots: ['morning' as const], foodRelation: 'after_food' as const, frequency: 'daily' as const, isActive: true },
+      replacesId
+    });
+    const clash = await applyConfirmedMedicines(rxParent.id, [rxRow('BP tablet', 'Telmisartan 40')]);
+    check('an extra "BP tablet" is refused with a free name', !clash.ok && clash.suggestion === 'Morning BP tablet', clash);
+    check('nothing changed after the refusal', (await getMedicinesForParent(rxParent.id)).filter(m => m.isActive).length === 1);
+    const swap = await applyConfirmedMedicines(rxParent.id, [rxRow('Morning BP tablet', 'Telmisartan 40', oldBp.id)]);
+    const afterSwap = await getMedicinesForParent(rxParent.id);
+    const newBp = afterSwap.find(m => m.isActive);
+    const archived = afterSwap.find(m => m.id === oldBp.id);
+    check('replacement keeps the nickname', swap.ok && newBp?.name === 'BP tablet' && newBp.officialName === 'Telmisartan 40', afterSwap);
+    check('old one archived under its prescription name, not deleted', !!archived && !archived.isActive && archived.name === 'Amlodipine 5mg', archived);
+    const rxSlot = await prisma.scheduledCallSlot.findFirstOrThrow({ where: { parentId: rxParent.id, slot: 'morning' } });
+    const rxMaps = medicineMaps(afterSwap.map(m => ({ ...m, purpose: m.purpose || null })), istDateString(new Date()));
+    check('the morning call asks about the new "BP tablet" once', slotMedicines(rxSlot, rxMaps.inactiveNames, rxMaps.purposes).map(m => m.name).join() === 'BP tablet', rxSlot.linkedMedicineNames);
+    const again = await applyConfirmedMedicines(rxParent.id, [rxRow('Something else', 'Telmisartan 40')]);
+    check('same prescription name again → already on the list', again.ok && again.saved.length === 0 && again.alreadyListed.length === 1, again);
   } finally {
     await prisma.user.deleteMany({ where: { email: { startsWith: 'pipeline-test-trial-' } } });
     await prisma.user.delete({ where: { id: user.id } });

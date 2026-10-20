@@ -39,7 +39,8 @@ import { normalizePhone } from './phone';
 import {
   generateMedicineCheckinQuestion,
   inferSlotTimeFromFoodRelation,
-  cleanMedicineNameForSpeech
+  cleanMedicineNameForSpeech,
+  renameMedicineInSlot
 } from './scheduleGenerator';
 
 export interface DBUser extends User {
@@ -615,6 +616,7 @@ function toParent(p: PrismaParentWithSchedule): ParentProfile {
     reminderOptInAt: p.reminderOptInAt?.toISOString(),
     reminderOptOutAt: p.reminderOptOutAt?.toISOString(),
     discreetReminders: p.discreetReminders,
+    useOfficialNames: p.useOfficialNames,
     weeklyProgress: p.weeklyProgress,
     weeklyProgressToCaretaker: p.weeklyProgressToCaretaker,
     caretakerName: p.caretakerName || undefined,
@@ -1009,7 +1011,8 @@ function toMedicine(m: Prisma.MedicineGetPayload<object>): Medicine {
     isActive: m.isActive,
     purpose: m.purpose || undefined,
     endsOn: m.endsOn || undefined,
-    tabletsLeft: m.tabletsLeft ?? null
+    tabletsLeft: m.tabletsLeft ?? null,
+    officialName: m.officialName || undefined
   };
 }
 
@@ -1048,6 +1051,7 @@ function medicineWriteData(med: Omit<Medicine, 'id' | 'parentId'>) {
     isActive: med.isActive,
     purpose: med.purpose?.trim() ? med.purpose.trim().slice(0, 160) : null,
     endsOn: cleanEndsOn(med.endsOn),
+    officialName: med.officialName?.trim() ? med.officialName.trim().slice(0, 120) : null,
     // Only written when given, so saving the medicine list never wipes a count.
     ...(med.tabletsLeft !== undefined ? { tabletsLeft: cleanTabletCount(med.tabletsLeft), refillNotifiedAt: null } : {})
   };
@@ -1109,6 +1113,14 @@ export async function setMedicineEndsOn(parentId: string, medicineId: string, en
   return toMedicine(await prisma.medicine.update({ where: { id: med.id }, data: { endsOn } }));
 }
 
+/** Sets or clears the prescription's name (kept inside Aaptha; calls and WhatsApp use the nickname). */
+export async function setMedicineOfficialName(parentId: string, medicineId: string, officialName: string | null): Promise<Medicine | null> {
+  const med = await prisma.medicine.findFirst({ where: { id: medicineId, parentId } });
+  if (!med) return null;
+  const clean = officialName?.trim() ? officialName.trim().slice(0, 120) : null;
+  return toMedicine(await prisma.medicine.update({ where: { id: med.id }, data: { officialName: clean } }));
+}
+
 /** Sets or clears how many tablets are left (Remind plan); a new count means a new "running low" note later. */
 export async function setMedicineTablets(parentId: string, medicineId: string, tabletsLeft: number | null): Promise<Medicine | null> {
   const med = await prisma.medicine.findFirst({ where: { id: medicineId, parentId } });
@@ -1124,6 +1136,39 @@ export async function setMedicinePurpose(parentId: string, medicineId: string, p
     where: { id: medicineId },
     data: { purpose: purpose?.trim() ? purpose.trim().slice(0, 160) : null }
   });
+  return toMedicine(updated);
+}
+
+/**
+ * Renames a medicine (already trimmed + checked by the route) and every call slot that links it, in one go:
+ * names list, linked entry with a fresh question, label. Past call logs keep the old name.
+ */
+export async function renameMedicine(parentId: string, medicineId: string, name: string): Promise<Medicine | null> {
+  const med = await prisma.medicine.findFirst({ where: { id: medicineId, parentId } });
+  if (!med) return null;
+  if (med.name === name) return toMedicine(med);
+  const times = med.timingSlots.length > 0 ? med.timingSlots : [med.timeOfDay];
+  // A same-named tablet at other times links the same name; then only this one's own slots change.
+  const twin = await prisma.medicine.count({ where: { parentId, id: { not: med.id }, name: { equals: med.name, mode: 'insensitive' } } });
+  const slots = await prisma.scheduledCallSlot.findMany({ where: { parentId } });
+  const slotWrites = slots.flatMap(s => {
+    if (twin > 0 && !times.includes(s.slot)) return [];
+    const next = renameMedicineInSlot(
+      { slot: s.slot, label: s.label, linkedMedicineNames: s.linkedMedicineNames, linkedMedicines: parseLinkedMedicines(s.linkedMedicinesJson) },
+      med.name, name, (med.foodRelation || 'not_specified') as FoodRelation, times
+    );
+    if (!next) return [];
+    return [prisma.scheduledCallSlot.update({
+      where: { id: s.id },
+      data: {
+        label: next.label,
+        linkedMedicineNames: next.linkedMedicineNames,
+        // Keep a missing list missing: an empty one would hide the names on the dashboard.
+        ...(next.linkedMedicines ? { linkedMedicinesJson: JSON.stringify(next.linkedMedicines) } : {})
+      }
+    })];
+  });
+  const [updated] = await prisma.$transaction([prisma.medicine.update({ where: { id: med.id }, data: { name } }), ...slotWrites]);
   return toMedicine(updated);
 }
 
@@ -1483,7 +1528,6 @@ export async function createMedicineReport(reportData: {
   userId: string;
   fileName: string;
   fileType: string;
-  rawExtractionJson: ExtractedMedicineCandidate[];
   batchConfidence?: 'high' | 'medium' | 'low';
   batchQualityWarning?: string;
 }): Promise<MedicineReport> {
@@ -1494,9 +1538,10 @@ export async function createMedicineReport(reportData: {
       userId: reportData.userId,
       fileName: reportData.fileName.slice(0, 255),
       fileType: reportData.fileType.slice(0, 100),
-      // Uploaded files are not stored; only the extraction result is kept.
+      // Neither the photo nor what was read from it is kept: families may rename tablets ("BP tablet") so
+      // the real drug names never stay with us. Only the list they confirm is saved, as Medicine rows.
       fileUrl: null,
-      rawExtractionJson: JSON.stringify(reportData.rawExtractionJson || []),
+      rawExtractionJson: '[]',
       batchConfidence: reportData.batchConfidence || null,
       batchQualityWarning: reportData.batchQualityWarning || null,
       status: 'draft'

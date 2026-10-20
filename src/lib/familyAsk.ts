@@ -69,6 +69,7 @@ export function formatRecords(p: ParentWithRecords, now: Date): string {
   lines.push(`Daily call times: ${p.callSchedule.map(s => `${s.time} (${s.slot})`).join(', ') || 'none'}.`);
 
   lines.push('', 'MEDICINES');
+  // Nicknames only ("BP tablet"): Medicine.officialName stays inside Aaptha and is never sent to the AI.
   for (const m of p.medicines) {
     lines.push(`- ${m.name}, ${m.dosage}, ${m.timingSlots.join('/') || m.timeOfDay}${m.isActive ? '' : ' [stopped / paused]'}${m.purpose ? ` — family says: ${m.purpose}` : ''}`);
   }

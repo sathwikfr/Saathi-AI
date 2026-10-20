@@ -107,7 +107,7 @@ const PROMISES = [
   { title: 'Never plays doctor', body: 'Saathi doesn’t diagnose or give medical advice. Health questions go to their doctor, or to you.', Demo: DoctorDemo, tint: 'var(--green-soft)' },
   { title: 'Listens for warning signs', body: 'A fall, chest pain, feeling faint: Saathi stays calm, asks them to get help, and tells you straight away.', Demo: WarningDemo, tint: 'var(--red-soft)' },
   { title: 'Consent comes first', body: 'Calls only start once your parent has agreed. Pause or stop them at any time.', Demo: ConsentDemo, tint: 'var(--teal-soft)' },
-  { title: 'You confirm every medicine', body: 'We draft the list from a prescription photo. Nothing is saved until you have checked it.', Demo: MedsDemo, tint: 'var(--blue-soft)' },
+  { title: 'You confirm every medicine', body: 'Name tablets in your own words, like “BP tablet”, or let us draft the list from a prescription photo. Nothing is saved until you have checked it.', Demo: MedsDemo, tint: 'var(--blue-soft)' },
 ];
 
 export function SafetySection() {

@@ -160,25 +160,58 @@ function splitList(value: string): string[] {
     .filter(s => s && !NO_CONCERN.has(s));
 }
 
-/** "Telmisartan (BP Tablet) 40mg" → "telmisartan" (drop brackets, doses and filler words). */
+/**
+ * "Telmisartan (BP Tablet) 40mg" → "telmisartan" (drop brackets, doses and filler words).
+ * A name that is only a filler word ("Syrup") keeps it, so it can still be matched.
+ */
 export function medicineKey(name: string): string {
-  return name
+  const key = name
     .toLowerCase()
     .replace(/\(.*?\)/g, ' ')
     .replace(/\b\d+(\.\d+)?\s*(mg|mcg|ml|g|iu)\b/g, ' ')
     .replace(/\b(tab|tablet|cap|capsule|syp|syrup|inj)\b\.?/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+  return key || name.toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
-function mentions(list: string[], medicine: string): boolean {
+/**
+ * The agent's list names this medicine. A loose match ("metformin 500" for "Metformin") only counts when the
+ * item isn't exactly another medicine on the call, so "white tablet" never marks "Small white tablet" too.
+ */
+function mentions(list: string[], medicine: string, keys: string[]): boolean {
   const key = medicineKey(medicine);
   if (!key) return false;
   return list.some(item => {
     const other = medicineKey(item);
-    return other && (other.includes(key) || key.includes(other));
+    if (!other) return false;
+    return other === key || ((other.includes(key) || key.includes(other)) && !keys.includes(other));
   });
 }
+
+/**
+ * Another medicine already called this. Every active tablet needs its own nickname ("BP tablet" twice would
+ * be asked once and mixed up later when one is stopped or its time changes), so callers refuse it.
+ */
+export function nameTaken<T extends { name: string }>(name: string, others: T[]): T | undefined {
+  const key = medicineKey(name);
+  return others.find(o => medicineKey(o.name) === key);
+}
+
+const TIME_WORD: Record<string, string> = { morning: 'Morning', afternoon: 'Afternoon', evening: 'Evening', bedtime: 'Night', as_needed: 'Extra' };
+
+/** The wanted nickname if it is free, else "Night BP tablet" (its first time), else "BP tablet 2", 3… */
+export function freeNickname(name: string, times: string[], taken: string[]): string {
+  const clean = name.trim();
+  const used = new Set(taken.map(medicineKey));
+  if (!used.has(medicineKey(clean))) return clean;
+  const word = TIME_WORD[times[0]];
+  if (word && !used.has(medicineKey(`${word} ${clean}`))) return `${word} ${clean}`;
+  for (let n = 2; ; n++) if (!used.has(medicineKey(`${clean} ${n}`))) return `${clean} ${n}`;
+}
+
+export const nameTakenMessage = (name: string, suggestion: string) =>
+  `"${name.trim()}" is already the name of another tablet. Each tablet needs its own name so Saathi can ask about it, for example "${suggestion}".`;
 
 function normaliseMood(value: string): CallLog['mood'] {
   const v = value.toLowerCase();
@@ -246,11 +279,12 @@ export function interpretCallResult(
   const stoppedList = splitList(asText(vars.medicines_stopped));
 
   // Most specific answer wins: stopped > later > missed > taken > the overall yes/no.
+  const keys = medicines.map(m => medicineKey(m.name));
   const medicineResults: MedicineResult[] = medicines.map(m => {
-    if (mentions(stoppedList, m.name)) return { name: m.name, status: 'stopped' as const };
-    if (mentions(laterList, m.name)) return { name: m.name, status: 'later' as const };
-    if (mentions(missedList, m.name)) return { name: m.name, status: 'missed' as const };
-    if (mentions(takenList, m.name)) return { name: m.name, status: 'taken' as const };
+    if (mentions(stoppedList, m.name, keys)) return { name: m.name, status: 'stopped' as const };
+    if (mentions(laterList, m.name, keys)) return { name: m.name, status: 'later' as const };
+    if (mentions(missedList, m.name, keys)) return { name: m.name, status: 'missed' as const };
+    if (mentions(takenList, m.name, keys)) return { name: m.name, status: 'taken' as const };
     if (allTaken === 'yes') return { name: m.name, status: 'taken' as const };
     if (allTaken === 'no') return { name: m.name, status: 'missed' as const };
     return { name: m.name, status: 'unknown' as const };
@@ -271,7 +305,7 @@ export function interpretCallResult(
   const lowList = splitList(asText(vars.medicines_running_low));
   const refillNames = opts.refillMedicines || [];
   const runningLow = refillNames.length
-    ? refillNames.filter(name => mentions(lowList, name))
+    ? refillNames.filter(name => mentions(lowList, name, refillNames.map(medicineKey)))
     : lowList.map(s => s.slice(0, 80));
   const stoppedReasonText = asText(vars.stopped_reason);
   const stoppedReason = NO_CONCERN.has(stoppedReasonText.toLowerCase()) ? null : stoppedReasonText.slice(0, 200);

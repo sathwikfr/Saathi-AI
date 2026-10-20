@@ -14,6 +14,11 @@ export function istDateString(date: Date): string {
   return istShift(date).toISOString().slice(0, 10);
 }
 
+/** Last day (IST YYYY-MM-DD) of a course of `days` days starting today: 1 day = today. */
+export function istLastDayOfCourse(days: number, now: Date = new Date()): string {
+  return istDateString(new Date(now.getTime() + (Math.max(1, Math.round(days)) - 1) * 864e5));
+}
+
 /** Minutes since midnight in IST (0–1439). */
 export function istMinutesOfDay(date: Date): number {
   const d = istShift(date);

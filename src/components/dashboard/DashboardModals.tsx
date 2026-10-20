@@ -4,7 +4,7 @@ import React from 'react';
 import { AlertTriangle, CheckCircle2, Copy, Download, FileText, MessageCircle, Pause, Pencil, Pill, Sparkles, Trash2, UploadCloud, Users, ArrowRight } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
 import { ThinkingOrb } from '@/components/ui/ThinkingOrb';
-import { SlotPicker, FoodPicker } from '@/components/onboarding/WizardUI';
+import { SlotPicker, FoodPicker, MedicineNameChips, NAME_HINT, DoseChips, CourseDays, FromPrescription, PurposeSuggestion } from '@/components/onboarding/WizardUI';
 import { ExtractedMedicineCandidate, FoodRelation, Medicine, MedicineTimingSlot, ParentProfile } from '@/lib/types';
 import { PhoneField } from '@/components/auth/AuthUI';
 import { normalizePhone } from '@/lib/phone';
@@ -33,40 +33,58 @@ type AddMedicineProps = {
   setName: (v: string) => void;
   dosage: string;
   setDosage: (v: string) => void;
-  timing: Medicine['timeOfDay'];
-  setTiming: (v: Medicine['timeOfDay']) => void;
+  /** One tablet can be taken at several times: one row, not one per time (nicknames must be unique). */
+  timings: MedicineTimingSlot[];
+  setTimings: (v: MedicineTimingSlot[]) => void;
+  officialName: string;
+  setOfficialName: (v: string) => void;
   food: FoodRelation;
   setFood: (v: FoodRelation) => void;
   purpose: string;
   setPurpose: (v: string) => void;
+  days: number | null;
+  setDays: (v: number | null) => void;
   onSubmit: (e: React.FormEvent) => void;
 };
 
 export function AddMedicineModal(p: AddMedicineProps) {
+  const toggleTime = (s: MedicineTimingSlot) => {
+    if (s === 'as_needed') return p.setTimings(p.timings.includes('as_needed') ? ['morning'] : ['as_needed']);
+    const without = p.timings.filter(t => t !== 'as_needed');
+    const next = without.includes(s) ? without.filter(t => t !== s) : [...without, s];
+    p.setTimings(next.length ? next : ['morning']);
+  };
   return (
     <Modal open={p.open} onClose={p.onClose} labelledBy="add-med-title">
       <ModalTitle id="add-med-title" icon={<Pill size={20} />} title={`Add a medicine for ${p.parentName}`} sub="Saathi will ask about it on the matching call." />
       <form onSubmit={p.onSubmit}>
         <div className="form-group">
-          <label className="form-label" htmlFor="add-med-name">Medicine name</label>
-          <input id="add-med-name" type="text" placeholder="e.g. Amlodipine, Glycomet, Thyronorm" value={p.name} onChange={(e) => p.setName(e.target.value)} className="form-input" autoFocus required />
+          <label className="form-label" htmlFor="add-med-name">What does {p.parentName} call it?</label>
+          <input id="add-med-name" type="text" placeholder="e.g. BP tablet, sugar tablet" value={p.name} onChange={(e) => p.setName(e.target.value)} className="form-input" autoFocus required />
+          <span className="form-hint">{NAME_HINT} Each tablet needs its own name.</span>
+          <MedicineNameChips value={p.name} onPick={p.setName} />
         </div>
         <div className="form-group">
-          <label className="form-label" htmlFor="add-med-dose">Dose</label>
-          <input id="add-med-dose" type="text" placeholder="e.g. 5mg, 1 tablet" value={p.dosage} onChange={(e) => p.setDosage(e.target.value)} className="form-input" required />
+          <label className="form-label" htmlFor="add-med-official">Real medicine name <span className="form-hint">Optional</span></label>
+          <input id="add-med-official" type="text" placeholder="e.g. Amlodipine 5 mg" value={p.officialName} onChange={(e) => p.setOfficialName(e.target.value)} className="form-input" />
+          <span className="form-hint">For the doctor summary, chemist list and emergency card. Saathi doesn&apos;t say it.</span>
         </div>
         <div className="form-group">
-          <label className="form-label" htmlFor="add-med-time">When is it taken?</label>
-          <select id="add-med-time" value={p.timing} onChange={(e) => p.setTiming(e.target.value as Medicine['timeOfDay'])} className="form-input">
-            <option value="morning">Morning</option>
-            <option value="afternoon">Afternoon</option>
-            <option value="evening">Evening</option>
-            <option value="bedtime">Bedtime</option>
-          </select>
+          <label className="form-label" htmlFor="add-med-dose">How many each time <span className="form-hint">Optional</span></label>
+          <input id="add-med-dose" type="text" placeholder="e.g. 1 tablet, half tablet, 1 spoon" value={p.dosage} onChange={(e) => p.setDosage(e.target.value)} className="form-input" />
+          <DoseChips value={p.dosage} onPick={p.setDosage} />
+        </div>
+        <div className="form-group">
+          <span className="form-label">When is it taken? <span className="form-hint">Pick every time</span></span>
+          <SlotPicker isSelected={(s) => p.timings.includes(s)} onToggle={toggleTime} />
         </div>
         <div className="form-group">
           <span className="form-label">With food?</span>
           <FoodPicker value={p.food} onChange={p.setFood} />
+        </div>
+        <div className="form-group">
+          <span className="form-label">For how many more days?</span>
+          <CourseDays key={p.open ? 'open' : 'closed'} id="add-med-days" value={p.days} onChange={p.setDays} />
         </div>
         <div className="form-group">
           <label className="form-label" htmlFor="add-med-purpose">Why it matters, in your words <span className="form-hint">Optional</span></label>
@@ -299,9 +317,15 @@ type UploadProps = {
 export function UploadReportModal(p: UploadProps) {
   const selectedCount = p.meds.filter(m => m.selected && m.name.trim()).length;
   const active = p.currentMedicines.filter(m => m.isActive);
+  // Rows hold the prescription's name; "same medicine" compares prescription names (nicknames can be anything).
+  const officialKey = (m: Medicine) => medicineKey(m.officialName || m.name);
   const extractedKeys = new Set(p.meds.filter(m => m.selected && m.name.trim()).map(m => medicineKey(m.name)));
-  const alreadyListed = (name: string) => active.some(a => medicineKey(a.name) === medicineKey(name));
-  const notOnPrescription = active.filter(a => !extractedKeys.has(medicineKey(a.name)));
+  const alreadyListed = (name: string) => active.some(a => officialKey(a) === medicineKey(name));
+  const replacing = (a: Medicine) => p.meds.some(m => m.selected && m.replacesId === a.id);
+  const notOnPrescription = active.filter(a => !extractedKeys.has(officialKey(a)) && !replacing(a));
+  // A current tablet this new one probably replaces: its nickname sits inside the suggested one ("BP tablet" in "Morning BP tablet").
+  const likelyReplaced = (med: ExtractedMedicineCandidate) =>
+    med.suggestedNickname ? active.find(a => !extractedKeys.has(officialKey(a)) && medicineKey(med.nickname || '').includes(medicineKey(a.name))) : undefined;
   const update = (idx: number, patch: Partial<ExtractedMedicineCandidate> | ((m: ExtractedMedicineCandidate) => ExtractedMedicineCandidate)) => {
     p.setMeds(p.meds.map((m, i) => (i === idx ? (typeof patch === 'function' ? patch(m) : { ...m, ...patch }) : m)));
   };
@@ -313,7 +337,7 @@ export function UploadReportModal(p: UploadProps) {
         id="upload-title"
         icon={<Sparkles size={20} />}
         title={`Scan a prescription for ${p.parentName}`}
-        sub="We read the photo and draft the medicine list. You check every line; nothing is saved until you confirm."
+        sub={`We read the photo once and don't keep it. You check every line and can rename any tablet to what ${p.parentName} calls it. Nothing is saved until you confirm.`}
       />
 
       {p.loading && (
@@ -391,32 +415,97 @@ export function UploadReportModal(p: UploadProps) {
                     {med.confidence === 'low' && <span className="badge badge-amber"><AlertTriangle size={12} /> Please check</span>}
                   </span>
                 </div>
-                <div className="row-grid" style={{ gap: '10px 12px' }}>
-                  <input
-                    type="text"
-                    value={med.name}
-                    onChange={(e) => update(idx, { name: e.target.value })}
-                    className="form-input"
-                    placeholder="Medicine name"
-                    aria-label="Medicine name"
-                  />
-                  <input
-                    type="text"
-                    value={med.dosage}
-                    onChange={(e) => update(idx, { dosage: e.target.value })}
-                    className="form-input"
-                    placeholder="Dose"
-                    aria-label="Dose"
-                  />
-                  <div style={{ gridColumn: '1 / -1' }}>
+                <div className="med-fields">
+                  <div className="med-pair">
+                    <div className="form-group">
+                      <label className="mini-label" htmlFor={`scan-name-${idx}`}>Medicine (from the prescription)</label>
+                      <input
+                        id={`scan-name-${idx}`}
+                        type="text"
+                        value={med.name}
+                        onChange={(e) => update(idx, { name: e.target.value })}
+                        className="form-input"
+                        placeholder="e.g. Amlodipine 5 mg"
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label className="mini-label" htmlFor={`scan-dose-${idx}`}>How many each time{med.autoFilled?.includes('dose') && <FromPrescription />}</label>
+                      <input
+                        id={`scan-dose-${idx}`}
+                        type="text"
+                        value={med.dosage}
+                        onChange={(e) => update(idx, { dosage: e.target.value })}
+                        className="form-input"
+                        placeholder="e.g. 1 tablet"
+                      />
+                    </div>
+                  </div>
+                  {med.prescriptionText && (
+                    <div className="rx-line"><FileText size={13} aria-hidden="true" /><span>Prescription says: {med.prescriptionText}</span></div>
+                  )}
+                  {med.name.trim() && !alreadyListed(med.name) && active.length > 0 && (() => {
+                    const likely = likelyReplaced(med);
+                    return (
+                      <div className="form-group">
+                        <label className="mini-label" htmlFor={`scan-replaces-${idx}`}>
+                          {likely ? `Does this replace ${likely.officialName || likely.name}${likely.officialName ? ` (${likely.name})` : ''}?` : 'Does this replace a current medicine?'}
+                        </label>
+                        <select
+                          id={`scan-replaces-${idx}`}
+                          className="form-input"
+                          value={med.replacesId || ''}
+                          onChange={(e) => {
+                            const target = active.find(a => a.id === e.target.value);
+                            update(idx, (m) => ({ ...m, replacesId: target?.id, nickname: target ? target.name : m.nickname }));
+                          }}
+                        >
+                          <option value="">No, it&apos;s an extra medicine</option>
+                          {[...(likely ? [likely] : []), ...active.filter(a => a.id !== likely?.id && !extractedKeys.has(officialKey(a)))].map(a => (
+                            <option key={a.id} value={a.id}>Yes, it replaces {a.name}{a.officialName ? ` (${a.officialName})` : ''}</option>
+                          ))}
+                        </select>
+                        {med.replacesId && <span className="form-hint" style={{ display: 'block', marginTop: '4px' }}>The old one is archived (never deleted) and the call times follow this prescription.</span>}
+                      </div>
+                    );
+                  })()}
+                  <div className="form-group">
+                    <label className="mini-label" htmlFor={`scan-nick-${idx}`}>What does {p.parentName} call it?{med.suggestedNickname && !med.replacesId && <FromPrescription />}</label>
+                    <input
+                      id={`scan-nick-${idx}`}
+                      type="text"
+                      value={med.nickname || ''}
+                      onChange={(e) => update(idx, { nickname: e.target.value })}
+                      className="form-input"
+                      placeholder="e.g. BP tablet"
+                      disabled={!!med.replacesId}
+                    />
+                    {med.replacesId
+                      ? <span className="form-hint" style={{ display: 'block', marginTop: '4px' }}>Keeps the old tablet&apos;s name, so {p.parentName} hears nothing new.</span>
+                      : (
+                        <>
+                          <span className="form-hint" style={{ display: 'block', marginTop: '4px' }}>Saathi says this name on the calls.</span>
+                          <MedicineNameChips folded value={med.nickname || ''} onPick={(n) => update(idx, { nickname: n })} />
+                        </>
+                      )}
+                  </div>
+                  <div className="form-group">
+                    <span className="mini-label">When is it taken?</span>
                     <SlotPicker
                       isSelected={(s) => !!med.timingSlots?.includes(s) || (s === med.timeOfDay && (!med.timingSlots || med.timingSlots.length === 0))}
                       onToggle={(s) => update(idx, (m) => toggleSlot(m, s))}
                     />
                   </div>
-                  <div style={{ gridColumn: '1 / -1' }}>
+                  <div className="form-group">
+                    <span className="mini-label">With food?{med.autoFilled?.includes('food') && <FromPrescription />}</span>
                     <FoodPicker value={med.foodRelation} onChange={(v) => update(idx, { foodRelation: v })} />
                   </div>
+                  <div className="form-group">
+                    <span className="mini-label">For how many more days?{med.autoFilled?.includes('days') && <FromPrescription />}</span>
+                    <CourseDays id={`scan-days-${idx}`} value={med.courseDays} suggestedDays={med.suggestedDays} onChange={(d) => update(idx, { courseDays: d })} />
+                  </div>
+                  {med.suggestedPurpose && (
+                    <PurposeSuggestion suggestion={med.suggestedPurpose} value={med.purpose} onChange={(pp) => update(idx, { purpose: pp })} />
+                  )}
                 </div>
               </div>
             ))}
@@ -437,7 +526,7 @@ export function UploadReportModal(p: UploadProps) {
                       onChange={() => p.setStopIds(p.stopIds.includes(m.id) ? p.stopIds.filter(x => x !== m.id) : [...p.stopIds, m.id])}
                       style={{ width: '17px', height: '17px', accentColor: 'var(--teal)' }}
                     />
-                    {m.name} <span style={{ color: 'var(--ink-subtle)' }}>{m.dosage}</span>
+                    {m.name} <span style={{ color: 'var(--ink-subtle)' }}>{m.officialName ? `${m.officialName} · ` : ''}{m.dosage}</span>
                   </label>
                 ))}
               </div>

@@ -24,7 +24,8 @@ import { newId } from './db';
 import { getEffectivePlan, reminderChannelFor, healthMonitorAvailable, firmCallLimit } from './plans';
 import { ownerHasHealthMonitor, ownerPlanFor } from './planAccess';
 import { normalizePhone } from './phone';
-import { generateMedicineCheckinQuestion } from './scheduleGenerator';
+import { generateMedicineCheckinQuestion, cleanMedicineNameForSpeech } from './scheduleGenerator';
+import { medicineKey } from './callInterpretation';
 import { istDateString, istMinutesOfDay, isSlotDue, parseClockTime } from './ist';
 import {
   SarvamConfig, getSarvamConfig, createOutboundCall, SarvamApiError, OutboundCallInput, CallType, isProviderAccountProblem, logProviderProblem
@@ -95,7 +96,12 @@ function isUniqueViolation(err: unknown): boolean {
  * Medicines Saathi should ask about on this slot (skips ones the family has since paused),
  * with the family's current "why" for each.
  */
-export function slotMedicines(slot: SlotRow, inactiveNames: Set<string>, purposes: Map<string, string> = new Map()): LinkedMedicineDetail[] {
+export function slotMedicines(
+  slot: SlotRow,
+  inactiveNames: Set<string>,
+  purposes: Map<string, string> = new Map(),
+  officials: Map<string, string> = new Map()
+): LinkedMedicineDetail[] {
   let linked: LinkedMedicineDetail[] = [];
   if (slot.linkedMedicinesJson) {
     try {
@@ -114,22 +120,34 @@ export function slotMedicines(slot: SlotRow, inactiveNames: Set<string>, purpose
   }
   return linked
     .filter(m => !inactiveNames.has(m.name))
-    .map(m => (purposes.get(m.name) ? { ...m, purpose: purposes.get(m.name) } : m));
+    .map(m => (purposes.get(m.name) ? { ...m, purpose: purposes.get(m.name) } : m))
+    .map(m => withOfficialName(m, officials.get(m.name)));
 }
 
-type MedicineRow = { name: string; isActive: boolean; purpose: string | null; endsOn?: string | null };
+/** The family switched real names on: "Did you take your BP tablet (Amlodipine 5 mg) after breakfast?". */
+function withOfficialName(m: LinkedMedicineDetail, official: string | undefined): LinkedMedicineDetail {
+  if (!official || medicineKey(official) === medicineKey(m.name)) return m;
+  const spoken = cleanMedicineNameForSpeech(m.name);
+  return { ...m, officialName: official, questionScript: m.questionScript?.replace(spoken, `${spoken} (${cleanMedicineNameForSpeech(official)})`) };
+}
+
+type MedicineRow = { name: string; isActive: boolean; purpose: string | null; endsOn?: string | null; officialName?: string | null };
 
 /** Switched on and not past its course end date (`today` is IST YYYY-MM-DD). */
 export function medicineIsCurrent(m: { isActive: boolean; endsOn?: string | null }, today: string): boolean {
   return m.isActive && (!m.endsOn || m.endsOn >= today);
 }
 
-export function medicineMaps(medicines: MedicineRow[], today: string) {
+/** `sayOfficialNames` = ParentProfile.useOfficialNames: only then do calls and WhatsApp get the real names. */
+export function medicineMaps(medicines: MedicineRow[], today: string, sayOfficialNames = false) {
   const current = medicines.filter(m => medicineIsCurrent(m, today));
-  const inactiveNames = new Set(medicines.filter(m => !medicineIsCurrent(m, today)).map(m => m.name));
-  const purposes = new Map(current.filter(m => m.purpose?.trim()).map(m => [m.name, m.purpose!.trim()]));
   const activeNames = current.map(m => m.name);
-  return { inactiveNames, purposes, activeNames };
+  // Slots link by name, so a paused "BP tablet" must not hide a current one with the same name.
+  // ponytail: by name, not time: the paused one's own slot is still asked about; needs slot <-> medicine ids to fix.
+  const inactiveNames = new Set(medicines.filter(m => !medicineIsCurrent(m, today) && !activeNames.includes(m.name)).map(m => m.name));
+  const purposes = new Map(current.filter(m => m.purpose?.trim()).map(m => [m.name, m.purpose!.trim()]));
+  const officials = new Map(sayOfficialNames ? current.filter(m => m.officialName?.trim()).map(m => [m.name, m.officialName!.trim()]) : []);
+  return { inactiveNames, purposes, activeNames, officials };
 }
 
 interface ParentForCall {
@@ -540,14 +558,14 @@ async function loadPartnerForCall(id: string): Promise<ParentForCall | undefined
 async function partnerPart(partner: LoadedParent, slotType: string, now: Date, readings: { monitor: boolean; here: boolean } = { monitor: false, here: true }): Promise<PartnerSnapshot | null> {
   const slot = partner.callSchedule.find(s => s.isActive && s.slot === slotType);
   if (!slot) return null;
-  const { inactiveNames, purposes } = medicineMaps(partner.medicines, istDateString(now));
+  const { inactiveNames, purposes, officials } = medicineMaps(partner.medicines, istDateString(now), partner.useOfficialNames);
   const taken = readings.monitor && readings.here ? await readingsTakenToday(partner.id, now, partner.readingsEveryDays) : [];
   return {
     parentId: partner.id,
     name: partner.name,
     slotId: slot.id,
     slot: slot.slot,
-    medicines: slotMedicines(slot, inactiveNames, purposes),
+    medicines: slotMedicines(slot, inactiveNames, purposes, officials),
     askReadings: readings.monitor && readings.here ? partner.readingsToAsk.filter(k => !taken.includes(k)) : []
   };
 }
@@ -669,7 +687,7 @@ export async function runDispatch(deps: DispatchDeps = {}): Promise<DispatchSumm
       const medSlots = vitalsSlot ? slots.filter(s => s.id !== vitalsSlot.id) : slots;
       if (medSlots.length > plan.callsPerDay) summary.cappedByPlan += medSlots.length - plan.callsPerDay;
 
-      const { inactiveNames, purposes, activeNames } = medicineMaps(parent.medicines, today);
+      const { inactiveNames, purposes, activeNames, officials } = medicineMaps(parent.medicines, today, parent.useOfficialNames);
       const createdToday = istDateString(parent.createdAt) === today;
       const createdMinutes = istMinutesOfDay(parent.createdAt);
       const forCall: ParentForCall = { ...parent, phone: phone.e164 };
@@ -705,7 +723,7 @@ export async function runDispatch(deps: DispatchDeps = {}): Promise<DispatchSumm
           loads = await healthLoads(parent.id, medCapped, inactiveNames, purposes, now);
           feelingAsked = await feelingAskedToday(parent.id, today);
         }
-        const own = slotMedicines(slot, inactiveNames, purposes);
+        const own = slotMedicines(slot, inactiveNames, purposes, officials);
         // "Later" earlier today: asked again here (there are no extra follow-up calls).
         const carried = (await laterToday(parent.id, today)).filter(m => !inactiveNames.has(m.name) && !own.some(o => o.name.trim().toLowerCase() === m.name.trim().toLowerCase()));
         const medicines = [...own, ...carried];
@@ -824,8 +842,8 @@ export async function runDispatch(deps: DispatchDeps = {}): Promise<DispatchSumm
       if (!phone.ok) continue;
 
       const slot = parent.callSchedule.find(s => s.id === prev.slotId && s.isActive);
-      const { inactiveNames, purposes, activeNames } = medicineMaps(parent.medicines, today);
-      const own = slot ? slotMedicines(slot, inactiveNames, purposes) : [];
+      const { inactiveNames, purposes, activeNames, officials } = medicineMaps(parent.medicines, today, parent.useOfficialNames);
+      const own = slot ? slotMedicines(slot, inactiveNames, purposes, officials) : [];
       const carried = (await laterToday(parent.id, today)).filter(m => !inactiveNames.has(m.name) && !own.some(o => o.name.trim().toLowerCase() === m.name.trim().toLowerCase()));
       const medicines = [...own, ...carried];
       const forCall: ParentForCall = { ...parent, phone: phone.e164 };
@@ -1026,8 +1044,8 @@ export async function placeManualCall(
     slots.find(s => s.linkedMedicineNames.length > 0) ||
     slots[0];
 
-  const { inactiveNames, purposes, activeNames } = medicineMaps(parent.medicines, istDateString(now));
-  const medicines = chosen ? slotMedicines(chosen, inactiveNames, purposes) : [];
+  const { inactiveNames, purposes, activeNames, officials } = medicineMaps(parent.medicines, istDateString(now), parent.useOfficialNames);
+  const medicines = chosen ? slotMedicines(chosen, inactiveNames, purposes, officials) : [];
   const forCall: ParentForCall = { ...parent, phone: phone.e164 };
   const snapshot: CallSnapshot = { medicines, callType: 'reminder', asked: await extrasFor(forCall, 'reminder', activeNames, now, deps) };
 

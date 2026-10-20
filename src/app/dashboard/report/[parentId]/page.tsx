@@ -125,7 +125,11 @@ export default function DoctorReportPage() {
             <tbody>
               {view.perMed.map(r => (
                 <tr key={r.med.id} style={{ borderTop: '1px solid var(--line-subtle)' }}>
-                  <td style={{ padding: '8px' }}><b>{r.med.name}</b> {r.med.dosage}{r.stopped ? ' · said they stopped it' : ''}</td>
+                  <td style={{ padding: '8px' }}>
+                    <b>{r.med.officialName || r.med.name}</b> {r.med.dosage}
+                    {r.med.officialName && <span style={{ color: 'var(--ink-muted)' }}> · &ldquo;{r.med.name}&rdquo; at home</span>}
+                    {r.stopped ? ' · said they stopped it' : ''}
+                  </td>
                   <td style={{ padding: '8px' }}>{r.asked ? `${r.taken} of ${r.asked} (${Math.round((r.taken / r.asked) * 100)}%)` : 'not asked yet'}</td>
                   <td style={{ padding: '8px' }}>{r.missedDates.join(', ') || '—'}</td>
                 </tr>

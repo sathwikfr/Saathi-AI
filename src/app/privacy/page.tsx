@@ -33,7 +33,7 @@ export default function PrivacyPage() {
         <li><b>Your account:</b> name, email address, mobile number, password (stored only as a one-way hash), plan and billing status.</li>
         <li><b>About your parent:</b> name, relationship to you, phone number, preferred language, time zone, call times, emergency contacts you add, and the emergency-card details you choose to add (address, blood group, conditions, allergies, nearest hospital, doctor).</li>
         <li><b>Health records you upload</b> to the vault: reports, prescriptions, scans, bills and insurance papers, kept privately and opened only through short-lived links.</li>
-        <li><b>Health details you give us:</b> medicine names, doses and timings, typed in or read from a prescription photo you upload.</li>
+        <li><b>Health details you give us:</b> medicine names (or your own names for them, like “BP tablet”: real names are never required), doses and timings, typed in or read from a prescription photo you upload.</li>
         <li><b>From the calls:</b> whether the call was answered, how long it lasted, which medicines your parent said they took, their answers about sleep, appetite and pain when asked, their mood, anything they asked us to tell you, a short summary, and a text transcript of the conversation. We also count how many words your parent said, to notice if answers get much shorter than usual.</li>
         <li><b>Patterns across calls:</b> for example the same complaint on several days, written as a nudge to the family. We never diagnose.</li>
         <li><b>Messages your parent forwards to our WhatsApp number</b> to check for scams, and our reply.</li>

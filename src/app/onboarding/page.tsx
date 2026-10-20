@@ -31,13 +31,17 @@ import {
   Camera,
   CalendarClock,
   ShieldAlert,
+  ShieldCheck,
   MessageCircle,
   Download,
   Copy,
   User as UserIcon,
   Users
 } from 'lucide-react';
-import { WizardShell, StepHeader, SlotPicker, FoodPicker, foodLabel, WHATSAPP_STEPS } from '@/components/onboarding/WizardUI';
+import { WizardShell, StepHeader, SlotPicker, FoodPicker, foodLabel, WHATSAPP_STEPS, MedicineNameChips, NAME_HINT, DoseChips, CourseDays, FromPrescription, PurposeSuggestion } from '@/components/onboarding/WizardUI';
+import { fillFromInstructions, withNicknames } from '@/lib/prescriptionHints';
+import { istLastDayOfCourse } from '@/lib/ist';
+import { nameTaken, freeNickname, nameTakenMessage } from '@/lib/callInterpretation';
 import { PhoneField } from '@/components/auth/AuthUI';
 import { ThinkingOrb } from '@/components/ui/ThinkingOrb';
 import { SAMPLE_PRESCRIPTIONS } from '@/lib/medicineExtractor';
@@ -61,7 +65,6 @@ function OnboardingContent() {
   // Remind: WhatsApp medicine reminders (no calls) for someone who carries their phone, often the account holder.
   const waMode = currentPlan.channel === 'whatsapp';
   const [forSelf, setForSelf] = useState<boolean | null>(null);
-  const [courseEndsOn, setCourseEndsOn] = useState('');
   const [reminderStart, setReminderStart] = useState<{ whatsappReady: boolean; link: string | null; caretakerLink?: string | null } | null>(null);
   const [linkCopied, setLinkCopied] = useState(false);
   // Remind: who is told when a dose isn't confirmed after 3 asks. 'me' = the account holder (for someone else).
@@ -99,6 +102,10 @@ function OnboardingContent() {
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [errorUpgradeHref, setErrorUpgradeHref] = useState<string | null>(null);
+  // The error box sits above the step; a long medicine list would hide it.
+  useEffect(() => {
+    if (errorMsg) window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [errorMsg]);
 
   // Step 1: Parent Info
   const [name, setName] = useState('');
@@ -131,6 +138,10 @@ function OnboardingContent() {
     purpose?: string;
     /** Remind plan: tablets in hand right now (optional), as typed. */
     tabletsLeft?: string;
+    /** For how many more days (a course); null/undefined = ongoing. */
+    courseDays?: number | null;
+    /** The prescription's name ("Amlodipine 5 mg"); `name` is the nickname Saathi says. Optional when typed. */
+    officialName?: string;
   }>>([
     { name: '', dosage: '1 tablet after breakfast', timeOfDay: 'morning', timingSlots: ['morning'], foodRelation: 'after_food', frequency: 'daily' }
   ]);
@@ -206,11 +217,11 @@ function OnboardingContent() {
       setBatchConfidence(data.batchConfidence || 'high');
       setBatchQualityWarning(data.batchQualityWarning || null);
       setExtractedCandidates(
-        data.extractedMedicines.map((m: ExtractedMedicineCandidate) => ({
-          ...m,
+        withNicknames(data.extractedMedicines.map((m: ExtractedMedicineCandidate) => ({
+          ...fillFromInstructions(m),
           selected: m.selected !== undefined ? m.selected : (m.confidence !== 'low'),
           verifiedByUser: m.confidence === 'high'
-        }))
+        })))
       );
     } catch {
       setExtractionError('Network error while processing report. You can enter medicines manually.');
@@ -245,11 +256,11 @@ function OnboardingContent() {
       setBatchConfidence(data.batchConfidence || 'high');
       setBatchQualityWarning(data.batchQualityWarning || null);
       setExtractedCandidates(
-        data.extractedMedicines.map((m: ExtractedMedicineCandidate) => ({
-          ...m,
+        withNicknames(data.extractedMedicines.map((m: ExtractedMedicineCandidate) => ({
+          ...fillFromInstructions(m),
           selected: m.selected !== undefined ? m.selected : (m.confidence !== 'low'),
           verifiedByUser: m.confidence === 'high'
-        }))
+        })))
       );
     } catch {
       setExtractionError('Network error while processing sample report.');
@@ -328,16 +339,25 @@ function OnboardingContent() {
       setErrorMsg('Please select at least one medicine row to confirm, or switch to manual entry.');
       return;
     }
+    const asMeds = selected.map(c => ({ ...c, name: (c.nickname || c.name).trim(), officialName: c.name.trim() }));
+    const clash = nameClash(asMeds);
+    if (clash) {
+      setErrorMsg(clash);
+      return;
+    }
 
     // Convert to medicines state with multi-slot support and food relations
     setMedicines(
-      selected.map(c => ({
-        name: c.name.trim(),
+      asMeds.map(c => ({
+        name: c.name,
+        officialName: c.officialName,
         dosage: c.dosage.trim() || '1 tablet',
         timeOfDay: c.timeOfDay,
         timingSlots: c.timingSlots && c.timingSlots.length > 0 ? c.timingSlots : [c.timeOfDay || 'morning'],
         foodRelation: c.foodRelation || 'not_specified',
-        frequency: c.frequency || 'daily'
+        frequency: c.frequency || 'daily',
+        courseDays: c.courseDays ?? null,
+        purpose: c.purpose
       }))
     );
 
@@ -488,6 +508,14 @@ function OnboardingContent() {
     setEmergencyContacts(emergencyContacts.filter((_, i) => i !== index));
   };
 
+  /** Every tablet needs its own nickname ("BP tablet" twice would be asked once and mixed up later). */
+  const nameClash = (list: { name: string; timingSlots?: string[]; timeOfDay?: string }[]) => {
+    const named = list.filter(m => m.name.trim());
+    const dup = named.find((m, i) => nameTaken(m.name, named.slice(0, i)));
+    if (!dup) return null;
+    return nameTakenMessage(dup.name, freeNickname(dup.name, dup.timingSlots?.length ? dup.timingSlots : [dup.timeOfDay || 'morning'], named.map(m => m.name)));
+  };
+
   // Navigation handlers
   const handleNextStep = () => {
     setErrorMsg('');
@@ -502,6 +530,11 @@ function OnboardingContent() {
       }
       setStep(2);
     } else if (step === 2) {
+      const clash = nameClash(medicines);
+      if (clash) {
+        setErrorMsg(clash);
+        return;
+      }
       setStep(3);
     } else if (step === 3) {
       if (unspecifiedMeds.length > 0) {
@@ -510,10 +543,6 @@ function OnboardingContent() {
       }
       if (callSchedule.filter(s => s.isActive).length === 0) {
         setErrorMsg(waMode ? 'Please add at least one reminder time.' : 'Please configure at least one call time for your parent.');
-        return;
-      }
-      if (waMode && courseEndsOn && courseEndsOn < new Date().toISOString().slice(0, 10)) {
-        setErrorMsg('The course end date is in the past.');
         return;
       }
       // WhatsApp reminders have no emergency calls, so no emergency plan step.
@@ -556,7 +585,7 @@ function OnboardingContent() {
 
     try {
       const validMeds = (hasMedicines ? medicines.filter(m => m.name.trim() !== '') : [])
-        .map(m => (waMode && courseEndsOn ? { ...m, endsOn: courseEndsOn } : m))
+        .map(({ courseDays, ...m }) => (courseDays ? { ...m, endsOn: istLastDayOfCourse(courseDays) } : m))
         .map(m => {
           const { tabletsLeft, ...rest } = m as typeof m & { tabletsLeft?: string };
           const n = waMode && tabletsLeft && tabletsLeft.trim() !== '' ? Number(tabletsLeft) : null;
@@ -626,7 +655,7 @@ function OnboardingContent() {
     }
   };
 
-  const selectedCandidateCount = extractedCandidates.filter(c => c.selected && c.name.trim().length >= 3).length;
+  const selectedCandidateCount = extractedCandidates.filter(c => c.selected && c.name.trim().length >= 2).length;
   const showSamples = process.env.NODE_ENV === 'development';
 
   const slotIcon = (slot: ScheduledCallSlot['slot']) => {
@@ -890,19 +919,20 @@ function OnboardingContent() {
           {hasMedicines === true && medicineEntryMode === 'choice' && (
             <>
               <div className="choice-grid">
-                <button type="button" className="choice-card recommended" onClick={() => setMedicineEntryMode('upload')}>
-                  <span className="badge badge-gold choice-flag"><Sparkles size={12} /> Fastest</span>
-                  <span className="icon-tile"><Camera size={22} /></span>
-                  <strong>Snap the prescription</strong>
-                  <p>Upload a photo of a prescription, discharge summary or pharmacy bill. We draft the list and you check it.</p>
-                  <span className="choice-cta">Upload a photo <ArrowRight size={15} /></span>
+                <button type="button" className="choice-card recommended" onClick={() => setMedicineEntryMode('manual')}>
+                  <span className="badge badge-gold choice-flag"><ShieldCheck size={12} /> No prescription needed</span>
+                  <span className="icon-tile"><Pill size={22} /></span>
+                  <strong>Add them your way</strong>
+                  <p>Name each tablet the way {name.trim() || 'they'} know{name.trim() ? 's' : ''} it, like &ldquo;BP tablet&rdquo; or &ldquo;sugar tablet&rdquo;. Real medicine names are optional.</p>
+                  <span className="choice-cta">Add the tablets <ArrowRight size={15} /></span>
                 </button>
 
-                <button type="button" className="choice-card" onClick={() => setMedicineEntryMode('manual')}>
-                  <span className="icon-tile gold"><Pill size={22} /></span>
-                  <strong>Type them in</strong>
-                  <p>Add each medicine&apos;s name, dose and when it&apos;s taken.</p>
-                  <span className="choice-cta" style={{ color: 'var(--ink)' }}>Enter manually <ArrowRight size={15} /></span>
+                <button type="button" className="choice-card" onClick={() => setMedicineEntryMode('upload')}>
+                  <span className="badge badge-teal choice-flag"><Sparkles size={12} /> Fastest way</span>
+                  <span className="icon-tile gold"><Camera size={22} /></span>
+                  <strong>Snap the prescription</strong>
+                  <p>We read the photo once and don&apos;t keep it. You check every line and can rename any tablet before saving.</p>
+                  <span className="choice-cta" style={{ color: 'var(--ink)' }}>Upload a photo <ArrowRight size={15} /></span>
                 </button>
               </div>
 
@@ -999,11 +1029,12 @@ function OnboardingContent() {
 
               {!uploadLoading && extractedCandidates.length > 0 && (
                 <div>
-                  <div className="notice teal" style={{ alignItems: 'center' }}>
+                  <div className="notice teal" style={{ alignItems: 'center', flexWrap: 'wrap' }}>
                     <Sparkles size={20} />
-                    <div style={{ flex: 1 }}>
+                    {/* Wraps the button under the text on phones instead of squeezing the text. */}
+                    <div style={{ flex: '1 1 220px' }}>
                       <strong>We found {extractedCandidates.length} medicine{extractedCandidates.length === 1 ? '' : 's'}{uploadedFileName ? ` in ${uploadedFileName}` : ''}</strong>
-                      <span style={{ fontSize: '0.84rem' }}>This is a draft. Check each one carefully; nothing is saved until you confirm.</span>
+                      <span style={{ fontSize: '0.84rem' }}>This is a draft. Check each one; boxes marked &ldquo;From prescription&rdquo; were filled in for you. Nothing is saved until you confirm.</span>
                     </div>
                     <button
                       type="button"
@@ -1066,40 +1097,77 @@ function OnboardingContent() {
                             </div>
                           )}
 
-                          <div className="row-grid">
+                          <div className="med-fields">
+                            <div className="med-pair">
+                              <div className="form-group">
+                                <label className="mini-label" htmlFor={`cand-name-${idx}`}>Medicine (from the prescription)</label>
+                                <input
+                                  id={`cand-name-${idx}`}
+                                  type="text"
+                                  value={candidate.name}
+                                  onChange={(e) => updateCandidateField(idx, 'name', e.target.value)}
+                                  className="form-input"
+                                  placeholder="e.g. Amlodipine 5 mg"
+                                />
+                              </div>
+                              <div className="form-group">
+                                <label className="mini-label" htmlFor={`cand-dose-${idx}`}>How many each time{candidate.autoFilled?.includes('dose') && <FromPrescription />}</label>
+                                <input
+                                  id={`cand-dose-${idx}`}
+                                  type="text"
+                                  value={candidate.dosage}
+                                  onChange={(e) => updateCandidateField(idx, 'dosage', e.target.value)}
+                                  className="form-input"
+                                  placeholder="e.g. 1 tablet"
+                                />
+                              </div>
+                            </div>
+                            {candidate.prescriptionText && (
+                              <div className="rx-line"><FileText size={13} aria-hidden="true" /><span>Prescription says: {candidate.prescriptionText}</span></div>
+                            )}
                             <div className="form-group">
-                              <label className="mini-label" htmlFor={`cand-name-${idx}`}>Medicine name</label>
+                              <label className="mini-label" htmlFor={`cand-nick-${idx}`}>What does {name.trim() || 'your parent'} call it?{candidate.suggestedNickname && <FromPrescription />}</label>
                               <input
-                                id={`cand-name-${idx}`}
+                                id={`cand-nick-${idx}`}
                                 type="text"
-                                value={candidate.name}
-                                onChange={(e) => updateCandidateField(idx, 'name', e.target.value)}
+                                value={candidate.nickname || ''}
+                                onChange={(e) => updateCandidateField(idx, 'nickname', e.target.value)}
                                 className="form-input"
-                                placeholder="e.g. Telmisartan 40mg"
+                                placeholder="e.g. BP tablet"
                               />
+                              <span className="form-hint" style={{ display: 'block', marginTop: '4px' }}>
+                                Saathi says this name on the calls. The medicine&apos;s own name stays in Aaptha for the doctor, chemist and emergencies.
+                              </span>
+                              <MedicineNameChips folded value={candidate.nickname || ''} onPick={(n) => updateCandidateField(idx, 'nickname', n)} />
                             </div>
                             <div className="form-group">
-                              <label className="mini-label" htmlFor={`cand-dose-${idx}`}>Dose</label>
-                              <input
-                                id={`cand-dose-${idx}`}
-                                type="text"
-                                value={candidate.dosage}
-                                onChange={(e) => updateCandidateField(idx, 'dosage', e.target.value)}
-                                className="form-input"
-                                placeholder="e.g. 1 tablet (1-0-1)"
-                              />
-                            </div>
-                            <div className="form-group" style={{ gridColumn: '1 / -1' }}>
                               <span className="mini-label">When is it taken?</span>
                               <SlotPicker
                                 isSelected={(s) => !!candidate.timingSlots?.includes(s) || (s === candidate.timeOfDay && (!candidate.timingSlots || candidate.timingSlots.length === 0))}
                                 onToggle={(s) => toggleCandidateSlot(idx, s)}
                               />
                             </div>
-                            <div className="form-group" style={{ gridColumn: '1 / -1' }}>
-                              <span className="mini-label">With food?</span>
+                            <div className="form-group">
+                              <span className="mini-label">With food?{candidate.autoFilled?.includes('food') && <FromPrescription />}</span>
                               <FoodPicker value={candidate.foodRelation} onChange={(v) => updateCandidateField(idx, 'foodRelation', v)} />
                             </div>
+                            <div className="form-group">
+                              <span className="mini-label">For how many more days?{candidate.autoFilled?.includes('days') && <FromPrescription />}</span>
+                              <CourseDays
+                                id={`cand-days-${idx}`}
+                                value={candidate.courseDays}
+                                suggestedDays={candidate.suggestedDays}
+                                onChange={(d) => setExtractedCandidates(cs => cs.map((c, i) => (i === idx ? { ...c, courseDays: d } : c)))}
+                              />
+                            </div>
+                            {/* Saathi says the reason on a call; WhatsApp reminders don't use it. */}
+                            {!waMode && candidate.suggestedPurpose && (
+                              <PurposeSuggestion
+                                suggestion={candidate.suggestedPurpose}
+                                value={candidate.purpose}
+                                onChange={(pp) => setExtractedCandidates(cs => cs.map((c, i) => (i === idx ? { ...c, purpose: pp } : c)))}
+                              />
+                            )}
                           </div>
                         </div>
                       );
@@ -1152,42 +1220,65 @@ function OnboardingContent() {
                       )}
                     </div>
 
-                    <div className="row-grid">
+                    <div className="med-fields">
                       <div className="form-group">
-                        <label className="mini-label" htmlFor={`med-name-${idx}`}>Medicine name</label>
+                        <label className="mini-label" htmlFor={`med-name-${idx}`}>What does {name.trim() || 'your parent'} call it?</label>
                         <input
                           id={`med-name-${idx}`}
                           type="text"
-                          placeholder="e.g. Telmisartan, Metformin"
+                          placeholder="e.g. BP tablet, sugar tablet"
                           value={med.name}
                           onChange={(e) => updateMedicineField(idx, 'name', e.target.value)}
                           className="form-input"
                         />
+                        <span className="form-hint" style={{ display: 'block', marginTop: '4px' }}>{NAME_HINT}</span>
+                        <MedicineNameChips folded value={med.name} onPick={(n) => updateMedicineField(idx, 'name', n)} />
+                      </div>
+                      <div className="med-pair" style={{ alignItems: 'start' }}>
+                        <div className="form-group">
+                          <label className="mini-label" htmlFor={`med-official-${idx}`}>Real medicine name (optional)</label>
+                          <input
+                            id={`med-official-${idx}`}
+                            type="text"
+                            placeholder="e.g. Amlodipine 5 mg"
+                            value={med.officialName || ''}
+                            onChange={(e) => updateMedicineField(idx, 'officialName', e.target.value)}
+                            className="form-input"
+                          />
+                          <span className="form-hint">For the doctor, chemist and emergency card. Saathi doesn&apos;t say it.</span>
+                        </div>
+                        <div className="form-group">
+                          <label className="mini-label" htmlFor={`med-dose-${idx}`}>How many each time</label>
+                          <input
+                            id={`med-dose-${idx}`}
+                            type="text"
+                            placeholder="e.g. 1 tablet"
+                            value={med.dosage}
+                            onChange={(e) => updateMedicineField(idx, 'dosage', e.target.value)}
+                            className="form-input"
+                          />
+                        </div>
+                      </div>
+                      <div style={{ marginTop: '-10px' }}>
+                        <DoseChips value={med.dosage} onPick={(d) => updateMedicineField(idx, 'dosage', d)} />
                       </div>
                       <div className="form-group">
-                        <label className="mini-label" htmlFor={`med-dose-${idx}`}>Dose</label>
-                        <input
-                          id={`med-dose-${idx}`}
-                          type="text"
-                          placeholder="e.g. 40mg, 1 tablet"
-                          value={med.dosage}
-                          onChange={(e) => updateMedicineField(idx, 'dosage', e.target.value)}
-                          className="form-input"
-                        />
-                      </div>
-                      <div className="form-group" style={{ gridColumn: '1 / -1' }}>
                         <span className="mini-label">When is it taken?</span>
                         <SlotPicker
                           isSelected={(s) => !!med.timingSlots?.includes(s) || (s === med.timeOfDay && (!med.timingSlots || med.timingSlots.length === 0))}
                           onToggle={(s) => toggleManualMedicineSlot(idx, s)}
                         />
                       </div>
-                      <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                      <div className="form-group">
                         <span className="mini-label">With food?</span>
                         <FoodPicker value={med.foodRelation} onChange={(v) => updateManualMedicineFoodRelation(idx, v)} />
                       </div>
+                      <div className="form-group">
+                        <span className="mini-label">For how many more days?</span>
+                        <CourseDays id={`med-days-${idx}`} value={med.courseDays} onChange={(d) => setMedicines(ms => ms.map((m, i) => (i === idx ? { ...m, courseDays: d } : m)))} />
+                      </div>
                       {waMode && (
-                        <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                        <div className="form-group">
                           <label className="mini-label" htmlFor={`med-left-${idx}`}>Tablets you have now (optional)</label>
                           <input
                             id={`med-left-${idx}`}
@@ -1206,7 +1297,7 @@ function OnboardingContent() {
                       )}
                       {/* Saathi says the reason on a call; WhatsApp reminders don't use it. */}
                       {!waMode && (
-                        <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                        <div className="form-group">
                           <label className="mini-label" htmlFor={`med-why-${idx}`}>Why it matters, in your words (optional)</label>
                           <input
                             id={`med-why-${idx}`}
@@ -1367,28 +1458,6 @@ function OnboardingContent() {
           <button type="button" onClick={addCustomCallSlot} className="add-row" style={{ marginBottom: '16px' }}>
             <Plus size={16} /> {waMode ? 'Add another reminder time' : 'Add another check-in call'}
           </button>
-
-          {waMode && (
-            <div className="form-group">
-              <label className="form-label" htmlFor="course-end">How long is the course?</label>
-              <div className="segmented" role="radiogroup" aria-label="Course length" style={{ marginBottom: '8px' }}>
-                <button type="button" role="radio" aria-checked={!courseEndsOn} className={!courseEndsOn ? 'active' : ''} onClick={() => setCourseEndsOn('')}>No end date</button>
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={!!courseEndsOn}
-                  className={courseEndsOn ? 'active' : ''}
-                  onClick={() => setCourseEndsOn(courseEndsOn || new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10))}
-                >
-                  Until a date
-                </button>
-              </div>
-              {courseEndsOn && (
-                <input id="course-end" type="date" className="form-input" style={{ maxWidth: '220px' }} min={new Date().toISOString().slice(0, 10)} value={courseEndsOn} onChange={(e) => setCourseEndsOn(e.target.value)} />
-              )}
-              <span className="form-hint">Reminders stop by themselves after the last day. You can set a different date per medicine later.</span>
-            </div>
-          )}
 
           {waMode && callSchedule.filter(s => s.isActive).length > currentPlan.remindersPerDay && (
             <div className="notice amber" role="status">

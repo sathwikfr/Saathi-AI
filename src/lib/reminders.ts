@@ -94,12 +94,14 @@ export function prettyPhone(e164: string): string {
 }
 
 /** "Folic acid (1 tablet after breakfast), Iron (after food)", or "your medicines" in discreet mode. */
-export function reminderMedicineText(meds: Pick<LinkedMedicineDetail, 'name' | 'dosage' | 'foodRelation'>[], discreet: boolean): string {
+export function reminderMedicineText(meds: Pick<LinkedMedicineDetail, 'name' | 'dosage' | 'foodRelation' | 'officialName'>[], discreet: boolean): string {
   if (discreet || meds.length === 0) return 'your medicines';
   return meds
     .map(m => {
       const detail = m.dosage?.trim() || FOOD_TEXT[m.foodRelation || 'not_specified'];
-      return detail ? `${m.name} (${detail})` : m.name;
+      // The real name only when the family switched it on (it was copied in when the check was created).
+      const name = m.officialName ? `${m.name} – ${m.officialName}` : m.name;
+      return detail ? `${name} (${detail})` : name;
     })
     .join(', ');
 }
@@ -136,6 +138,10 @@ export const CARETAKER_TEXT = {
     `${firstName(name)} may not be feeling well and wrote: "${words}". You may want to call ${firstName(name)} on ${prettyPhone(phone)}.`
 } as const;
 
+/** "Iron" -> "Iron tablets", and a family's own "BP tablet" -> "BP tablets" (never "BP tablet tablets"). */
+const tabletsOf = (name: string, count = 2) =>
+  /\btablets?$/i.test(name) ? name.replace(/s?$/i, count === 1 ? '' : 's') : `${name} tablet${count === 1 ? '' : 's'}`;
+
 export const REMINDER_REPLIES = {
   started: (name: string, times: string[], caretaker: string | null) =>
     `You're all set, ${firstName(name)}.${times.length ? ` At ${listTimes(times)} I'll ask whether you've taken your medicines.` : ''} ` +
@@ -157,10 +163,10 @@ export const REMINDER_REPLIES = {
   /** Added under "Noted" when tablets are running low (once per refill). */
   runningLow: (items: { name: string; left: number; days: number }[]) =>
     items.map(i => i.left <= 0
-      ? `By my count your ${i.name} tablets have run out.`
+      ? `By my count your ${tabletsOf(i.name)} have run out.`
       : `${i.name} is running low: ${i.left} tablet${i.left === 1 ? '' : 's'} left, about ${i.days} day${i.days === 1 ? '' : 's'}.`).join(' ') +
     ` Once you buy more, reply with the name and number, like "${items[0].name} 30".`,
-  toppedUp: (name: string, count: number) => `Got it: ${count} ${name} tablet${count === 1 ? '' : 's'}. I'll tell you when they're running low.`,
+  toppedUp: (name: string, count: number) => `Got it: ${count} ${tabletsOf(name, count)}. I'll tell you when they're running low.`,
   whichMedicine: (example: string) => `Which medicine is that? Reply with the name and number, like "${example} 30".`,
   /** One warm message, once (EMERGENCY_REPLY_GAP_HOURS). 108 stays in it: we can't send help ourselves. */
   emergency: (name: string, caretaker: string | null) =>
@@ -673,7 +679,7 @@ export async function runReminders(deps: ReminderDeps = {}): Promise<ReminderSum
         }
       }
 
-      const { inactiveNames, purposes } = medicineMaps(p.medicines, today);
+      const { inactiveNames, purposes, officials } = medicineMaps(p.medicines, today, p.useOfficialNames);
       const optInToday = p.reminderOptInAt && istDateString(p.reminderOptInAt) === today;
       const optInMinutes = p.reminderOptInAt ? istMinutesOfDay(p.reminderOptInAt) : 0;
 
@@ -681,7 +687,7 @@ export async function runReminders(deps: ReminderDeps = {}): Promise<ReminderSum
         if (!isSlotDue(slot.time, now, REMINDER_DUE_WINDOW_MINUTES)) continue;
         // Started their checks after this time today: begin with the next one.
         if (optInToday && (parseClockTime(slot.time) as number) < optInMinutes) continue;
-        const meds = slotMedicines(slot, inactiveNames, purposes);
+        const meds = slotMedicines(slot, inactiveNames, purposes, officials);
         if (meds.length === 0) continue; // nothing current at this time (course over, or switched off)
 
         // The cheap check keeps the unique index (the real guard against double sends) out of the error log.
@@ -699,7 +705,7 @@ export async function runReminders(deps: ReminderDeps = {}): Promise<ReminderSum
               slotId: slot.id,
               slotTime: slot.time,
               reminderDate: today,
-              medicinesJson: JSON.stringify(meds.map(m => ({ name: m.name, dosage: m.dosage, foodRelation: m.foodRelation }))),
+              medicinesJson: JSON.stringify(meds.map(m => ({ name: m.name, dosage: m.dosage, foodRelation: m.foodRelation, officialName: m.officialName }))),
               askCount: 1,
               nextAskAt: new Date(now.getTime() + ASK_GAP_MINUTES * MINUTE)
             }

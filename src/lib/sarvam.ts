@@ -9,6 +9,7 @@
  * companion calls) and "Aaptha Alert" phones family and neighbours in an emergency.
  */
 import { LinkedMedicineDetail } from './types';
+import { cleanMedicineNameForSpeech } from './scheduleGenerator';
 
 export type SarvamLanguage =
   | 'Bengali' | 'Gujarati' | 'Kannada' | 'Malayalam' | 'Tamil' | 'Telugu'
@@ -157,19 +158,23 @@ export function buildMedicineChecklist(medicines: LinkedMedicineDetail[]): strin
   return medicines
     .map((m, i) => {
       const why = m.purpose?.trim() ? ` [why: ${m.purpose.trim()}]` : '';
-      return `${i + 1}. ${m.name}${m.dosage ? ` (${m.dosage})` : ''}${why} — ${m.questionScript || `Did you take your ${m.name}?`}`;
+      // A real name is only here when the family switched real names on; the nickname stays the name to report.
+      const official = m.officialName ? ` [also called: ${m.officialName}]` : '';
+      return `${i + 1}. ${m.name}${m.dosage ? ` (${m.dosage})` : ''}${official}${why} — ${m.questionScript || `Did you take your ${m.name}?`}`;
     })
     .join('\n');
 }
 
 /**
  * Spoken name of the first medicine, used inside the agent's greeting so the very first turn already asks
- * about a tablet (Sarvam waits for the caller after the greeting). "Telmisartan (BP Tablet)" -> "Telmisartan".
+ * about a tablet (Sarvam waits for the caller after the greeting). "Telmisartan (BP Tablet)" -> "Telmisartan",
+ * "Tab. Telma 40" -> "Telma 40"; a family's own name like "BP tablet" stays as it is.
  */
 export function firstMedicineSpoken(medicines: LinkedMedicineDetail[]): string {
   const name = medicines[0]?.name || '';
-  const cleaned = name.replace(/\(.*?\)/g, ' ').replace(/(tab|tablet|cap|capsule)\.?/gi, ' ').replace(/\s+/g, ' ').trim();
-  return cleaned || name.trim() || 'medicine';
+  const cleaned = cleanMedicineNameForSpeech(name.replace(/\(.*?\)/g, ' ').replace(/\s+/g, ' ').trim()) || name.trim() || 'medicine';
+  const official = medicines[0]?.officialName;
+  return official ? `${cleaned} (${cleanMedicineNameForSpeech(official)})` : cleaned;
 }
 
 /** A phone number the way it is read out: "+919876543210" -> "98765 43210". */

@@ -7,6 +7,7 @@ import { Medicine, CallLog, MedicineStatus, ParentProfile, ReminderView } from '
 import { RefillListModal } from './RefillListModal';
 import { medicineKey } from '@/lib/callInterpretation';
 import { foodRelationLabel } from './helpers';
+import { MedicineNameChips, NAME_HINT } from '@/components/onboarding/WizardUI';
 
 const FREQUENCY: Record<Medicine['frequency'], string> = {
   daily: 'Daily',
@@ -122,6 +123,63 @@ function TabletsEditor({ parentId, med, onDone, onToast }: { parentId: string; m
   );
 }
 
+const TIME_LABEL: Record<string, string> = { morning: 'Morning', afternoon: 'Afternoon', evening: 'Evening', bedtime: 'Bedtime', as_needed: 'As needed' };
+/** "Morning, Bedtime" (every time it is taken, not just the first). */
+const timesText = (m: Medicine) => (m.timingSlots?.length ? m.timingSlots : [m.timeOfDay]).map(t => TIME_LABEL[t] || t).join(', ');
+
+/** The family's own name for a medicine ("BP tablet"); Saathi asks with exactly this name from the next call. */
+function NameEditor({ parentId, med, onDone, onCancel, onToast }: { parentId: string; med: Medicine; onDone: () => void; onCancel: () => void; onToast: Props['onToast'] }) {
+  const [value, setValue] = useState(med.name);
+  const [official, setOfficial] = useState(med.officialName || '');
+  const [saving, setSaving] = useState(false);
+  return (
+    <form
+      style={{ marginTop: '8px' }}
+      onSubmit={async e => {
+        e.preventDefault();
+        setSaving(true);
+        const res = await fetch(`/api/parents/${parentId}/medicines`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ medicineId: med.id, action: 'rename', name: value, officialName: official.trim() || null })
+        });
+        setSaving(false);
+        if (res.ok) onDone();
+        else onToast((await res.json().catch(() => ({}))).error || 'Could not save.', 'error');
+      }}
+    >
+      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+        <label htmlFor={`name-${med.id}`} className="sr-only">Medicine name</label>
+        <input
+          id={`name-${med.id}`}
+          className="form-input"
+          style={{ flex: 1, minWidth: '200px', padding: '8px 12px', fontSize: '0.88rem' }}
+          value={value}
+          onChange={e => setValue(e.target.value)}
+          maxLength={120}
+          required
+          autoFocus
+        />
+        <button className="btn btn-primary btn-sm" disabled={saving || !value.trim()}>Save</button>
+        <button type="button" className="btn btn-quiet btn-sm" disabled={saving} onClick={onCancel}>Cancel</button>
+      </div>
+      <MedicineNameChips value={value} onPick={setValue} />
+      <p style={{ fontSize: '0.8rem', color: 'var(--ink-subtle)', margin: '6px 0 0' }}>{NAME_HINT} Past calls keep the old name.</p>
+      <label htmlFor={`official-${med.id}`} className="mini-label" style={{ marginTop: '10px', display: 'block' }}>Real medicine name (optional)</label>
+      <input
+        id={`official-${med.id}`}
+        className="form-input"
+        style={{ padding: '8px 12px', fontSize: '0.88rem' }}
+        value={official}
+        onChange={e => setOfficial(e.target.value)}
+        placeholder="e.g. Amlodipine 5 mg"
+        maxLength={120}
+      />
+      <p style={{ fontSize: '0.8rem', color: 'var(--ink-subtle)', margin: '6px 0 0' }}>For the doctor summary, chemist list and emergency card. Saathi doesn&apos;t say it.</p>
+    </form>
+  );
+}
+
 function PurposeEditor({ parentId, med, onDone, onToast }: { parentId: string; med: Medicine; onDone: () => void; onToast: Props['onToast'] }) {
   const [value, setValue] = useState(med.purpose || '');
   const [saving, setSaving] = useState(false);
@@ -161,9 +219,19 @@ export function MedicinesPanel({ parentId, parentName, parent, familyName, medic
   const [editing, setEditing] = useState<string | null>(null);
   const [editingEnd, setEditingEnd] = useState<string | null>(null);
   const [editingTabs, setEditingTabs] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
   // IST date once per mount (course end dates are IST).
   const [today] = useState(() => new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10));
   const [refill, setRefill] = useState(false);
+  const [sayingReal, setSayingReal] = useState(false);
+  const setSayReal = async (on: boolean) => {
+    setSayingReal(true);
+    const res = await fetch(`/api/parents/${parentId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'official_names', on }) });
+    const data = await res.json().catch(() => ({}));
+    setSayingReal(false);
+    onToast(data.message || data.error || (res.ok ? 'Saved.' : 'Could not save.'), res.ok ? 'success' : 'error');
+    if (res.ok) onChanged();
+  };
   const actions = (
     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
       <Link href={`/dashboard/report/${parentId}`} className="btn btn-ghost btn-sm">
@@ -201,6 +269,24 @@ export function MedicinesPanel({ parentId, parentName, parent, familyName, medic
         {actions}
       </div>
 
+      {manage && medicines.some(m => m.officialName) && (
+        <label style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', fontSize: '0.88rem', margin: '0 0 14px', cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={!!parent.useOfficialNames}
+            disabled={sayingReal}
+            onChange={e => setSayReal(e.target.checked)}
+            style={{ width: '17px', height: '17px', accentColor: 'var(--teal)', marginTop: '2px' }}
+          />
+          <span>
+            Say the real medicine names too
+            <span className="form-hint" style={{ display: 'block' }}>
+              Off: Saathi and WhatsApp use only the names {parentName} knows, like &ldquo;BP tablet&rdquo;. The real names stay in Aaptha for the doctor, chemist and emergency card.
+            </span>
+          </span>
+        </label>
+      )}
+
       {medicines.length === 0 ? (
         <div className="empty" style={{ padding: '32px 16px' }}>
           <span className="icon-tile"><Pill size={24} /></span>
@@ -222,9 +308,17 @@ export function MedicinesPanel({ parentId, parentName, parent, familyName, medic
                       {m.name}
                       {!m.isActive && <span className="badge badge-neutral">Paused</span>}
                       {m.isActive && ended && <span className="badge badge-neutral">Course finished</span>}
+                      {manage && renaming !== m.id && (
+                        <button type="button" className="link-btn" style={{ marginLeft: '8px', fontSize: '0.84rem', fontWeight: 400 }} aria-label={`Rename ${m.name}`} onClick={() => setRenaming(m.id)}>
+                          <Pencil size={12} /> Rename
+                        </button>
+                      )}
                     </div>
+                    {renaming === m.id && (
+                      <NameEditor parentId={parentId} med={m} onToast={onToast} onCancel={() => setRenaming(null)} onDone={() => { setRenaming(null); onChanged(); }} />
+                    )}
                     <div className="row-sub" style={{ textTransform: 'none' }}>
-                      {[m.dosage, m.timeOfDay.charAt(0).toUpperCase() + m.timeOfDay.slice(1), food, FREQUENCY[m.frequency]].filter(Boolean).join(' · ')}
+                      {[m.officialName, m.dosage, timesText(m), food, FREQUENCY[m.frequency]].filter(Boolean).join(' · ')}
                     </div>
                     {editingEnd === m.id ? (
                       <EndsOnEditor parentId={parentId} med={m} onToast={onToast} onDone={() => { setEditingEnd(null); onChanged(); }} />

@@ -248,6 +248,17 @@ export async function PATCH(req: Request, { params }: Ctx) {
       return NextResponse.json({ success: true, message: `Saathi will call at ${time} for the BP and sugar readings.` });
     }
 
+    // Calls and WhatsApp say the nicknames only, unless the family switches the real names on.
+    if (action === 'official_names') {
+      const { on } = body as { on?: unknown };
+      if (typeof on !== 'boolean') return NextResponse.json({ error: 'on must be true or false' }, { status: 400 });
+      await prisma.parentProfile.update({ where: { id }, data: { useOfficialNames: on } });
+      return NextResponse.json({
+        success: true,
+        message: on ? 'Saathi and WhatsApp will say the real medicine names too.' : 'Saathi and WhatsApp will use the nicknames only.'
+      });
+    }
+
     // WhatsApp reminders: discreet mode (no medicine names on the lock screen).
     if (action === 'reminder_settings') {
       const { discreet, weeklyProgress, weeklyProgressToCaretaker } = body as { discreet?: unknown; weeklyProgress?: unknown; weeklyProgressToCaretaker?: unknown };

@@ -39,7 +39,7 @@ export function RefillListModal({ open, onClose, parent, medicines, callLogs, se
   const active = medicines.filter(m => m.isActive);
   const anyLow = active.some(m => low.has(medicineKey(m.name)));
   const [rows, setRows] = useState<Row[]>(() =>
-    active.map(m => ({ id: m.id, name: m.name, dosage: m.dosage, quantity: '1 strip', picked: anyLow ? low.has(medicineKey(m.name)) : true }))
+    active.map(m => ({ id: m.id, name: m.officialName || m.name, dosage: m.dosage, quantity: '1 strip', picked: anyLow ? low.has(medicineKey(m.name)) : true }))
   );
   const [copied, setCopied] = useState(false);
 

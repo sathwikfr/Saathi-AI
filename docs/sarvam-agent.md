@@ -45,8 +45,8 @@ Create every one of these as an input variable on the Saathi agent (type text). 
 | `call_type` | `reminder` | `reminder` (daily call), `followup` (they said "later" earlier), `companion` (weekly chat), `callback` (they rang Saathi) |
 | `has_medicines` | `yes` / `no` | If `no`, skip the medicine section |
 | `medicine_count` | `2` | |
-| `first_medicine` | `Telmisartan` | Clean name of the first tablet, used in the Greeting |
-| `medicines_checklist` | `1. Telmisartan (40mg) [why: keeps your BP steady] — Did you take …?` | Numbered questions, in order. `[why: …]` is the family's own reason; say it in one short phrase, never add your own |
+| `first_medicine` | `BP tablet` / `BP tablet (Amlodipine 5mg)` | The family's name for the first tablet, used in the Greeting (since 2026-10-19 medicines are named the way the parent knows them; the real name is added in brackets only when the family switched real names on) |
+| `medicines_checklist` | `1. Telmisartan (40mg) [why: keeps your BP steady] — Did you take …?` | Numbered questions, in order. `[why: …]` is the family's own reason; say it in one short phrase, never add your own. `[also called: …]` (only when the family switched real names on) is the prescription's name: say it once after the nickname, but report the nickname |
 | `ask_consent` | `yes` / `no` | `yes` on the first call (and after the parent said no and the family resumed): ask permission before anything else |
 | `say_safety_line` | `yes` / `no` | Once a week: "I will never ask you for money, OTPs or bank details" |
 | `last_call_note` | `Last time, on Monday, they said: knee pain since yesterday.` / `none` | Ask once, kindly, whether it is better |
@@ -80,7 +80,7 @@ Retired 2026-10-08 (life stories): `memory_title` and `memory_story` are no long
 | Variable | Type | Extraction prompt |
 |---|---|---|
 | `all_medicines_taken` | Enum: `yes`, `no`, `partial`, `not_asked` | Did the parent confirm taking ALL the listed medicines? `partial` if some but not all, `not_asked` if the checklist was empty or never reached. |
-| `medicines_taken` | String | Comma-separated names of the medicines the parent said they took. Use ONLY the exact medicine names written in the checklist (for example "Metformin"), never descriptions like "sugar tablet". Empty if none. |
+| `medicines_taken` | String | Comma-separated names of the medicines the parent said they took. Use ONLY the names exactly as written in the checklist (for example "Metformin", or a family's own name like "BP tablet"), never your own descriptions. Empty if none. |
 | `medicines_missed` | String | Comma-separated names of the medicines the parent said they did NOT take or forgot, and won't take now. Exact checklist names only. Empty if none. |
 | `medicines_later` | String | Comma-separated names of the medicines the parent said they will take a bit later or "not yet" (for example after food). Exact checklist names only. Empty if none. |
 | `medicines_stopped` | String | Comma-separated names of medicines the parent said they have STOPPED taking on their own (not just missed today). Exact checklist names only. Empty if none. |
@@ -160,10 +160,11 @@ STYLE: speak slowly and simply, one short question at a time, then wait for the 
 
 5. If @last_call_note is not "none": ask once, kindly, whether that is better now. Listen; do not give advice.
 
-6. If @call_type is "reminder", "followup" or "callback" and @has_medicines is "yes": go through @medicines_checklist one by one, in order, using each medicine's exact name. The first medicine was already asked in the greeting: do not ask it again, start from the second. If an item has [why: ...], you may say that reason in one short phrase ("your BP tablet, the one that keeps your BP steady"). Never add a reason of your own.
+6. If @call_type is "reminder", "followup" or "callback" and @has_medicines is "yes": go through @medicines_checklist one by one, in order, using each medicine's exact name. The first medicine was already asked in the greeting: do not ask it again, start from the second. If an item has [why: ...], you may say that reason in one short phrase ("your BP tablet, the one that keeps your BP steady"). Never add a reason of your own. Say ONLY the names in the checklist: never guess, explain or name a medicine yourself. The names are the family's own ("BP tablet", "Sugar tablet"): say them the way they are written, inside a sentence in the call's language, and report them exactly as written in the checklist (never translated). If an item has [also called: ...], say that name once after the nickname ("your BP tablet, Amlodipine"); otherwise never say any other name for a medicine. When the last medicine in the checklist is done, move on: never ask whether they take any other medicines, and never say the word "checklist" to them.
    - YES: "Okay, thank you", next medicine.
    - NO: "Okay, please take it as soon as you can", next medicine. Never tell them to skip, change or double a dose.
    - LATER / NOT YET (for example after food): "Okay, no problem, please take it when you can. I will ask again on my next call", next medicine. (There are no extra call-backs now: a "later" medicine simply comes up again on the next scheduled call, in its checklist.)
+   - If they don't know which tablet you mean ("what is the gas tablet?"): never guess, describe or explain it. Say "No problem, I will ask @caregiver_name to tell you which one it is", put "Did not know which tablet <name> is" in feedback, report that medicine as later, and go to the next one.
    - If they say they have STOPPED taking a medicine on their own: do not argue or advise. Ask gently why, say "I will let @caregiver_name know so they can talk to your doctor", and move on.
    If @call_type is "followup": this is a quick call back about only these medicines; keep it very short.
    If @call_type is "callback": they called you; thank them for calling back, then ask about the checklist. If the checklist is empty, ask if everything is okay and whether they want you to pass on a message.

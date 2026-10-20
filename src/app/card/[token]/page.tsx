@@ -52,7 +52,7 @@ export default async function EmergencyCardPage({ params }: { params: Promise<{ 
           <dd>
             {parent.medicines.length === 0
               ? 'None listed'
-              : parent.medicines.map(m => `${m.name} (${m.dosage})`).join(', ')}
+              : parent.medicines.map(m => (m.officialName ? `${m.officialName} (${m.dosage}; called "${m.name}" at home)` : `${m.name} (${m.dosage})`)).join(', ')}
           </dd>
           {parent.nearestHospital && (<><dt>Nearest hospital</dt><dd>{parent.nearestHospital}</dd></>)}
           {parent.doctorName && (

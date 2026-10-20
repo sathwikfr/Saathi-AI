@@ -46,7 +46,6 @@ export async function POST(req: Request) {
       userId: auth.user.id,
       fileName: result.fileName,
       fileType: result.fileType,
-      rawExtractionJson: result.extractedMedicines,
       batchConfidence: result.batchConfidence,
       batchQualityWarning: result.batchQualityWarning
     });

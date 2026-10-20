@@ -72,13 +72,16 @@ export interface ScheduleGenerationResult {
 }
 
 /**
- * Clean medicine brand name for natural, friendly voice call phrasing
+ * Clean medicine brand name for natural, friendly voice call phrasing.
+ * Only whole words go ("Tablet Telma" -> "Telma", never "let Telma"); a family's own name like
+ * "my BP tablet" becomes "BP tablet" (the question already says "your").
  */
 export function cleanMedicineNameForSpeech(rawName: string): string {
-  return rawName
-    .replace(/^(\d+[\.\)]|[-•*]|\bTab\.?|\bCap\.?|\bSyp\.?|\bInj\.?|\bOint\.?|\bGel\.?|\bCream\.?|\bT\.|\bTablet|\bCapsule|\bSyrup|\bOintment)\s*/i, '')
+  const cleaned = rawName
+    .replace(/^(\d+[\.\)]|[-•*]|(Tablet|Tab|Capsule|Cap|Syrup|Syp|Inj|Ointment|Oint|Gel|Cream|your|my)\b\.?|T\.)\s*/i, '')
     .replace(/\s+x\s+\d+\s*(days|months|wks)/i, '')
     .trim();
+  return cleaned || rawName.trim();
 }
 
 /**
@@ -91,36 +94,85 @@ export function generateMedicineCheckinQuestion(
 ): string {
   const name = cleanMedicineNameForSpeech(rawName);
   const mealName = slot === 'morning' ? 'breakfast' : slot === 'afternoon' ? 'lunch' : 'dinner';
+  // Ointments, drops and inhalers are used, not taken.
+  const used = /\b(ointment|oint|cream|gel|drops?|inhaler|spray)\b/i.test(rawName);
+  const take = used ? 'use' : 'take';
 
   switch (foodRelation) {
     case 'before_food':
       if (slot === 'bedtime') {
-        return `Did you take your ${name} before dinner?`;
+        return `Did you ${take} your ${name} before dinner?`;
       }
-      return `Did you take your ${name} before ${mealName}?`;
+      return `Did you ${take} your ${name} before ${mealName}?`;
 
     case 'after_food':
       if (slot === 'bedtime') {
-        return `Did you take your ${name} after dinner?`;
+        return `Did you ${take} your ${name} after dinner?`;
       }
-      return `Did you have your ${name} after ${mealName}?`;
+      return `Did you ${used ? 'use' : 'have'} your ${name} after ${mealName}?`;
 
     case 'with_food':
       if (slot === 'bedtime') {
-        return `Did you take your ${name} with dinner?`;
+        return `Did you ${take} your ${name} with dinner?`;
       }
-      return `Did you take your ${name} with ${mealName}?`;
+      return `Did you ${take} your ${name} with ${mealName}?`;
 
     case 'not_specified':
     default:
       if (slot === 'bedtime') {
-        return `Did you take your ${name} before going to bed?`;
+        return `Did you ${take} your ${name} before going to bed?`;
       }
       if (slot === 'as_needed') {
         return `Did you need to take or apply your ${name} today?`;
       }
-      return `Did you take your ${name}?`;
+      return `Did you ${take} your ${name}?`;
   }
+}
+
+const MEAL_SLOT_NAMES = ['morning', 'afternoon', 'evening', 'bedtime'];
+const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * One call slot after a medicine is renamed: its names list, its linked entry (with a fresh question) and the
+ * medicine lists in its label ("Morning Medicine Reminder — Telma 40, Iron"). Null when the slot doesn't link it.
+ * `medTimes` are the medicine's own times: on any other slot it only rides along, so it gets the as-needed question.
+ */
+export function renameMedicineInSlot(
+  slot: { slot: string; label: string; linkedMedicineNames: string[]; linkedMedicines?: LinkedMedicineDetail[] },
+  oldName: string,
+  newName: string,
+  foodRelation: FoodRelation,
+  medTimes: string[]
+): { label: string; linkedMedicineNames: string[]; linkedMedicines?: LinkedMedicineDetail[] } | null {
+  const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+  const linked = slot.linkedMedicines;
+  if (!slot.linkedMedicineNames.some(n => same(n, oldName)) && !linked?.some(m => same(m.name, oldName))) return null;
+
+  // Already linked under the new name (e.g. "bp tablet" -> "BP tablet"): keep one entry, never two.
+  const rename = <T>(list: T[], nameOf: (x: T) => string, renamed: (x: T) => T) => {
+    const hasNew = list.some(x => same(nameOf(x), newName) && !same(nameOf(x), oldName));
+    return list.flatMap(x => (!same(nameOf(x), oldName) ? [x] : hasNew ? [] : [renamed(x)]));
+  };
+  const questionSlot = MEAL_SLOT_NAMES.includes(slot.slot) && medTimes.includes(slot.slot) ? slot.slot : 'as_needed';
+
+  // Labels list raw names (generated schedules) or spoken ones (slots added later); swap whichever is there.
+  const oldRaw = oldName.trim();
+  const oldSpoken = cleanMedicineNameForSpeech(oldName);
+  const pattern = [...new Set([oldRaw, oldSpoken])].sort((a, b) => b.length - a.length).map(escapeRegExp).join('|');
+  const label = slot.label.replace(
+    new RegExp(`(?<=— |, |\\()(${pattern})(?=$|,| \\+\\d+ more|\\))`, 'gi'),
+    m => (same(m, oldRaw) ? newName.trim() : cleanMedicineNameForSpeech(newName))
+  );
+
+  return {
+    label,
+    linkedMedicineNames: rename(slot.linkedMedicineNames, n => n, () => newName),
+    linkedMedicines: linked && rename(linked, m => m.name, m => ({
+      ...m,
+      name: newName,
+      questionScript: generateMedicineCheckinQuestion(newName, m.foodRelation || foodRelation, questionSlot)
+    }))
+  };
 }
 
 /**

@@ -121,6 +121,8 @@ export interface LinkedMedicineDetail {
   questionScript?: string;
   /** The family's one-line reason ("keeps your BP steady"), filled in from Medicine.purpose when a call is placed. */
   purpose?: string;
+  /** Only when the family switched real names on (ParentProfile.useOfficialNames): said after the nickname. */
+  officialName?: string;
 }
 
 export interface ScheduledCallSlot {
@@ -190,6 +192,8 @@ export interface ParentProfile {
   /** When they sent STOP. */
   reminderOptOutAt?: string;
   discreetReminders: boolean;
+  /** Calls and WhatsApp also say the official medicine names (off = nicknames only). */
+  useOfficialNames: boolean;
   /** Remind plan, opt-in: one WhatsApp a week (Sunday evening) with how many checks were confirmed. */
   weeklyProgress: boolean;
   /** ... and the caretaker gets it too. */
@@ -249,6 +253,8 @@ export interface Medicine {
   endsOn?: string;
   /** Remind plan: tablets left, counted down on each "Yes" (null / undefined = not counted). */
   tabletsLeft?: number | null;
+  /** The prescription's name ("Amlodipine 5 mg"); `name` is the family's nickname that Saathi says. */
+  officialName?: string;
 }
 
 export type ContactRole = 'family' | 'neighbour' | 'security' | 'doctor' | 'caregiver' | 'other';
@@ -428,6 +434,23 @@ export interface ExtractedMedicineCandidate {
   category?: string;
   isEditedByUser?: boolean;
   verifiedByUser?: boolean;
+  /** Set by the family while reviewing (never by extraction): a course of this many more days. */
+  courseDays?: number | null;
+  /** From the instruction line (prescriptionHints.fillFromInstructions), for the review screen only. */
+  autoFilled?: ('days' | 'food' | 'dose')[];
+  /** A long "x 90 days" we did not set by itself (it often means "until the next visit"). */
+  suggestedDays?: number;
+  /** The original instruction line, kept on screen once the amount is tidied. */
+  prescriptionText?: string;
+  /** "for infection": only said by Saathi once the family ticks it (becomes `purpose`). */
+  suggestedPurpose?: string;
+  purpose?: string;
+  /** What Saathi will call it ("BP tablet"); `name` stays the prescription's name (saved as officialName). */
+  nickname?: string;
+  /** The nickname came from the reader's category, so the family should check it. */
+  suggestedNickname?: boolean;
+  /** Dashboard scan: the active medicine this one replaces (keeps its nickname; the old one is archived). */
+  replacesId?: string;
 }
 
 export interface MedicineReport {
