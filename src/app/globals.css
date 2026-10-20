@@ -2804,6 +2804,37 @@ a.link:hover {
   .row-grid { grid-template-columns: 1fr; }
 }
 
+/* A medicine draft (photo review): one clear column, short pairs side by side on wide cards. */
+.med-fields { display: grid; gap: 18px; }
+.med-fields .form-group { margin-bottom: 0; }
+.med-fields .mini-label { justify-content: flex-start; align-items: center; flex-wrap: wrap; }
+.med-pair { display: grid; grid-template-columns: 3fr 2fr; gap: 14px 16px; align-items: end; }
+@media (max-width: 640px) { .med-pair { grid-template-columns: 1fr; } }
+.med-fields .rx-line {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+  background: var(--paper);
+  border-radius: var(--r-sm);
+  padding: 8px 10px;
+  margin-top: -6px;
+}
+
+/* "From prescription": a field the photo filled in, so the family checks it. */
+.tag-filled {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: var(--r-full);
+  background: var(--amber-soft);
+  color: var(--amber);
+  font-size: 0.68rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .add-row {
   width: 100%;
   min-height: 48px;

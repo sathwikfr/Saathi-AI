@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { AnimatePresence, motion } from 'motion/react';
 import { Navbar } from '@/components/Navbar';
 import { useAuth } from '@/context/AuthContext';
-import { Medicine, FoodRelation, ExtractedMedicineCandidate, ParentProfile } from '@/lib/types';
+import { Medicine, MedicineTimingSlot, FoodRelation, ExtractedMedicineCandidate, ParentProfile } from '@/lib/types';
 import { Heart, Pause, Pencil, Plus, ArrowRight, Sparkles, CheckCircle2, AlertTriangle, Info, X, Phone, Languages, CalendarClock, Siren, Users, MessageCircle } from 'lucide-react';
 import { SAMPLE_PRESCRIPTIONS } from '@/lib/medicineExtractor';
 import { formatScheduleSummary, formatReminderSummary } from '@/lib/scheduleGenerator';
@@ -28,6 +28,8 @@ import { AskPanel } from '@/components/dashboard/AskPanel';
 import { AppointmentsCard } from '@/components/dashboard/AppointmentsCard';
 import { ReadingsPanel } from '@/components/dashboard/ReadingsPanel';
 import { SetupChecklist } from '@/components/dashboard/SetupChecklist';
+import { istLastDayOfCourse } from '@/lib/ist';
+import { fillFromInstructions, withNicknames } from '@/lib/prescriptionHints';
 import { AddMedicineModal, PauseModal, InviteModal, DeleteParentModal, UploadReportModal, EditParentModal, ParentEdits } from '@/components/dashboard/DashboardModals';
 import { WhatsAppOptInBanner } from '@/components/account/WhatsAppSettings';
 import { RemindersPanel, ReminderSettings, ReminderChannelSwitch } from '@/components/dashboard/RemindersPanel';
@@ -54,9 +56,11 @@ function DashboardContent() {
   const [showAddMedModal, setShowAddMedModal] = useState(false);
   const [newMedName, setNewMedName] = useState('');
   const [newMedDosage, setNewMedDosage] = useState('1 tablet');
-  const [newMedTiming, setNewMedTiming] = useState<Medicine['timeOfDay']>('morning');
+  const [newMedTimings, setNewMedTimings] = useState<MedicineTimingSlot[]>(['morning']);
+  const [newMedOfficial, setNewMedOfficial] = useState('');
   const [newMedFoodRelation, setNewMedFoodRelation] = useState<FoodRelation>('after_food');
   const [newMedPurpose, setNewMedPurpose] = useState('');
+  const [newMedDays, setNewMedDays] = useState<number | null>(null);
 
   // Prescription Upload Modal State
   const [showUploadModal, setShowUploadModal] = useState(false);
@@ -217,10 +221,13 @@ function DashboardContent() {
         body: JSON.stringify({
           name: newMedName.trim(),
           dosage: newMedDosage,
-          timeOfDay: newMedTiming,
+          timeOfDay: newMedTimings.find((t): t is Medicine['timeOfDay'] => t !== 'as_needed' && t !== 'unspecified') || 'morning',
+          timingSlots: newMedTimings,
+          officialName: newMedOfficial.trim() || undefined,
           foodRelation: newMedFoodRelation,
           frequency: 'daily',
-          purpose: newMedPurpose.trim() || undefined
+          purpose: newMedPurpose.trim() || undefined,
+          endsOn: newMedDays ? istLastDayOfCourse(newMedDays) : undefined
         })
       });
       const data = await res.json();
@@ -229,6 +236,9 @@ function DashboardContent() {
         setNewMedName('');
         setNewMedFoodRelation('after_food');
         setNewMedPurpose('');
+        setNewMedDays(null);
+        setNewMedOfficial('');
+        setNewMedTimings(['morning']);
         const notes: string[] = data.scheduleNotes || [];
         setToastMessage({ text: ['Medicine added to the daily check-in routine.', ...notes].join(' '), type: 'success' });
         fetchParentDetails(selectedParentId);
@@ -264,7 +274,7 @@ function DashboardContent() {
       }
 
       setUploadReportId(data.reportId);
-      setExtractedMeds(data.extractedMedicines.map((m: ExtractedMedicineCandidate) => ({ ...m, selected: true })));
+      setExtractedMeds(withNicknames(data.extractedMedicines.map((m: ExtractedMedicineCandidate) => ({ ...fillFromInstructions(m), selected: true })), (parentData?.medicines || []).filter(m => m.isActive).map(m => m.name)));
     } catch {
       setToastMessage({ text: 'Network error while analyzing report', type: 'error' });
     } finally {
@@ -292,7 +302,7 @@ function DashboardContent() {
       }
 
       setUploadReportId(data.reportId);
-      setExtractedMeds(data.extractedMedicines.map((m: ExtractedMedicineCandidate) => ({ ...m, selected: true })));
+      setExtractedMeds(withNicknames(data.extractedMedicines.map((m: ExtractedMedicineCandidate) => ({ ...fillFromInstructions(m), selected: true })), (parentData?.medicines || []).filter(m => m.isActive).map(m => m.name)));
     } catch {
       setToastMessage({ text: 'Network error while analyzing sample', type: 'error' });
     } finally {
@@ -314,12 +324,17 @@ function DashboardContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           confirmedMedicines: selected.map(c => ({
-            name: c.name,
+            // Saathi says the nickname; the prescription's name is kept for the doctor, chemist and card.
+            name: (c.nickname || c.name).trim(),
+            officialName: c.name.trim(),
+            replacesId: c.replacesId,
             dosage: c.dosage,
             timeOfDay: c.timeOfDay,
             timingSlots: c.timingSlots && c.timingSlots.length > 0 ? c.timingSlots : [c.timeOfDay || 'morning'],
             foodRelation: c.foodRelation || 'not_specified',
-            frequency: c.frequency || 'daily'
+            frequency: c.frequency || 'daily',
+            purpose: c.purpose,
+            endsOn: c.courseDays ? istLastDayOfCourse(c.courseDays) : undefined
           })),
           stopMedicineIds: stopIds
         })
@@ -978,12 +993,16 @@ function DashboardContent() {
         setName={setNewMedName}
         dosage={newMedDosage}
         setDosage={setNewMedDosage}
-        timing={newMedTiming}
-        setTiming={setNewMedTiming}
+        timings={newMedTimings}
+        setTimings={setNewMedTimings}
+        officialName={newMedOfficial}
+        setOfficialName={setNewMedOfficial}
         food={newMedFoodRelation}
         setFood={setNewMedFoodRelation}
         purpose={newMedPurpose}
         setPurpose={setNewMedPurpose}
+        days={newMedDays}
+        setDays={setNewMedDays}
         onSubmit={handleAddMedicineSubmit}
       />
 
