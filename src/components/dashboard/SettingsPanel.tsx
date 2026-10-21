@@ -44,7 +44,6 @@ function CompanionSettings({ parent, companionAllowed, onChanged, onToast }: Pic
   const [day, setDay] = useState(parent.companionDay ?? 0);
   const [time, setTime] = useState(parent.companionTime || '05:00 PM');
   const [topics, setTopics] = useState(parent.companionTopics || '');
-  const [birthday, setBirthday] = useState(parent.birthDate ? `2000-${parent.birthDate}` : '');
   const [saving, setSaving] = useState(false);
   const times = getSelectableCallTimes(parent.companionTime);
 
@@ -60,8 +59,7 @@ function CompanionSettings({ parent, companionAllowed, onChanged, onToast }: Pic
           companionEnabled: enabled && companionAllowed,
           companionDay: day,
           companionTime: time,
-          companionTopics: topics,
-          birthDate: birthday ? birthday.slice(5, 10) : null
+          companionTopics: topics
         }
       })
     });
@@ -115,10 +113,6 @@ function CompanionSettings({ parent, companionAllowed, onChanged, onToast }: Pic
             </div>
           </div>
         )}
-        <div className="form-group" style={{ marginTop: '12px', maxWidth: '260px' }}>
-          <label className="form-label" htmlFor="parent-birthday">Birthday <span className="form-hint">Saathi wishes them on the day</span></label>
-          <input id="parent-birthday" type="date" className="form-input" value={birthday} onChange={e => setBirthday(e.target.value)} />
-        </div>
         <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? <><span className="spinner" /> Saving…</> : 'Save'}</button>
       </form>
     </section>
@@ -189,7 +183,8 @@ export function SettingsPanel({ parent, role, stats, companionAllowed, premium, 
         <HealthMonitorCard parent={parent} enabled={healthMonitor} vitalsCall={vitalsCall} planId={planId} price={monitorPrice} isOwner={role === 'owner'} onChanged={onChanged} onToast={onToast} />
       )}
 
-      {manage && <CompanionSettings parent={parent} companionAllowed={companionAllowed} onChanged={onChanged} onToast={onToast} />}
+      {/* Shown only once the weekly chat is sold: a "coming soon" pitch with a dead switch promised what no call does. */}
+      {manage && companionAllowed && <CompanionSettings parent={parent} companionAllowed={companionAllowed} onChanged={onChanged} onToast={onToast} />}
 
       {role === 'owner' && (
         <section className="panel danger-zone" aria-labelledby="danger-title">

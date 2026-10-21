@@ -367,7 +367,7 @@ export function MedicinesPanel({ parentId, parentName, parent, familyName, medic
                       </div>
                     )}
                     {m.isActive && (
-                      <div className="med-week" style={{ marginTop: '8px' }} aria-label={`Last 7 days: ${week.map(w => `${w.day} ${STATUS_WORD[w.status]}`).join(', ')}`}>
+                      <div className="med-week" style={{ marginTop: '8px' }} role="img" aria-label={`Last 7 days: ${week.map(w => `${w.day} ${STATUS_WORD[w.status]}`).join(', ')}`}>
                         {week.map((w, i) => <i key={i} className={w.status} title={`${w.day}: ${STATUS_WORD[w.status]}`} />)}
                         <span style={{ fontSize: '0.75rem', color: 'var(--ink-subtle)', marginLeft: '6px' }}>last 7 days</span>
                       </div>

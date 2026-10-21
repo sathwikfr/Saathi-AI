@@ -181,8 +181,10 @@ export function HeroWaves({ mode, dark, voice, inner: innerAt = 0.98, silk = tru
       }
       const grad = ctx.createLinearGradient(cx - outer, 0, cx + outer, 0);
       grad.addColorStop(0, pal.bars[0]);
-      grad.addColorStop(Math.max(0.01, (outer - inner) / (2 * outer)), pal.bars[1]);
-      grad.addColorStop(Math.min(0.99, (outer + inner) / (2 * outer)), pal.bars[2]);
+      // Clamp both ways: on a tiny canvas outer/inner go out of range and addColorStop throws, which kills the frame loop.
+      const stop = (v: number) => Math.min(0.99, Math.max(0.01, Number.isFinite(v) ? v : 0.5));
+      grad.addColorStop(stop((outer - inner) / (2 * outer)), pal.bars[1]);
+      grad.addColorStop(stop((outer + inner) / (2 * outer)), pal.bars[2]);
       grad.addColorStop(1, pal.bars[3]);
       ctx.strokeStyle = grad;
       ctx.fillStyle = grad;

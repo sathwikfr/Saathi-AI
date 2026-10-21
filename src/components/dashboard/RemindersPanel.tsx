@@ -258,8 +258,13 @@ export function RemindersPanel({ parent, reminders, start, medicines, manage, pe
             const label = new Date(`${d}T00:00:00Z`).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', timeZone: 'UTC' });
             return (
               <div key={d} className="card-flat" style={{ padding: '8px', textAlign: 'center' }}>
-                <div style={{ fontSize: '0.72rem', color: 'var(--ink-subtle)', marginBottom: '6px' }}>{label}</div>
-                <div className="med-week" style={{ justifyContent: 'center', minHeight: '10px', flexWrap: 'wrap' }}>
+                <div style={{ fontSize: '0.75rem', color: 'var(--ink-muted)', marginBottom: '6px' }} aria-hidden="true">{label}</div>
+                <div
+                  className="med-week"
+                  style={{ justifyContent: 'center', minHeight: '10px', flexWrap: 'wrap' }}
+                  role="img"
+                  aria-label={`${label}: ${dayRems.length === 0 ? 'no checks' : [...dayRems].reverse().map(r => `${shortTime(r.time)} ${reminderState(r, r.time, d === today).text}`).join(', ')}`}
+                >
                   {dayRems.length === 0
                     ? <i title="No checks" />
                     : [...dayRems].reverse().map(r => {
@@ -271,7 +276,12 @@ export function RemindersPanel({ parent, reminders, start, medicines, manage, pe
             );
           })}
         </div>
-        <p style={{ fontSize: '0.78rem', color: 'var(--ink-subtle)', margin: '10px 0 0' }}>Green taken · red not confirmed · amber said not yet · grey waiting</p>
+        <p className="med-week-legend" aria-hidden="true">
+          <span className="med-week"><i className="taken" /></span> Taken
+          <span className="med-week"><i className="missed" /></span> Not confirmed
+          <span className="med-week"><i className="later" /></span> Said not yet
+          <span className="med-week"><i /></span> Waiting
+        </p>
       </section>
 
       <section className="panel" aria-labelledby="rem-meds-title">
