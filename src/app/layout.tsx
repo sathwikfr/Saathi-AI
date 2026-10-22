@@ -19,8 +19,8 @@ const body = Figtree({
 });
 
 export const metadata: Metadata = {
-  title: 'Aaptha — Stay close, even from far away',
-  description: 'A daily phone call for your parents, in their language. Saathi checks on medicines and wellbeing, and you see every call on your Aaptha dashboard.',
+  title: 'Aaptha — Did Amma take her BP tablet? Now you’ll know.',
+  description: 'Saathi calls your parents at every tablet time, in their own language, and sends you the answer on WhatsApp. No app for them, no nagging from you.',
   keywords: ['aaptha', 'elder care', 'ai voice companion', 'parents check-in', 'medication reminder', 'india elder care']
 };
 

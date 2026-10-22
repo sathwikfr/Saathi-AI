@@ -160,9 +160,9 @@ function RiseWords({ items, step }: { items: (React.ReactNode | 'br')[]; step: n
   );
 }
 
-const ACCENT = ['Peace', 'of', 'mind', 'for', 'you.'];
+const ACCENT = ['Now', 'you’ll', 'know.'];
 const LEFT_WORDS: (React.ReactNode | 'br')[] = [
-  'A', 'daily', 'call', 'for', 'br', 'your', 'parents.', 'br',
+  'Did', 'Amma', 'take', 'br', 'her', 'BP', 'tablet?', 'br',
   ...ACCENT.map((w, i) => <em key={w} style={{ ['--i' as string]: i }}>{w}</em>),
 ];
 const RIGHT_WORDS: React.ReactNode[] = ['Hear', 'how', 'Saathi', 'greets', <em key="amma">Amma</em>];
@@ -399,7 +399,7 @@ export function VoiceHero({ primaryHref, primaryLabel, trialDays }: { primaryHre
         <div className={s.left} data-hero-copy>
           <h1 className={s.h1}><RiseWords items={LEFT_WORDS} step={0.06} /></h1>
           <p className={`${s.sub} ${s.rise}`} style={rise(6)}>
-            Aaptha calls your parents at medicine time, in their own language, and tells you how every call went.
+            Saathi calls your parents at every tablet time, in their own language, and sends you the answer on WhatsApp. No nagging from you.
           </p>
           <div className={`${s.ctas} ${s.rise}`} style={rise(7)}>
             <MagneticLink href={primaryHref} className={`${s.btnGlow} btn-glow`}>{primaryLabel} <ArrowRight size={18} /></MagneticLink>
