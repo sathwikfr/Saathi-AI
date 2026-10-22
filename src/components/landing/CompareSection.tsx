@@ -9,7 +9,8 @@ import x from './compare.module.css';
 /**
  * "Same worry. Much less effort.": Aaptha against the usual ways families keep
  * an eye on their parents. A real table on wide screens, with the Aaptha column
- * raised like a featured card; on phones each row becomes its own small card. The rows arrive one by
+ * raised like a featured card; on phones the Aaptha column is a short list and the full table
+ * (one small card per row) opens under "Compare". The rows arrive one by
  * one and Aaptha's ticks pop in after them (GsapScroll's data-stagger / data-pop).
  */
 
@@ -36,6 +37,33 @@ function Value({ v, ours }: { v: Cell; ours?: boolean }) {
   return <span className={ours ? x.textUs : x.text}>{v}</span>;
 }
 
+function CompareTable() {
+  return (
+    <table className={x.table}>
+      <thead>
+        <tr>
+          <th scope="col"><span className="sr-only">What matters</span></th>
+          <th scope="col" className={x.us}>
+            <span className={x.brand}><span className={x.brandHeart}><Heart size={12} fill="currentColor" strokeWidth={0} /></span>Aaptha</span>
+          </th>
+          {COLUMNS.map((col) => <th key={col} scope="col">{col}</th>)}
+        </tr>
+      </thead>
+      <tbody data-stagger>
+        {ROWS.map((r) => (
+          <tr key={r.label}>
+            <th scope="row">{r.label}</th>
+            <td className={x.us} data-col="Aaptha"><Value v={r.us} ours /></td>
+            {r.others.map((v, i) => (
+              <td key={COLUMNS[i]} data-col={COLUMNS[i]}><Value v={v} /></td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 export function CompareSection() {
   return (
     <section id="why" className={`section ${s.alt}`}>
@@ -47,28 +75,23 @@ export function CompareSection() {
 
         <Reveal variant="scale">
           <div className={x.frame} data-spot>
-            <table className={x.table}>
-              <thead>
-                <tr>
-                  <th scope="col"><span className="sr-only">What matters</span></th>
-                  <th scope="col" className={x.us}>
-                    <span className={x.brand}><span className={x.brandHeart}><Heart size={12} fill="currentColor" strokeWidth={0} /></span>Aaptha</span>
-                  </th>
-                  {COLUMNS.map((col) => <th key={col} scope="col">{col}</th>)}
-                </tr>
-              </thead>
-              <tbody data-stagger>
-                {ROWS.map((r) => (
-                  <tr key={r.label}>
-                    <th scope="row">{r.label}</th>
-                    <td className={x.us} data-col="Aaptha"><Value v={r.us} ours /></td>
-                    {r.others.map((v, i) => (
-                      <td key={COLUMNS[i]} data-col={COLUMNS[i]}><Value v={v} /></td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <CompareTable />
+          </div>
+
+          {/* Phones: the Aaptha column as one short list; the full comparison opens on request. */}
+          <div className={x.phone}>
+            <ul className={x.usList} aria-label="What Aaptha does">
+              {ROWS.map((r) => (
+                <li key={r.label}>
+                  <span>{r.label}</span>
+                  <Value v={r.us} ours />
+                </li>
+              ))}
+            </ul>
+            <details className={x.more}>
+              <summary>Compare with the other ways</summary>
+              <CompareTable />
+            </details>
           </div>
         </Reveal>
       </div>

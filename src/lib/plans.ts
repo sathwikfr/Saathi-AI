@@ -367,3 +367,6 @@ export function getEffectivePlan(
   }
   return PLANS[subscription.planId] || freeTierPlan(accountCreatedAt, now);
 }
+
+/** "₹1,699": Indian digit grouping, same as the landing page. */
+export const inr = (amount: number) => `₹${amount.toLocaleString('en-IN')}`;

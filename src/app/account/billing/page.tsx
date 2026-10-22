@@ -5,7 +5,7 @@ import { AccountShell } from '@/components/account/AccountUI';
 import { BillShare } from '@/components/account/BillShare';
 import { Modal } from '@/components/ui/Modal';
 import { useAuth } from '@/context/AuthContext';
-import { PLANS, PAID_PLAN_IDS, getEffectivePlan } from '@/lib/plans';
+import { PLANS, PAID_PLAN_IDS, getEffectivePlan, inr } from '@/lib/plans';
 import { PlanId, Invoice, UserSubscription } from '@/lib/types';
 import { CreditCard, AlertTriangle, CheckCircle, Download, ArrowUpRight, Shield, X, HeartCrack } from 'lucide-react';
 
@@ -126,7 +126,7 @@ export default function AccountBillingPage() {
 
   // Plain-text receipt of a recorded payment
   const handleDownloadInvoice = (inv: Invoice) => {
-    const text = `=====================================\nAAPTHA PAYMENT RECEIPT\n=====================================\nReceipt: ${inv.invoiceNumber}\nDate: ${inv.date}\nAmount: ₹${inv.amount}\nPlan: ${inv.planName}\nPayment Method: ${inv.paymentMethod}\nStatus: ${inv.status.toUpperCase()}\n=====================================\nThank you for choosing Aaptha for your parents!\n`;
+    const text = `=====================================\nAAPTHA PAYMENT RECEIPT\n=====================================\nReceipt: ${inv.invoiceNumber}\nDate: ${inv.date}\nAmount: ${inr(inv.amount)}\nPlan: ${inv.planName}\nPayment Method: ${inv.paymentMethod}\nStatus: ${inv.status.toUpperCase()}\n=====================================\nThank you for choosing Aaptha for your parents!\n`;
     const blob = new Blob([text], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -191,7 +191,7 @@ export default function AccountBillingPage() {
                 </div>
                 <div style={{ textAlign: 'right', flexShrink: 0 }}>
                   <div style={{ fontFamily: 'var(--font-serif)', fontSize: '2.2rem', fontWeight: 500, letterSpacing: '-0.03em', lineHeight: 1 }}>
-                    ₹{monthlyTotal}
+                    {inr(monthlyTotal)}
                   </div>
                   <div style={{ fontSize: '0.8rem', color: 'var(--ink-muted)', marginTop: '4px' }}>{isFree ? 'no plan yet' : 'per month'}</div>
                 </div>
@@ -299,7 +299,7 @@ export default function AccountBillingPage() {
                         <td style={{ fontWeight: 600 }}>{inv.invoiceNumber}</td>
                         <td style={{ color: 'var(--ink-muted)' }}>{inv.date}</td>
                         <td>{inv.planName}</td>
-                        <td style={{ fontWeight: 600 }}>₹{inv.amount}</td>
+                        <td style={{ fontWeight: 600 }}>{inr(inv.amount)}</td>
                         <td>
                           <span className={`badge ${inv.status === 'paid' ? 'badge-green' : inv.status === 'failed' ? 'badge-red' : 'badge-amber'}`} style={{ textTransform: 'capitalize' }}>
                             {inv.status}
@@ -354,7 +354,7 @@ export default function AccountBillingPage() {
                       : `${p.parentsIncluded} parent${p.parentsIncluded === 1 ? '' : 's'} · up to ${p.callsPerDay} call${p.callsPerDay === 1 ? '' : 's'} a day`}
                   </span>
                 </div>
-                <strong style={{ fontSize: '1rem' }}>{p.priceMonthly === 0 ? 'Free' : <>{p.listPrice && <s className="was-price">₹{p.listPrice}</s>}₹{p.priceMonthly}/mo</>}</strong>
+                <strong style={{ fontSize: '1rem' }}>{p.priceMonthly === 0 ? 'Free' : <>{p.listPrice && <s className="was-price"><span className="sr-only">was </span>{inr(p.listPrice)}</s>}{inr(p.priceMonthly)}/mo</>}</strong>
               </button>
             );
           })}

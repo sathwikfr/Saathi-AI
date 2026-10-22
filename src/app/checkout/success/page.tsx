@@ -3,7 +3,7 @@
 import React, { useEffect, useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { getPlan } from '@/lib/plans';
+import { getPlan, inr } from '@/lib/plans';
 import { PlanId } from '@/lib/types';
 import { useAuth } from '@/context/AuthContext';
 import confetti from 'canvas-confetti';
@@ -113,8 +113,8 @@ function SuccessContent() {
               plan.priceMonthly === 0
                 ? 'Free'
                 : firstChargeDate
-                  ? `₹${sub?.amount ?? plan.priceMonthly} on ${new Date(firstChargeDate).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })}`
-                  : `₹${sub?.amount ?? plan.priceMonthly}/month`
+                  ? `${inr(sub?.amount ?? plan.priceMonthly)} on ${new Date(firstChargeDate).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })}`
+                  : `${inr(sub?.amount ?? plan.priceMonthly)}/month`
             }
           />
           {subId && <SummaryRow label="Subscription ID" value={<span className="mono">{subId}</span>} />}

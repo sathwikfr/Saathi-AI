@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { CheckoutShell, PageTitle, SummaryRow } from '@/components/checkout/CheckoutUI';
-import { getPlan, monthlyPrice, HEALTH_MONITOR, cleanAddons } from '@/lib/plans';
+import { getPlan, monthlyPrice, HEALTH_MONITOR, cleanAddons, inr } from '@/lib/plans';
 import { PlanId } from '@/lib/types';
 import { useAuth } from '@/context/AuthContext';
 import { Lock, ShieldCheck, AlertTriangle, ArrowRight } from 'lucide-react';
@@ -227,8 +227,8 @@ function PaymentContent() {
         title={plan.hasTrial ? 'Set up AutoPay for your trial' : 'Payment'}
         sub={
           plan.hasTrial
-            ? `Your first ₹${price} payment is on ${firstCharge}. To set up AutoPay, Razorpay takes a small amount now (usually ₹5) and refunds it.`
-            : `₹${price} will be charged today.`
+            ? `Your first ${inr(price)} payment is on ${firstCharge}. To set up AutoPay, Razorpay takes a small amount now (usually ₹5) and refunds it.`
+            : `${inr(price)} will be charged today.`
         }
       />
 
@@ -294,13 +294,13 @@ function PaymentContent() {
               <><span className="spinner" /> Preparing secure checkout…</>
             ) : (
               <>
-                {plan.hasTrial ? `Start ${plan.trialDays}-day free trial` : `Pay ₹${price}`} <ArrowRight size={18} className="arrow" />
+                {plan.hasTrial ? `Start ${plan.trialDays}-day free trial` : `Pay ${inr(price)}`} <ArrowRight size={18} className="arrow" />
               </>
             )}
           </button>
 
           <div style={{ textAlign: 'center', marginTop: '14px' }}>
-            <Link href={`/checkout/confirm?plan=${plan.id}${monitor ? '&monitor=1' : ''}`} className="link" style={{ fontSize: '0.88rem' }}>Change plan</Link>
+            <Link href={`/checkout/confirm?plan=${plan.id}${monitor ? '&monitor=1' : ''}`} className="link tap-link" style={{ fontSize: '0.88rem' }}>Change plan</Link>
           </div>
         </section>
 
@@ -313,14 +313,14 @@ function PaymentContent() {
               <div style={{ fontWeight: 600, fontSize: '1.02rem' }}>{plan.name}{monitor ? ` + ${HEALTH_MONITOR.name}` : ''}</div>
               <div style={{ fontSize: '0.84rem', color: 'var(--ink-muted)' }}>Monthly subscription</div>
             </div>
-            <div style={{ fontWeight: 600 }}>₹{price}<span style={{ color: 'var(--ink-muted)', fontWeight: 400, fontSize: '0.84rem' }}>/mo</span></div>
+            <div style={{ fontWeight: 600 }}>{inr(price)}<span style={{ color: 'var(--ink-muted)', fontWeight: 400, fontSize: '0.84rem' }}>/mo</span></div>
           </div>
 
           {plan.hasTrial && (
             <div className="summary" style={{ marginBottom: '16px' }}>
               <SummaryRow label="Free trial" value={`${plan.trialDays} days`} />
               <SummaryRow label="Due today" value="₹0" tone="green" strong />
-              <SummaryRow label={`First charge on ${firstCharge}`} value={`₹${price}`} />
+              <SummaryRow label={`First charge on ${firstCharge}`} value={inr(price)} />
             </div>
           )}
 

@@ -2,12 +2,13 @@
 
 import React from 'react';
 import { Moon, Sun } from 'lucide-react';
-import { THEME_STORAGE_KEY } from '@/lib/theme';
+import { THEME_BAR, THEME_STORAGE_KEY } from '@/lib/theme';
 
 function toggleTheme() {
   const root = document.documentElement;
   const next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
   root.setAttribute('data-theme', next);
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', THEME_BAR[next]);
   try {
     localStorage.setItem(THEME_STORAGE_KEY, next);
   } catch {

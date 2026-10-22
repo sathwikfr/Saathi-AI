@@ -3,7 +3,7 @@
 import React, { useState, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { PLANS, PAID_PLAN_IDS, getPlan, HEALTH_MONITOR, healthMonitorPrice, healthMonitorListPrice, cleanAddons, monthlyPrice } from '@/lib/plans';
+import { PLANS, PAID_PLAN_IDS, getPlan, HEALTH_MONITOR, healthMonitorPrice, healthMonitorListPrice, cleanAddons, monthlyPrice, inr } from '@/lib/plans';
 import { PlanId } from '@/lib/types';
 import { Check, AlertCircle, ArrowRight, ShieldCheck } from 'lucide-react';
 import { CheckoutShell, PageTitle, CheckRow, SummaryRow } from '@/components/checkout/CheckoutUI';
@@ -73,7 +73,7 @@ function ConfirmContent() {
                   onClick={() => setSelectedPlanId(pid)}
                 >
                   <strong>{p.name}</strong>
-                  <span>{p.priceMonthly === 0 ? 'Free' : <>{p.listPrice && <s className="was-price">₹{p.listPrice}</s>}₹{p.priceMonthly}/month</>}</span>
+                  <span>{p.priceMonthly === 0 ? 'Free' : <>{p.listPrice && <s className="was-price"><span className="sr-only">was </span>{inr(p.listPrice)}</s>}{inr(p.priceMonthly)}/month</>}</span>
                 </button>
               );
             })}
@@ -86,7 +86,7 @@ function ConfirmContent() {
             </div>
             <div style={{ textAlign: 'right', flexShrink: 0 }}>
               <div style={{ fontFamily: 'var(--font-serif)', fontSize: '2.2rem', fontWeight: 500, letterSpacing: '-0.03em', lineHeight: 1 }}>
-                {plan.listPrice && !add.healthMonitor && <s className="was-price" style={{ fontSize: '1.1rem' }}>₹{plan.listPrice}</s>}₹{price}
+                {plan.listPrice && !add.healthMonitor && <s className="was-price" style={{ fontSize: '1.1rem' }}><span className="sr-only">was </span>{inr(plan.listPrice)}</s>}{inr(price)}
               </div>
               <div style={{ fontSize: '0.8rem', color: 'var(--ink-muted)', marginTop: '4px' }}>
                 {plan.priceMonthly === 0 ? 'for 7 days' : plan.listPrice ? 'per month · launch offer' : 'per month'}
@@ -110,7 +110,7 @@ function ConfirmContent() {
               <label className="notice" style={{ margin: 0, display: 'flex', gap: '12px', alignItems: 'flex-start', cursor: 'pointer' }}>
                 <input type="checkbox" checked={wantsMonitor} onChange={e => setWantsMonitor(e.target.checked)} style={{ marginTop: '4px' }} />
                 <span>
-                  <strong>Add {HEALTH_MONITOR.name}: +{healthMonitorListPrice(plan.id) && <s className="was-price">₹{healthMonitorListPrice(plan.id)}</s>}₹{healthMonitorPrice(plan.id)}/month</strong>
+                  <strong>Add {HEALTH_MONITOR.name}: +{healthMonitorListPrice(plan.id) && <s className="was-price"><span className="sr-only">was </span>{inr(healthMonitorListPrice(plan.id)!)}</s>}{inr(healthMonitorPrice(plan.id))}/month</strong>
                   <span style={{ display: 'block', fontSize: '0.86rem', color: 'var(--ink-muted)', marginTop: '2px' }}>
                     {HEALTH_MONITOR.tagline}. {plan.parentsIncluded > 1 ? `A short readings call a day for each parent (up to ${plan.parentsIncluded}).` : 'A short call a day just for the readings.'} You can add it later too.
                   </span>
@@ -134,11 +134,11 @@ function ConfirmContent() {
             {plan.hasTrial ? (
               <>
                 <SummaryRow label={`Due today (${plan.trialDays}-day trial)`} value="₹0" tone="green" strong />
-                <SummaryRow label={`First charge on ${formattedTrialEnd}`} value={`₹${price}`} />
-                <SummaryRow label="After that" value={`₹${price} every month`} />
+                <SummaryRow label={`First charge on ${formattedTrialEnd}`} value={inr(price)} />
+                <SummaryRow label="After that" value={`${inr(price)} every month`} />
                 <SummaryRow label="Taxes" value="Included. No extra charges" />
                 {add.healthMonitor && (
-                  <SummaryRow label="Includes" value={`${plan.name} ₹${plan.priceMonthly} + ${HEALTH_MONITOR.name} ₹${healthMonitorPrice(plan.id)}`} />
+                  <SummaryRow label="Includes" value={`${plan.name} ${inr(plan.priceMonthly)} + ${HEALTH_MONITOR.name} ${inr(healthMonitorPrice(plan.id))}`} />
                 )}
               </>
             ) : (

@@ -22,11 +22,18 @@ gsap.registerPlugin(useGSAP, ScrollTrigger);
 export function GsapScroll() {
   useGSAP(() => {
     const header = document.querySelector('header.app-header');
+    // The hit test needs a laid-out page, so it runs at most once a frame, in the frame's own layout.
+    // (Run straight from hydration or from every scroll event, it forced extra full-page layouts: 1.6 s on a slow phone.)
+    let queued = 0;
     const syncHeader = () => {
-      // The header is 68px tall: look at what is just under its bottom edge.
-      // Only full-width scenes count: a dark card inside a light section (the closing CTA) leaves the bar alone.
-      const scene = document.elementFromPoint(window.innerWidth / 2, 69)?.closest('.stage-dark');
-      header?.setAttribute('data-stage', scene && scene.clientWidth >= window.innerWidth * 0.98 ? 'on' : 'off');
+      if (queued) return;
+      queued = requestAnimationFrame(() => {
+        queued = 0;
+        // The header is 68px tall: look at what is just under its bottom edge.
+        // Only full-width scenes count: a dark card inside a light section (the closing CTA) leaves the bar alone.
+        const scene = document.elementFromPoint(window.innerWidth / 2, 69)?.closest('.stage-dark');
+        header?.setAttribute('data-stage', scene && scene.clientWidth >= window.innerWidth * 0.98 ? 'on' : 'off');
+      });
     };
     syncHeader();
     window.addEventListener('scroll', syncHeader, { passive: true });
@@ -57,16 +64,44 @@ export function GsapScroll() {
           scrollTrigger: { trigger: el, start: 'top bottom', end: 'top 30%', scrub: true },
         });
       });
+
+      // Sections below the fold get their real height only when first drawn (content-visibility), so the
+      // trigger positions are measured again whenever the page's height changes.
+      let refresh = 0;
+      const ro = new ResizeObserver(() => {
+        clearTimeout(refresh);
+        refresh = window.setTimeout(() => ScrollTrigger.refresh(), 200);
+      });
+      ro.observe(document.body);
+      return () => {
+        ro.disconnect();
+        clearTimeout(refresh);
+      };
     });
 
     // Lists that arrive one item at a time ([data-stagger]); marks inside them ([data-pop]) pop in after.
+    // CSS transitions started by an IntersectionObserver (styles in globals.css, "Stagger lists"). GSAP tweens
+    // here read each item's computed style between writes, which re-styled the whole page once per item.
     mm.add('(prefers-reduced-motion: no-preference)', () => {
-      gsap.utils.toArray<HTMLElement>('[data-stagger]').forEach((el) => {
-        const tl = gsap.timeline({ scrollTrigger: { trigger: el, start: 'top 85%', once: true } });
-        tl.from(el.children, { autoAlpha: 0, y: 26, duration: 0.6, ease: 'power3.out', stagger: 0.07 });
-        const pops = el.querySelectorAll('[data-pop]');
-        if (pops.length) tl.from(pops, { scale: 0, duration: 0.5, ease: 'back.out(2.4)', stagger: 0.08 }, 0.3);
+      const lists = gsap.utils.toArray<HTMLElement>('[data-stagger]');
+      lists.forEach((el) => {
+        [...el.children].forEach((c, i) => (c as HTMLElement).style.setProperty('--i', String(i)));
+        el.querySelectorAll<HTMLElement>('[data-pop]').forEach((c, i) => c.style.setProperty('--pi', String(i)));
       });
+      const io = new IntersectionObserver((entries) => {
+        for (const e of entries) {
+          if (!e.isIntersecting) continue;
+          e.target.classList.add('in');
+          io.unobserve(e.target);
+        }
+      }, { rootMargin: '0px 0px -15% 0px' });   // = the old "top 85%" start
+      lists.forEach((el) => io.observe(el));
+      document.documentElement.classList.add('stagger-ready');
+      return () => {
+        io.disconnect();
+        document.documentElement.classList.remove('stagger-ready');
+        lists.forEach((el) => el.classList.remove('in'));
+      };
     });
 
     // A soft light that follows the pointer across [data-spot] cards (--mx/--my, drawn by each card's CSS).
@@ -80,6 +115,7 @@ export function GsapScroll() {
     window.addEventListener('pointermove', spot, { passive: true });
 
     return () => {
+      cancelAnimationFrame(queued);
       window.removeEventListener('pointermove', spot);
       window.removeEventListener('scroll', syncHeader);
       window.removeEventListener('resize', syncHeader);

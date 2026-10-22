@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { HeartPulse } from 'lucide-react';
 import { ParentProfile, PlanId } from '@/lib/types';
-import { HEALTH_MONITOR, healthMonitorListPrice } from '@/lib/plans';
+import { HEALTH_MONITOR, healthMonitorListPrice, inr } from '@/lib/plans';
 
 type Props = {
   parent: ParentProfile;
@@ -72,7 +72,7 @@ export function HealthMonitorCard({ parent, enabled, vitalsCall, planId, price, 
       <section className="panel" aria-labelledby="hm-title" style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
         <span className="icon-tile gold"><HeartPulse size={20} /></span>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <strong id="hm-title" style={{ display: 'block', marginBottom: '4px' }}>{HEALTH_MONITOR.name}: +{healthMonitorListPrice(planId as PlanId) && <s className="was-price">₹{healthMonitorListPrice(planId as PlanId)}</s>}₹{price}/month</strong>
+          <strong id="hm-title" style={{ display: 'block', marginBottom: '4px' }}>{HEALTH_MONITOR.name}: +{healthMonitorListPrice(planId as PlanId) && <s className="was-price"><span className="sr-only">was </span>{inr(healthMonitorListPrice(planId as PlanId)!)}</s>}{inr(price)}/month</strong>
           <p style={{ fontSize: '0.88rem', color: 'var(--ink-muted)', margin: 0 }}>
             {HEALTH_MONITOR.tagline}. Saathi asks {first} every day or every 3 days (your choice) on a short call of its own, shows a chart, alerts you when a reading is out of range, and tells you when sleep, mood or appetite drift from {first}&apos;s usual. Saathi never comments on the numbers.
           </p>

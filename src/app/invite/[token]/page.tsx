@@ -54,7 +54,7 @@ export default function InvitePage() {
           {error ? (
             <div className="empty" style={{ padding: 0 }}>
               <span className="icon-tile gold"><AlertTriangle size={24} /></span>
-              <h3>Invite not available</h3>
+              <h1 style={{ fontSize: '1.25rem', marginBottom: '6px' }}>Invite not available</h1>
               <p>{error}</p>
               <Link href="/dashboard" className="btn btn-ghost">Go to the dashboard</Link>
             </div>

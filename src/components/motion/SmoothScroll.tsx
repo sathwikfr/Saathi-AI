@@ -11,8 +11,8 @@ gsap.registerPlugin(ScrollTrigger);
 
 /**
  * Landing-page smooth scrolling (Lenis), ticked by GSAP's clock so the scroll-driven scenes (GsapScroll)
- * move in step with it instead of a frame behind. Off for people who ask the OS for less motion;
- * in-page # links still glide.
+ * move in step with it instead of a frame behind. Off on touch screens and for people who ask the OS for less
+ * motion; in-page # links still glide.
  */
 export function SmoothScroll() {
   const [on, setOn] = useState(false);
@@ -20,7 +20,10 @@ export function SmoothScroll() {
 
   useEffect(() => {
     const q = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const sync = () => setOn(!q.matches);
+    // Mouse and trackpad only: touch screens already scroll smoothly, and the per-frame tick kept a phone's
+    // main thread drawing frames even while nothing moved.
+    const fine = window.matchMedia('(pointer: fine)').matches;
+    const sync = () => setOn(fine && !q.matches);
     sync();
     q.addEventListener('change', sync);
     return () => q.removeEventListener('change', sync);
@@ -49,6 +52,17 @@ export function SmoothScroll() {
       gsap.ticker.lagSmoothing(500, 33);
     };
   }, [on]);
+
+  // Off-screen landing sections only have estimated heights (content-visibility, globals.css), so a glide to a
+  // # link (Lenis, or the browser's own smooth scroll on phones) would aim at the wrong spot. Lay them all out
+  // first: this capture listener runs before Lenis' click handler. Once is enough; they stay laid out after that.
+  useEffect(() => {
+    const layOutAll = (e: MouseEvent) => {
+      if ((e.target as Element | null)?.closest?.('a[href*="#"]')) document.documentElement.classList.add('cv-off');
+    };
+    window.addEventListener('click', layOutAll, true);
+    return () => window.removeEventListener('click', layOutAll, true);
+  }, []);
 
   return on ? <ReactLenis root ref={lenisRef} options={{ anchors: true, autoRaf: false }} /> : null;
 }

@@ -5,7 +5,7 @@ import { Navbar } from '@/components/Navbar';
 import { Footer } from '@/components/Footer';
 import { Reveal } from '@/components/Reveal';
 import { VoiceHero } from '@/components/landing/VoiceHero';
-import { HowFilm } from '@/components/landing/HowFilm';
+import { HowSection } from '@/components/landing/HowSection';
 import { SetupSteps } from '@/components/landing/SetupSteps';
 import { LanguagesSection } from '@/components/landing/LanguagesSection';
 import { AfterCallSection } from '@/components/landing/AfterCallSection';
@@ -29,7 +29,7 @@ export default function LandingPage() {
 
   const getPlanLink = (planId: PlanId) => (user ? `/checkout/confirm?plan=${planId}` : `/signup?plan=${planId}`);
   const primaryHref = user ? '/dashboard' : '/signup';
-  const primaryLabel = user ? 'Go to your dashboard' : 'Start free trial';
+  const primaryLabel = user ? 'Your dashboard' : 'Start free trial';
 
   return (
     // One root element, not a fragment: on navigation Next scrolls each top-level element into view in turn,
@@ -41,12 +41,12 @@ export default function LandingPage() {
       <Navbar />
 
       <PageTransition>
-      <main id="main">
+      <main id="main" className="landing">
         {/* HERO */}
         <VoiceHero primaryHref={primaryHref} primaryLabel={primaryLabel} trialDays={FREE_TRIAL_DAYS} />
 
-        {/* HOW IT WORKS: a film the scroll plays (the self-playing phone demo with reduced motion) */}
-        <HowFilm />
+        {/* HOW IT WORKS: the phone-call film and the ₹99 WhatsApp-reminder film behind one toggle (they take turns on their own) */}
+        <HowSection />
 
         {/* AFTER EVERY CALL: the dashboard and WhatsApp, side by side */}
         <AfterCallSection />
@@ -55,8 +55,8 @@ export default function LandingPage() {
         <section className={`section ${s.alt}`}>
           <div className="wrap">
             <Reveal className={s.head}>
-              <WordReveal>Set it up once. <span className={s.grad}>Saathi does the rest.</span></WordReveal>
-              <p>A few minutes to set up. After that, Saathi calls on time and you see how every call went.</p>
+              <WordReveal>Set it up once. <span className={s.grad}>Aaptha does the rest.</span></WordReveal>
+              <p>A few minutes to set up. After that, a call from Saathi or a WhatsApp check comes at every medicine time, and you see how each one went.</p>
             </Reveal>
             <Reveal delay={120}>
               <SetupSteps />
