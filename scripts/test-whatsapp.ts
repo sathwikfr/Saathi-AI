@@ -18,7 +18,7 @@ import { describeAnsweredCall, planFamilyMessage, WA_REPLIES } from '../src/lib/
 import { processSarvamWebhook, raiseToolEscalation } from '../src/lib/callResults';
 import { runDispatch } from '../src/lib/callDispatch';
 import { processWhatsAppWebhook, InboundDeps, PARENT_EMERGENCY_TITLE } from '../src/lib/whatsappInbound';
-import { whatsappRecipient } from '../src/lib/familyNotify';
+import { whatsappRecipient, emailUndeliveredSerious, UNDELIVERED_EMAIL_AFTER_MINUTES } from '../src/lib/familyNotify';
 import { SarvamConfig } from '../src/lib/sarvam';
 import { LinkedMedicineDetail } from '../src/lib/types';
 
@@ -299,6 +299,30 @@ async function partB() {
     const row9b = await prisma.whatsAppMessage.findUnique({ where: { id: row9!.id } });
     check('status failed with the error', row9b?.status === 'failed' && (row9b.error || '').includes('131026'), row9b?.error);
     check('emailed exactly once', emails.length === 2, emails.length);
+
+    console.log('\nB9b. Level-3 message accepted but never delivered → cron sweep emails once');
+    const swept: string[] = [];
+    const sweepDeps = { ...deps, sendEmail: async (e: { to: string }) => { swept.push(e.to); return { success: true }; } } as typeof deps;
+    const sweep = () => emailUndeliveredSerious({ deps: sweepDeps, userIds: [user.id] });
+    const log9c = await placedCall();
+    await answer(log9c.providerAttemptId!, { all_medicines_taken: 'yes', health_concern: 'back pain', mood: 'unwell' });
+    const row9c = await msgRow(log9c.id);
+    await sweep();
+    check('not emailed while still new', swept.length === 0 && row9c?.status === 'sent', row9c?.status);
+    const longAgo = new Date(Date.now() - (UNDELIVERED_EMAIL_AFTER_MINUTES + 5) * 60_000);
+    // Every earlier level 3-4 row of this account was handled already (delivered, or emailed above); age only this one.
+    await prisma.whatsAppMessage.updateMany({ where: { userId: user.id, id: { not: row9c!.id }, level: { gte: 3 }, status: { in: ['pending', 'sent'] }, fallbackEmailedAt: null }, data: { status: 'delivered' } });
+    await prisma.whatsAppMessage.update({ where: { id: row9c!.id }, data: { createdAt: longAgo } });
+    await sweep();
+    check('emailed once it has waited too long', swept.length === 1 && swept[0] === user.email, swept);
+    await sweep();
+    check('never emailed twice', swept.length === 1, swept);
+    const log9d = await placedCall();
+    await answer(log9d.providerAttemptId!, { all_medicines_taken: 'yes', health_concern: 'cough', mood: 'unwell' });
+    const row9d = await msgRow(log9d.id);
+    await prisma.whatsAppMessage.update({ where: { id: row9d!.id }, data: { createdAt: longAgo, status: 'delivered' } });
+    await sweep();
+    check('a delivered message is not emailed', swept.length === 1, swept);
 
     // ---- B10 family settings --------------------------------------------------------------
     console.log('\nB10. "Only when something needs attention"');

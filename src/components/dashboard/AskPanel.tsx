@@ -62,7 +62,7 @@ export function AskPanel({ parentId, parentName }: { parentId: string; parentNam
           {turns.map((t, i) => (
             <div key={i} className={`ask-bubble ${t.role === 'user' ? 'me' : 'ai'}`}>{t.content}</div>
           ))}
-          {busy && <div className="ask-bubble ai ask-thinking"><ThinkingOrb state="composing" size={32} label="Writing an answer" /><span>Going through {first}&apos;s calls…</span></div>}
+          {busy && <div className="ask-bubble ai ask-thinking"><ThinkingOrb state="composing" size={32} label="Writing an answer" style={{ color: 'var(--teal)' }} /><span>Going through {first}&apos;s calls…</span></div>}
         </div>
       )}
 

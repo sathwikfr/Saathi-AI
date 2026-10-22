@@ -265,3 +265,17 @@ export function downloadFile(filename: string, content: string, type: string) {
 export function safeFileName(name: string) {
   return name.replace(/[^a-zA-Z0-9]/g, '_');
 }
+
+/**
+ * Arrow keys, Home and End for a role="tablist" (WAI-ARIA tabs, selection follows focus).
+ * Each tab carries data-tab={id} and tabIndex 0 only when selected, so Tab moves past the whole list.
+ */
+export function onTabListKey(e: { key: string; preventDefault: () => void; currentTarget: HTMLElement }, ids: string[], current: string, select: (id: string) => void) {
+  const i = ids.indexOf(current);
+  const to = e.key === 'ArrowRight' ? i + 1 : e.key === 'ArrowLeft' ? i - 1 : e.key === 'Home' ? 0 : e.key === 'End' ? ids.length - 1 : null;
+  if (to === null || ids.length === 0) return;
+  e.preventDefault();
+  const id = ids[(to + ids.length) % ids.length];
+  select(id);
+  e.currentTarget.querySelector<HTMLElement>(`[data-tab="${id}"]`)?.focus();
+}

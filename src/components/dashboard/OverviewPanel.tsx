@@ -5,6 +5,7 @@ import {
   Check, CheckCircle2, AlertTriangle, Clock, PhoneCall, Pause, Play, Users, Plus, Pill, ChevronRight, Smile, PhoneMissed
 } from 'lucide-react';
 import { ParentProfile, Medicine } from '@/lib/types';
+import { istDateString } from '@/lib/ist';
 import {
   CallStats, formatCallTime, formatDuration, moodLabel, foodRelationLabel, shortSlotLabel, displayName, isTestCall, slotOutcome
 } from './helpers';
@@ -33,6 +34,9 @@ export function OverviewPanel({
   const answered = latestToday?.status === 'answered';
   const tone = latestToday ? (answered && latestToday.medicationConfirmed ? 'good' : 'warn') : '';
   const activeMeds = medicines.filter(m => m.isActive);
+  const today = istDateString(now);
+  const currentNames = new Set(activeMeds.filter(m => !m.endsOn || m.endsOn >= today).map(m => m.name));
+  const stoppedNames = new Set(medicines.map(m => m.name).filter(n => !currentNames.has(n)));
 
   return (
     <div className="panel-grid">
@@ -123,7 +127,8 @@ export function OverviewPanel({
                 const nextIdx = nextSlot ? activeSlots.indexOf(nextSlot) : activeSlots.length;
                 const isNext = !parent.isPaused && idx === nextIdx;
                 const isPast = idx < nextIdx;
-                const meds = slot.linkedMedicines?.map(m => m.name) || slot.linkedMedicineNames || [];
+                // Slots keep links to paused / finished tablets; calls skip them (medicineIsCurrent), so this list does too.
+                const meds = (slot.linkedMedicines?.map(m => m.name) || slot.linkedMedicineNames || []).filter(n => !stoppedNames.has(n));
                 const outcome = slotOutcome(todayCalls, slot.id, isPast);
                 const state = outcome && outcome.tone !== 'muted' ? outcome.tone : isNext ? 'next' : isPast ? 'past' : '';
                 return (

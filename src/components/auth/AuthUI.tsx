@@ -3,10 +3,13 @@
 import React from 'react';
 import { PageTransition } from '@/components/motion/PageTransition';
 import Link from 'next/link';
-import { ArrowLeft, Check, CheckCheck, Eye, EyeOff, MessageCircle } from 'lucide-react';
+import { ArrowLeft, Check, CheckCheck, Eye, EyeOff, MessageCircle, Phone } from 'lucide-react';
 import { Brand } from '@/components/Navbar';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { PHONE_COUNTRIES } from '@/lib/phone';
+import { SaathiBlob } from '@/components/voice/SaathiBlob';
+import type { OrbMode } from '@/components/voice/SaathiOrb';
+import { CALL_SCRIPT } from '@/components/landing/callScript';
 
 /** No SMS provider yet: phone OTP only works under `next dev` (the API answers 503 elsewhere), so the tab is hidden there. */
 export const phoneOtpAvailable = process.env.NODE_ENV === 'development';
@@ -18,11 +21,7 @@ type AuthShellProps = {
   asidePoints?: string[];
 };
 
-const DEFAULT_POINTS = [
-  'A short call in their language, at the times you choose',
-  'Works on any phone, no app for your parents',
-  'Every call and medicine on one calm dashboard',
-];
+const DEFAULT_POINTS = ['9 Indian languages', 'No app for your parents', 'Calls or WhatsApp checks'];
 
 /** Split-screen layout used by login, signup and password reset. */
 export function AuthShell({ children, asideTitle, asidePoints = DEFAULT_POINTS }: AuthShellProps) {
@@ -49,7 +48,7 @@ export function AuthShell({ children, asideTitle, asidePoints = DEFAULT_POINTS }
           <h2>{asideTitle ?? <>Stay close to your parents, <em>even from far away.</em></>}</h2>
         </div>
 
-        <ExampleMorning />
+        <MorningStory />
 
         <ul className="auth-points">
           {asidePoints.map((p) => (
@@ -61,35 +60,55 @@ export function AuthShell({ children, asideTitle, asidePoints = DEFAULT_POINTS }
   );
 }
 
-/** An example morning: Saathi's call, then the family's WhatsApp update (wording follows the real template). */
-function ExampleMorning() {
+/**
+ * Tomorrow morning, told by the landing's orb: it rings, Saathi and Amma talk (the landing's own example
+ * call, CALL_SCRIPT in English) with the orb following who speaks, then the family's WhatsApp update
+ * arrives (wording from the real 'aaptha_call_alert' template). Loops. Decorative (the panel is aria-hidden).
+ */
+type Beat = { mode: OrbMode; ms: number; who: 'ring' | 'saathi' | 'parent' | 'wa'; text: string };
+
+const STORY: Beat[] = [
+  { mode: 'ringing', ms: 2600, who: 'ring', text: 'Calling Amma · 8:30 AM' },
+  ...CALL_SCRIPT.map((l): Beat => ({
+    mode: l.who === 'saathi' ? 'saathi' : 'family',
+    ms: l.ms + 900,
+    who: l.who === 'saathi' ? 'saathi' : 'parent',
+    text: l.text.en,
+  })),
+  { mode: 'thinking', ms: 1100, who: 'wa', text: '' },
+  { mode: 'idle', ms: 4800, who: 'wa', text: 'Amma mentioned not feeling well: “knee pain since yesterday”. Medicines: Amlodipine taken. Mood: calm.' },
+];
+
+function MorningStory() {
+  const [i, setI] = React.useState(0);
+  React.useEffect(() => {
+    const id = window.setTimeout(() => setI((n) => (n + 1) % STORY.length), STORY[i].ms);
+    return () => window.clearTimeout(id);
+  }, [i]);
+  const b = STORY[i];
+
   return (
-    <ol className="auth-day">
-      <li>
-        <span className="auth-day-time">8:30 AM</span>
-        <div className="auth-day-card">
-          <div className="auth-day-head">
-            <span className="auth-day-avatar">A</span>
-            <div>
-              <div className="auth-day-name">Saathi calls Amma</div>
-              <div className="auth-day-meta">Morning check-in · Telugu · 2 min</div>
-            </div>
-            <span className="auth-day-badge">Taken</span>
-          </div>
-          <p className="auth-day-quote">“Took my BP tablet after breakfast. Feeling well, went for a short walk.”</p>
-        </div>
-      </li>
-      <li>
-        <span className="auth-day-time">8:33 AM</span>
-        <div className="auth-day-card">
-          <div className="auth-day-label"><MessageCircle size={14} /> Update on your WhatsApp</div>
-          <p className="auth-day-wa">
-            Your scheduled check-in call with Amma has ended. Result: BP tablet taken. She sounded well.
-            <span className="auth-day-ticks"><CheckCheck size={14} /> 8:33</span>
+    <div className="auth-story">
+      <div className="auth-orb">
+        <SaathiBlob mode={b.mode} variant="night" scale={0.5} />
+      </div>
+      <div className="auth-caption">
+        {b.who === 'ring' && (
+          <p key={i} className="auth-line" data-who="ring"><span className="auth-ring"><Phone size={14} /></span>{b.text}</p>
+        )}
+        {(b.who === 'saathi' || b.who === 'parent') && (
+          <p key={i} className="auth-line" data-who={b.who}><small>{b.who === 'saathi' ? 'Saathi' : 'Amma'}</small>{b.text}</p>
+        )}
+        {b.who === 'wa' && b.text && (
+          <p key={i} className="auth-line" data-who="wa">
+            <small><MessageCircle size={12} /> On your WhatsApp · 8:31 AM</small>
+            {b.text}
+            <span className="auth-ticks"><CheckCheck size={14} /></span>
           </p>
-        </div>
-      </li>
-    </ol>
+        )}
+        {b.who === 'wa' && !b.text && <p key={i} className="auth-line auth-typing" data-who="wa"><i /><i /><i /></p>}
+      </div>
+    </div>
   );
 }
 

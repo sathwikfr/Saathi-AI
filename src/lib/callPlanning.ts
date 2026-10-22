@@ -250,7 +250,12 @@ export function planCallExtras(input: {
   // "How are you feeling today?" once a day, on the call chosen by chooseHealthSlot (legacy: the first one answered).
   // Not on a permission call: permission + safety line + tablets already fill it (a live first call with everything
   // ran past 60 s = 2 billed minutes, 2026-10-08). The feeling isn't marked asked, so a later call takes it over.
-  const carry: HealthCarry = extras.askConsent || input.healthQuestions === false ? 'none' : input.healthCarry ?? (input.answeredToday ? 'none' : 'full');
+  // Without Health Monitor the bundle is off, except "How are you feeling?" for a parent with no current tablets:
+  // otherwise their daily call would ask nothing at all (user, 2026-10-21).
+  const baseCarry: HealthCarry = extras.askConsent ? 'none' : input.healthCarry ?? (input.answeredToday ? 'none' : 'full');
+  const carry: HealthCarry = input.healthQuestions !== false
+    ? baseCarry
+    : input.activeMedicineNames.length === 0 && baseCarry !== 'none' ? 'feeling' : 'none';
   if (carry !== 'none') extras.askFeeling = true;
 
   if (family) {

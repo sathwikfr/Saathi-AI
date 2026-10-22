@@ -62,7 +62,7 @@ export function AddMedicineModal(p: AddMedicineProps) {
           <label className="form-label" htmlFor="add-med-name">What does {p.parentName} call it?</label>
           <input id="add-med-name" type="text" placeholder="e.g. BP tablet, sugar tablet" value={p.name} onChange={(e) => p.setName(e.target.value)} className="form-input" autoFocus required />
           <span className="form-hint">{NAME_HINT} Each tablet needs its own name.</span>
-          <MedicineNameChips value={p.name} onPick={p.setName} />
+          <MedicineNameChips value={p.name} onPick={p.setName} realName={p.officialName} />
         </div>
         <div className="form-group">
           <label className="form-label" htmlFor="add-med-official">Real medicine name <span className="form-hint">Optional</span></label>

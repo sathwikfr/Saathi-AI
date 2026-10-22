@@ -69,8 +69,13 @@ export function CallHistoryPanel({ parentName, callLogs, onExport }: { parentNam
                   {call.actualAnswerTime && <span>· Picked up {call.actualAnswerTime}</span>}
                   {call.attemptNumber && call.attemptNumber > 1 && <span>· Attempt {call.attemptNumber}</span>}
                 </div>
-                {call.status === 'failed' && call.failureReason && (
-                  <p style={{ fontSize: '0.84rem', color: 'var(--red)', marginTop: '6px' }}>{call.failureReason}</p>
+                {/* failureReason is the provider's raw text (api_error: …, result_not_received): never show it to families. */}
+                {call.status === 'failed' && !call.summary && (
+                  <p style={{ fontSize: '0.84rem', color: 'var(--ink-muted)', marginTop: '6px' }}>
+                    {/dnd|ndnc|do not disturb/i.test(call.failureReason || '')
+                      ? 'The number is on Do Not Disturb, so the call was blocked.'
+                      : 'This call could not be placed. Saathi calls again at the next time as usual.'}
+                  </p>
                 )}
                 {call.notes && (
                   <p style={{ fontSize: '0.82rem', color: 'var(--ink-muted)', fontStyle: 'italic', marginTop: '6px' }}>{call.notes}</p>

@@ -5,7 +5,8 @@ import Link from 'next/link';
 import { Camera, Plus, Pill, Pencil, FileText, ClipboardList, CalendarClock } from 'lucide-react';
 import { Medicine, CallLog, MedicineStatus, ParentProfile, ReminderView } from '@/lib/types';
 import { RefillListModal } from './RefillListModal';
-import { medicineKey } from '@/lib/callInterpretation';
+import { medicineKey, freeNickname } from '@/lib/callInterpretation';
+import { nicknameFromName } from '@/lib/prescriptionHints';
 import { foodRelationLabel } from './helpers';
 import { MedicineNameChips, NAME_HINT } from '@/components/onboarding/WizardUI';
 
@@ -130,7 +131,8 @@ const timesText = (m: Medicine) => (m.timingSlots?.length ? m.timingSlots : [m.t
 /** The family's own name for a medicine ("BP tablet"); Saathi asks with exactly this name from the next call. */
 function NameEditor({ parentId, med, onDone, onCancel, onToast }: { parentId: string; med: Medicine; onDone: () => void; onCancel: () => void; onToast: Props['onToast'] }) {
   const [value, setValue] = useState(med.name);
-  const [official, setOfficial] = useState(med.officialName || '');
+  // A tablet still called by its prescription name keeps that as the real name when it is renamed.
+  const [official, setOfficial] = useState(med.officialName || (nicknameFromName(med.name) ? med.name : ''));
   const [saving, setSaving] = useState(false);
   return (
     <form
@@ -163,7 +165,7 @@ function NameEditor({ parentId, med, onDone, onCancel, onToast }: { parentId: st
         <button className="btn btn-primary btn-sm" disabled={saving || !value.trim()}>Save</button>
         <button type="button" className="btn btn-quiet btn-sm" disabled={saving} onClick={onCancel}>Cancel</button>
       </div>
-      <MedicineNameChips value={value} onPick={setValue} />
+      <MedicineNameChips value={value} onPick={setValue} realName={official} />
       <p style={{ fontSize: '0.8rem', color: 'var(--ink-subtle)', margin: '6px 0 0' }}>{NAME_HINT} Past calls keep the old name.</p>
       <label htmlFor={`official-${med.id}`} className="mini-label" style={{ marginTop: '10px', display: 'block' }}>Real medicine name (optional)</label>
       <input
@@ -220,6 +222,23 @@ export function MedicinesPanel({ parentId, parentName, parent, familyName, medic
   const [editingEnd, setEditingEnd] = useState<string | null>(null);
   const [editingTabs, setEditingTabs] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
+  /** "TAB. ATARAX 25MG" -> "Allergy tablet" (unique among the active ones); null when the name is already an everyday one. */
+  const nicknameSuggestion = (m: Medicine): string | null => {
+    if (!nicknameFromName(m.name)) return null;
+    const wanted = nicknameFromName(m.officialName || m.name);
+    if (!wanted || medicineKey(wanted) === medicineKey(m.name)) return null;
+    const others = medicines.filter(o => o.isActive && o.id !== m.id).map(o => o.name);
+    return freeNickname(wanted, m.timingSlots?.length ? m.timingSlots : [m.timeOfDay], others);
+  };
+  const applyNickname = async (m: Medicine, name: string) => {
+    const res = await fetch(`/api/parents/${parentId}/medicines`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ medicineId: m.id, action: 'rename', name, officialName: m.officialName || m.name })
+    });
+    if (res.ok) { onToast(`Saathi will call it "${name}" from the next call.`, 'success'); onChanged(); }
+    else onToast((await res.json().catch(() => ({}))).error || 'Could not save.', 'error');
+  };
   // IST date once per mount (course end dates are IST).
   const [today] = useState(() => new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10));
   const [refill, setRefill] = useState(false);
@@ -299,6 +318,7 @@ export function MedicinesPanel({ parentId, parentName, parent, familyName, medic
             const food = foodRelationLabel(m.foodRelation);
             const week = whatsapp ? weekFromReminders(m.name, reminders) : weekFor(m.name, callLogs);
             const ended = !!m.endsOn && m.endsOn < today;
+            const suggestion = manage && renaming !== m.id ? nicknameSuggestion(m) : null;
             return (
               <div key={m.id} className={`list-row${m.isActive ? '' : ' dim'}`} style={{ flexWrap: 'wrap' }}>
                 <div className="row-main" style={{ display: 'flex', gap: '14px', alignItems: 'flex-start', flex: 1, minWidth: '240px' }}>
@@ -314,6 +334,14 @@ export function MedicinesPanel({ parentId, parentName, parent, familyName, medic
                         </button>
                       )}
                     </div>
+                    {suggestion && (
+                      <div style={{ fontSize: '0.84rem', marginTop: '4px', color: 'var(--ink-muted)' }}>
+                        Easier for {parentName} to recognise:
+                        <button type="button" className="pill-toggle" style={{ marginLeft: '8px' }} onClick={() => applyNickname(m, suggestion)}>
+                          Call it &ldquo;{suggestion}&rdquo;
+                        </button>
+                      </div>
+                    )}
                     {renaming === m.id && (
                       <NameEditor parentId={parentId} med={m} onToast={onToast} onCancel={() => setRenaming(null)} onDone={() => { setRenaming(null); onChanged(); }} />
                     )}

@@ -12,7 +12,7 @@ import { SAMPLE_PRESCRIPTIONS } from '@/lib/medicineExtractor';
 import { formatScheduleSummary, formatReminderSummary } from '@/lib/scheduleGenerator';
 import { canAddParents, getEffectivePlan, freeTrialDaysLeft, smallestPlanFor } from '@/lib/plans';
 import {
-  ParentDetails, Toast, computeCallStats, formatCallTime, formatPhone, initial, downloadFile, safeFileName, displayName, canManage
+  ParentDetails, Toast, computeCallStats, formatCallTime, formatPhone, initial, downloadFile, safeFileName, displayName, canManage, onTabListKey
 } from '@/components/dashboard/helpers';
 import { OverviewPanel } from '@/components/dashboard/OverviewPanel';
 import { FamilyOverview, parentStatus } from '@/components/dashboard/FamilyOverview';
@@ -460,7 +460,7 @@ function DashboardContent() {
     const needsPlan = !canAddParents(getEffectivePlan(user?.subscription, user?.createdAt));
     return (
       <div className="wrap dash-page">
-        <div className="panel empty" style={{ maxWidth: '560px', margin: '48px auto 0', padding: '56px 32px' }}>
+        <div className="panel empty empty-welcome" style={{ maxWidth: '560px', margin: '48px auto 0', padding: '56px 32px' }}>
           <span className="icon-tile gold"><Heart size={26} /></span>
           <h1 style={{ fontSize: '1.7rem', letterSpacing: '-0.02em', marginBottom: '6px' }}>
             {user?.name ? `Welcome, ${user.name.split(' ')[0]}` : 'Welcome to Aaptha'}
@@ -497,6 +497,11 @@ function DashboardContent() {
               )}
             </>
           )}
+          <ol className="welcome-steps" aria-label="What happens next">
+          <li><b>1</b> Choose a plan</li>
+          <li><b>2</b> Add your parent</li>
+          <li><b>3</b> {!needsPlan && getEffectivePlan(user?.subscription, user?.createdAt).channel === 'whatsapp' ? 'Reminders start on WhatsApp' : 'Saathi starts calling'}</li>
+        </ol>
         </div>
       </div>
     );
@@ -588,6 +593,113 @@ function DashboardContent() {
     : premium ? ALL_TABS : ALL_TABS.filter(t => t.id !== 'timeline');
   const shownTab: TabId = TABS.some(t => t.id === activeTab) ? activeTab : 'overview';
 
+  // Banners in order of importance; at most two show, so Today stays above the fold on a phone. The rest wait their turn.
+  const banners = [
+    liveEscalation && (
+      <div key="escalation" className="banner red" role="alert">
+        <Siren size={20} />
+        <div>
+          <strong>Urgent: {liveEscalation.title}</strong>
+          <span>
+            We are phoning {currentParent.name}&apos;s contacts until someone says they are on it.
+            {' '}If it may be serious, call 112 or someone near {currentParent.name}.
+          </span>
+        </div>
+        {/* View-only members can't take an alert (the server refuses them): they get the parent's number instead. */}
+        {manage
+          ? <button onClick={() => handleOnIt(liveEscalation.id)} className="btn btn-primary btn-sm">I&apos;m on it</button>
+          : <a href={`tel:${currentParent.phone}`} className="btn btn-primary btn-sm"><Phone size={14} /> Call {currentParent.name.split(' ')[0]}</a>}
+        <button onClick={() => setActiveTab('alerts')} className="btn btn-ghost btn-sm">Details</button>
+      </div>
+    ),
+    isOwner && effectivePlan.expired && (
+      <div key="expired" className="banner amber" role="status">
+        <AlertTriangle size={20} />
+        <div>
+          <strong>Your free trial has ended</strong>
+          <span>{waPerson ? 'WhatsApp reminders are paused. Choose a plan to restart them.' : 'Daily check-in calls are paused. Choose a plan to restart them.'} Your details and history are safe.</span>
+        </div>
+        <Link href="/account/billing" className="btn btn-primary btn-sm">Choose a plan</Link>
+      </div>
+    ),
+    currentParent.isPaused && (
+      <div key="paused" className="banner amber" role="status">
+        <Pause size={20} />
+        <div>
+          <strong>{waPerson ? 'Reminders are paused' : 'Calls are paused'}{currentParent.pauseReason ? `: ${currentParent.pauseReason}` : ''}</strong>
+          <span>
+            {currentParent.pauseUntil
+              ? `They restart on ${new Date(currentParent.pauseUntil).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}.`
+              : 'They restart when you resume them.'}
+          </span>
+        </div>
+        {manage && <button onClick={() => handleTogglePause(false)} className="btn btn-primary btn-sm">Resume now</button>}
+      </div>
+    ),
+    trialDaysLeft !== null && trialDaysLeft <= 3 && (
+      <div key="trial" className="banner gold" role="status">
+        <Sparkles size={20} />
+        <div>
+          <strong>{trialDaysLeft <= 1 ? 'Your free trial ends today' : `Your free trial ends in ${trialDaysLeft} days`}</strong>
+          <span>Choose a plan to keep the daily check-in calls going without a break.</span>
+        </div>
+        <Link href="/account/billing" className="btn btn-primary btn-sm">Choose a plan</Link>
+      </div>
+    ),
+    nudge && !liveEscalation && (
+      <div key="nudge" className="banner gold" role="status">
+        <Heart size={20} />
+        <div>
+          <strong>Today might be a good day to call {currentParent.name.split(' ')[0]}</strong>
+          <span>{nudge.message}</span>
+        </div>
+        {manage && <button onClick={() => dismissNudge(nudge.id)} className="btn btn-quiet btn-sm">Got it</button>}
+      </div>
+    ),
+    dailyCallCapExceeded && (
+      <div key="call-cap" className="banner amber" role="status">
+        <AlertTriangle size={20} />
+        <div>
+          <strong>Your plan includes {dailyCallCap} call{dailyCallCap === 1 ? '' : 's'} a day</strong>
+          <span>
+            {currentParent.name} has {activeSlots.length} scheduled, so only {activeSlots.slice(0, dailyCallCap).map(s => s.time).join(', ')} will be placed.
+          </span>
+        </div>
+        <Link href="/account/billing" className="btn btn-ghost btn-sm">View plans</Link>
+      </div>
+    ),
+    reminderCapExceeded && (
+      <div key="reminder-cap" className="banner amber" role="status">
+        <AlertTriangle size={20} />
+        <div>
+          <strong>{effectivePlan.name} sends up to {reminderCap} reminder times a day</strong>
+          <span>
+            {currentParent.name} has {activeSlots.length}, so only {activeSlots.slice(0, reminderCap).map(s => s.time).join(', ')} are sent.
+          </span>
+        </div>
+      </div>
+    ),
+    manage && pendingSuggestion && (
+      <div key="suggestion" className="banner gold">
+        <span className="icon-tile gold"><Sparkles size={20} /></span>
+        <div>
+          <strong>{currentParent.name} usually picks up around {pendingSuggestion.suggestedTime}</strong>
+          <span style={{ color: 'var(--ink-muted)' }}>
+            {pendingSuggestion.reason} Based on {pendingSuggestion.sampleSize} calls; the current time is {pendingSuggestion.currentCallTime}.
+          </span>
+        </div>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button onClick={() => handleSuggestionAction(pendingSuggestion.id, 'accepted')} className="btn btn-primary btn-sm">
+            Move to {pendingSuggestion.suggestedTime}
+          </button>
+          <button onClick={() => handleSuggestionAction(pendingSuggestion.id, 'dismissed')} className="btn btn-quiet btn-sm">
+            Not now
+          </button>
+        </div>
+      </div>
+    )
+  ].filter(Boolean).slice(0, 2);
+
   const ToastIcon = toastMessage?.type === 'error' ? AlertTriangle : toastMessage?.type === 'info' ? Info : CheckCircle2;
 
   return (
@@ -637,22 +749,22 @@ function DashboardContent() {
         <div className="dash-who">
           <span className="parent-avatar" aria-hidden="true">{initial(currentParent.name)}</span>
           <div style={{ minWidth: 0 }}>
-            <h1 className="dash-title">
-              {displayName(currentParent.name)}
+            {/* "Namaste" is the page's h1; the parent is the h2 the panels' h3s sit under. Badges sit beside the
+                heading, not inside it, so a screen reader hears just the name. */}
+            <div className="dash-title">
+              <h2 id="parent-title">{displayName(currentParent.name)}</h2>
               {!isOwner && listed.ownerName && (
                 <span className="badge badge-neutral"><Users size={12} /> Shared by {listed.ownerName.split(' ')[0]}</span>
               )}
               {currentParent.isPaused ? (
                 <span className="badge badge-amber"><Pause size={12} /> Paused</span>
-              ) : parentsList.length === 1 ? (
+              ) : (
                 (() => {
                   const st = parentStatus(currentParent, parentData ?? undefined);
                   return <span className={`badge badge-${st.tone}`}>{st.icon} {st.text}</span>;
                 })()
-              ) : (
-                <span className="badge badge-green"><span className="dot live" /> Active</span>
               )}
-            </h1>
+            </div>
             <div className="dash-meta">
               <span><Phone size={14} /> {formatPhone(currentParent.phone)}</span>
               {waPerson ? (
@@ -676,125 +788,27 @@ function DashboardContent() {
         )}
       </header>
 
-      {liveEscalation && (
-        <div className="banner red" role="alert">
-          <Siren size={20} />
-          <div>
-            <strong>Urgent: {liveEscalation.title}</strong>
-            <span>
-              We are phoning {currentParent.name}&apos;s contacts until someone says they are on it.
-              {' '}If it may be serious, call 112 or someone near {currentParent.name}.
-            </span>
-          </div>
-          <button onClick={() => handleOnIt(liveEscalation.id)} className="btn btn-primary btn-sm">I&apos;m on it</button>
-          <button onClick={() => setActiveTab('alerts')} className="btn btn-ghost btn-sm">Details</button>
-        </div>
-      )}
-
-      {nudge && !liveEscalation && (
-        <div className="banner gold" role="status">
-          <Heart size={20} />
-          <div>
-            <strong>Today might be a good day to call {currentParent.name.split(' ')[0]}</strong>
-            <span>{nudge.message}</span>
-          </div>
-          {manage && <button onClick={() => dismissNudge(nudge.id)} className="btn btn-quiet btn-sm">Got it</button>}
-        </div>
-      )}
-
-      {/* BANNERS */}
-      {currentParent.isPaused && (
-        <div className="banner amber" role="status">
-          <Pause size={20} />
-          <div>
-            <strong>{waPerson ? 'Reminders are paused' : 'Calls are paused'}{currentParent.pauseReason ? `: ${currentParent.pauseReason}` : ''}</strong>
-            <span>
-              {currentParent.pauseUntil
-                ? `They restart on ${new Date(currentParent.pauseUntil).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}.`
-                : 'They restart when you resume them.'}
-            </span>
-          </div>
-          {manage && <button onClick={() => handleTogglePause(false)} className="btn btn-primary btn-sm">Resume now</button>}
-        </div>
-      )}
+      {banners}
 
       {/* Call updates only exist on calling plans (Remind has its own caretaker messages). */}
-      {!waPerson && <WhatsAppOptInBanner />}
-
-      {isOwner && effectivePlan.expired && (
-        <div className="banner amber" role="status">
-          <AlertTriangle size={20} />
-          <div>
-            <strong>Your free trial has ended</strong>
-            <span>{waPerson ? 'WhatsApp reminders are paused. Choose a plan to restart them.' : 'Daily check-in calls are paused. Choose a plan to restart them.'} Your details and history are safe.</span>
-          </div>
-          <Link href="/account/billing" className="btn btn-primary btn-sm">Choose a plan</Link>
-        </div>
-      )}
-
-      {trialDaysLeft !== null && trialDaysLeft <= 3 && (
-        <div className="banner gold" role="status">
-          <Sparkles size={20} />
-          <div>
-            <strong>{trialDaysLeft <= 1 ? 'Your free trial ends today' : `Your free trial ends in ${trialDaysLeft} days`}</strong>
-            <span>Choose a plan to keep the daily check-in calls going without a break.</span>
-          </div>
-          <Link href="/account/billing" className="btn btn-primary btn-sm">Choose a plan</Link>
-        </div>
-      )}
-
-      {dailyCallCapExceeded && (
-        <div className="banner amber" role="status">
-          <AlertTriangle size={20} />
-          <div>
-            <strong>Your plan includes {dailyCallCap} call{dailyCallCap === 1 ? '' : 's'} a day</strong>
-            <span>
-              {currentParent.name} has {activeSlots.length} scheduled, so only {activeSlots.slice(0, dailyCallCap).map(s => s.time).join(', ')} will be placed.
-            </span>
-          </div>
-          <Link href="/account/billing" className="btn btn-ghost btn-sm">View plans</Link>
-        </div>
-      )}
-
-      {reminderCapExceeded && (
-        <div className="banner amber" role="status">
-          <AlertTriangle size={20} />
-          <div>
-            <strong>{effectivePlan.name} sends up to {reminderCap} reminder times a day</strong>
-            <span>
-              {currentParent.name} has {activeSlots.length}, so only {activeSlots.slice(0, reminderCap).map(s => s.time).join(', ')} are sent.
-            </span>
-          </div>
-        </div>
-      )}
-
-      {manage && pendingSuggestion && (
-        <div className="banner gold">
-          <span className="icon-tile gold"><Sparkles size={20} /></span>
-          <div>
-            <strong>{currentParent.name} usually picks up around {pendingSuggestion.suggestedTime}</strong>
-            <span style={{ color: 'var(--ink-muted)' }}>
-              {pendingSuggestion.reason} Based on {pendingSuggestion.sampleSize} calls; the current time is {pendingSuggestion.currentCallTime}.
-            </span>
-          </div>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button onClick={() => handleSuggestionAction(pendingSuggestion.id, 'accepted')} className="btn btn-primary btn-sm">
-              Move to {pendingSuggestion.suggestedTime}
-            </button>
-            <button onClick={() => handleSuggestionAction(pendingSuggestion.id, 'dismissed')} className="btn btn-quiet btn-sm">
-              Not now
-            </button>
-          </div>
-        </div>
-      )}
+      {!waPerson && banners.length < 2 && <WhatsAppOptInBanner />}
 
       {/* TABS */}
-      <nav className="tabbar" role="tablist" aria-label="Dashboard sections">
+      <div
+        className="tabbar"
+        role="tablist"
+        aria-label="Dashboard sections"
+        onKeyDown={(e) => onTabListKey(e, TABS.map(t => t.id), shownTab, (id) => setActiveTab(id as TabId))}
+      >
         {TABS.map((tab) => (
           <button
             key={tab.id}
+            id={`tab-${tab.id}`}
+            data-tab={tab.id}
             role="tab"
             aria-selected={shownTab === tab.id}
+            aria-controls="dash-tabpanel"
+            tabIndex={shownTab === tab.id ? 0 : -1}
             className="tab"
             onClick={() => setActiveTab(tab.id)}
           >
@@ -803,11 +817,13 @@ function DashboardContent() {
             {!!tab.count && <span className="count">{tab.count}</span>}
           </button>
         ))}
-      </nav>
+      </div>
 
       <motion.div
         key={`${currentParent.id}-${shownTab}`}
         role="tabpanel"
+        id="dash-tabpanel"
+        aria-labelledby={`tab-${shownTab}`}
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ type: 'spring', stiffness: 300, damping: 30 }}
@@ -971,7 +987,8 @@ function DashboardContent() {
             parent={currentParent}
             role={role}
             stats={stats}
-            companionAllowed={isOwner ? effectivePlan.weeklyChat && !effectivePlan.expired : true}
+            // ponytail: shared members never see it (their own plan says nothing about the owner's); pass the owner's plan when the add-on ships.
+            companionAllowed={isOwner && effectivePlan.weeklyChat && !effectivePlan.expired}
             premium={premium}
             planId={addonPlanId}
             monitorPrice={parentData?.ownerPlan?.healthMonitorPrice ?? 0}

@@ -3,11 +3,11 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { motion } from 'motion/react';
-import { PhoneCall, Pill, Bell, Check, PhoneMissed, Pause, Clock, AlertTriangle, Plus, ChevronRight, MessageCircle, X } from 'lucide-react';
+import { PhoneCall, Pill, Bell, Check, PhoneMissed, Pause, Clock, AlertTriangle, Plus, MessageCircle, X } from 'lucide-react';
 import { ParentProfile } from '@/lib/types';
 import { timeToMinutes } from '@/lib/scheduleGenerator';
 import { CountUp } from '@/components/motion/CountUp';
-import { ParentDetails, computeCallStats, displayName, initial, isTestCall } from './helpers';
+import { ParentDetails, computeCallStats, displayName, initial, isTestCall, onTabListKey } from './helpers';
 
 export type Status = { tone: 'green' | 'amber' | 'red' | 'neutral'; text: string; icon: React.ReactNode };
 
@@ -41,8 +41,10 @@ export function parentStatus(parent: ParentProfile, details?: ParentDetails): St
   if (details?.channel === 'whatsapp' || (!details && parent.reminderChannel === 'whatsapp')) return reminderStatus(parent, details);
   if (parent.isPaused) return { tone: 'amber', text: 'Calls paused', icon: <Pause size={12} /> };
   const stats = computeCallStats(details?.callLogs || [], parent.callSchedule || []);
-  const urgent = (details?.alerts || []).some(a => a.level >= 3 && a.status !== 'resolved' && isToday(a.createdAt || a.timestamp));
-  if (urgent) return { tone: 'red', text: 'Needs a look', icon: <AlertTriangle size={12} /> };
+  const openToday = (details?.alerts || []).filter(a => a.status !== 'resolved' && isToday(a.createdAt || a.timestamp));
+  // Red only for an emergency; a health concern (fever, unwell) is amber, like the Alerts tab.
+  if (openToday.some(a => a.level >= 4)) return { tone: 'red', text: 'Emergency today', icon: <AlertTriangle size={12} /> };
+  if (openToday.some(a => a.level === 3)) return { tone: 'amber', text: 'Health concern today', icon: <AlertTriangle size={12} /> };
   // Latest attempt of each scheduled call today (newest first); any of them going wrong outranks a later good call.
   const seen = new Set<string>();
   const perSlot = stats.todayCalls
@@ -130,7 +132,11 @@ export function FamilyOverview({ userName, parents, detailsById, selectedId, onS
       ? `Next reminder at ${next.time.replace(/^0/, '')}.`
       : `${whatsappOnly ? 'Next reminder' : 'Next check-in'}: ${next.name} at ${next.time}.`
     : '';
-  const summary = whatsappOnly
+  // Everyone paused: "No more calls today" read like the day was simply over.
+  const allPaused = parents.length > 0 && parents.every(p => p.isPaused);
+  const summary = allPaused
+    ? `${whatsappOnly ? 'Reminders' : 'Calls'} are paused${parents.length > 1 ? ' for everyone' : ''} right now.`
+    : whatsappOnly
     ? (remSent === 0
         ? (next ? `No reminders yet today. ${nextText}` : 'No more reminders today.')
         : `${remTaken} of ${remSent} reminder${remSent === 1 ? '' : 's'} answered "Taken" today.${nextText ? ` ${nextText}` : ''}`)
@@ -180,39 +186,39 @@ export function FamilyOverview({ userName, parents, detailsById, selectedId, onS
         ))}
       </div>
 
-      {/* One parent: their status sits in the detail header below, so the picker would only repeat it. */}
-      {parents.length > 1 && <>
-      <div className="family-list-head">
-        <h2>Your parents</h2>
-        <span>Tap a parent to see their day</span>
+      {/* Mobile-app style: a rail of ringed avatars (ring = today's status). The chosen parent's details are the
+          header right below, so there is no second card repeating the name. */}
+      {parents.length > 1 && (() => {
+        const sel = parents.find(p => p.id === selectedId) ?? parents[0];
+        return (
+      <div className="family-rail">
+        {/* display: contents keeps the rail's layout; the tablist holds only tabs (the Add link sits beside it). */}
+        <div
+          role="tablist"
+          aria-label="Choose parent"
+          style={{ display: 'contents' }}
+          onKeyDown={(e) => onTabListKey(e, parents.map(p => p.id), sel.id, onSelect)}
+        >
+          {parents.map((p) => {
+            const pst = parentStatus(p, detailsById[p.id]);
+            const active = p.id === sel.id;
+            return (
+              <button key={p.id} type="button" role="tab" data-tab={p.id} aria-selected={active} tabIndex={active ? 0 : -1} aria-label={`${displayName(p.name)}: ${pst.text}`} className="rail-item" data-tone={pst.tone} onClick={() => onSelect(p.id)}>
+                <span className="rail-ring"><span className="rail-avatar">{initial(p.name)}</span><i className="rail-dot" aria-hidden="true" /></span>
+                <span className="rail-name">{displayName(p.name)}</span>
+              </button>
+            );
+          })}
+        </div>
+        {canAddMore && (
+          <Link href="/onboarding" className="rail-item rail-add" aria-label={whatsappOnly ? 'Add a person' : 'Add a parent'}>
+            <span className="rail-ring"><span className="rail-avatar"><Plus size={22} /></span></span>
+            <span className="rail-name">Add</span>
+          </Link>
+        )}
       </div>
-      <div className="family-list" role="tablist" aria-label="Choose parent">
-        {parents.map((p) => {
-          const st = parentStatus(p, detailsById[p.id]);
-          const active = p.id === selectedId;
-          const slots = (p.callSchedule || []).filter(s => s.isActive).length;
-          return (
-            <button
-              key={p.id}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              className="family-row"
-              onClick={() => onSelect(p.id)}
-            >
-              {active && <motion.span layoutId="family-row-ring" className="family-row-ring" aria-hidden="true" />}
-              <span className="parent-avatar" style={{ width: '44px', height: '44px', borderRadius: '14px', fontSize: '1.1rem' }}>{initial(p.name)}</span>
-              <span className="family-row-main">
-                <b>{displayName(p.name)}</b>
-                <small>{p.language} · {slots} check-in{slots === 1 ? '' : 's'} a day</small>
-              </span>
-              <span className={`badge badge-${st.tone === 'neutral' ? 'neutral' : st.tone}`}>{st.icon} {st.text}</span>
-              <ChevronRight size={18} className="family-row-chev" aria-hidden="true" />
-            </button>
-          );
-        })}
-      </div>
-      </>}
+        );
+      })()}
     </section>
   );
 }

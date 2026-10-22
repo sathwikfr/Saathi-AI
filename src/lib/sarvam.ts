@@ -153,14 +153,35 @@ const readingList = (kinds?: string[]) => (kinds || []).map(k => READING_WORDS[k
 
 const yesNo = (v: boolean | undefined) => (v ? 'yes' : 'no');
 
+/**
+ * Text the family typed (names, nicknames, notes), made safe to place in the agent's prompt: one line (a newline
+ * could forge another checklist item), no brackets or "@" (they could fake a `[also called: …]` tag or a variable
+ * chip), short. The prompt's own rule (docs/sarvam-agent.md §6) says these values are data, never instructions.
+ */
+export function agentText(text: string | null | undefined, max = 120): string {
+  const flat = (text || '')
+    .replace(/[\p{Cc}\u2028\u2029]+/gu, ' ')
+    .replace(/[[\]{}<>@`]/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  return (flat.length > max ? flat.slice(0, max).trimEnd() : flat).toWellFormed();
+}
+
+/** agentText, or "none" when nothing is left (the prompt's "skip this" value). */
+const agentOr = (text: string | null | undefined, max?: number) => agentText(text, max) || 'none';
+
 /** Numbered checklist the agent reads from, e.g. "1. Metformin 500 (1 tab) [why: keeps your sugar steady] — Did you take …?" */
 export function buildMedicineChecklist(medicines: LinkedMedicineDetail[]): string {
   return medicines
     .map((m, i) => {
-      const why = m.purpose?.trim() ? ` [why: ${m.purpose.trim()}]` : '';
+      const name = agentText(m.name);
+      const purpose = agentText(m.purpose, 80);
+      const why = purpose ? ` [why: ${purpose}]` : '';
       // A real name is only here when the family switched real names on; the nickname stays the name to report.
-      const official = m.officialName ? ` [also called: ${m.officialName}]` : '';
-      return `${i + 1}. ${m.name}${m.dosage ? ` (${m.dosage})` : ''}${official}${why} — ${m.questionScript || `Did you take your ${m.name}?`}`;
+      const officialName = agentText(m.officialName);
+      const official = officialName ? ` [also called: ${officialName}]` : '';
+      const dosage = agentText(m.dosage, 40);
+      return `${i + 1}. ${name}${dosage ? ` (${dosage})` : ''}${official}${why} — ${agentText(m.questionScript, 240) || `Did you take your ${name}?`}`;
     })
     .join('\n');
 }
@@ -173,8 +194,8 @@ export function buildMedicineChecklist(medicines: LinkedMedicineDetail[]): strin
 export function firstMedicineSpoken(medicines: LinkedMedicineDetail[]): string {
   const name = medicines[0]?.name || '';
   const cleaned = cleanMedicineNameForSpeech(name.replace(/\(.*?\)/g, ' ').replace(/\s+/g, ' ').trim()) || name.trim() || 'medicine';
-  const official = medicines[0]?.officialName;
-  return official ? `${cleaned} (${cleanMedicineNameForSpeech(official)})` : cleaned;
+  const official = agentText(medicines[0]?.officialName);
+  return official ? `${agentText(cleaned)} (${cleanMedicineNameForSpeech(official)})` : agentText(cleaned) || 'medicine';
 }
 
 /** A phone number the way it is read out: "+919876543210" -> "98765 43210". */
@@ -188,11 +209,11 @@ export function spokenPhone(e164: string | null | undefined): string {
 export function buildAgentVariables(input: OutboundCallInput): Record<string, string> {
   return {
     call_log_id: input.callLogId,
-    parent_name: input.parentName,
-    caregiver_name: input.caregiverName,
-    relationship: input.relationship,
+    parent_name: agentText(input.parentName, 60),
+    caregiver_name: agentText(input.caregiverName, 60),
+    relationship: agentText(input.relationship, 40),
     slot: input.slot,
-    slot_label: input.slotLabel,
+    slot_label: agentText(input.slotLabel, 40),
     call_type: input.callType || 'reminder',
     has_medicines: yesNo(input.medicines.length > 0),
     medicine_count: String(input.medicines.length),
@@ -200,25 +221,25 @@ export function buildAgentVariables(input: OutboundCallInput): Record<string, st
     medicines_checklist: buildMedicineChecklist(input.medicines),
     ask_consent: yesNo(input.askConsent),
     say_safety_line: yesNo(input.saySafetyLine),
-    last_call_note: input.lastCallNote?.trim() || 'none',
+    last_call_note: agentOr(input.lastCallNote, 200),
     // ask_wellbeing (all three at once) is replaced by wellbeing_topic; kept as "no" for agents with the old prompt.
     ask_wellbeing: 'no',
     wellbeing_topic: input.wellbeingTopic || 'none',
     ask_feeling: yesNo(input.askFeeling),
     ask_refill: yesNo(!!input.refillMedicines?.length),
-    refill_medicines: (input.refillMedicines || []).join(', ') || 'none',
-    companion_topics: input.companionTopics?.trim() || 'none',
-    special_day: input.specialDay?.trim() || 'none',
+    refill_medicines: (input.refillMedicines || []).map(n => agentText(n)).filter(Boolean).join(', ') || 'none',
+    companion_topics: agentOr(input.companionTopics, 200),
+    special_day: agentOr(input.specialDay, 80),
     support_phone: input.supportPhone ? spokenPhone(input.supportPhone) : 'none',
-    family_message: input.familyMessage?.trim() || 'none',
-    appointment_note: input.appointmentNote?.trim() || 'none',
-    appointment_question: input.appointmentQuestion?.trim() || 'none',
+    family_message: agentOr(input.familyMessage, 300),
+    appointment_note: agentOr(input.appointmentNote, 400),
+    appointment_question: agentOr(input.appointmentQuestion, 160),
     ask_readings: readingList(input.askReadings),
-    weather_note: input.weatherNote?.trim() || 'none',
+    weather_note: agentOr(input.weatherNote, 200),
     hearing_mode: yesNo(input.hearingMode),
     firm_time_limit: !input.firmTimeLimit ? 'no' : input.partner ? 'couple' : 'yes',
-    helper_question: input.helperQuestion?.trim() || 'none',
-    partner_name: input.partner?.name || 'none',
+    helper_question: agentOr(input.helperQuestion, 160),
+    partner_name: agentOr(input.partner?.name, 60),
     partner_has_medicines: yesNo(!!input.partner?.medicines.length),
     partner_medicines_checklist: input.partner ? buildMedicineChecklist(input.partner.medicines) || 'none' : 'none',
     partner_ask_readings: input.partner ? readingList(input.partner.askReadings) : 'none'
@@ -297,12 +318,12 @@ export function buildAlertCallRequest(cfg: SarvamConfig, agent: AlertAgentConfig
       connection_config: { connection_id: cfg.connectionId, agent_phone_number: cfg.agentPhoneNumber },
       agent_variables: {
         alert_kind: input.kind,
-        recipient_name: input.recipientName,
-        parent_name: input.parentName,
+        recipient_name: agentText(input.recipientName, 60),
+        parent_name: agentText(input.parentName, 60),
         parent_phone: spokenPhone(input.parentPhone),
-        parent_address: input.parentAddress?.trim() || 'not saved',
-        family_name: input.familyName,
-        reason: input.reason
+        parent_address: agentText(input.parentAddress, 300) || 'not saved',
+        family_name: agentText(input.familyName, 60),
+        reason: agentText(input.reason, 300)
       },
       // Neighbours and family hear the alert in the parent's language; the agent follows them if they switch.
       app_overrides: { initial_language_name: toSarvamLanguage(input.language) }

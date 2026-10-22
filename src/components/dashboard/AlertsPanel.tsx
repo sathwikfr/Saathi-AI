@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Bell, BellRing, Siren, Info, PhoneCall, CheckCircle2 } from 'lucide-react';
+import { Bell, BellRing, Siren, Info, PhoneCall, CheckCircle2, Stethoscope } from 'lucide-react';
 import { AlertRecord } from '@/lib/types';
 import { formatCallTime } from './helpers';
 
@@ -9,7 +9,7 @@ const LEVEL_LABEL: Record<number, string> = {
   0: 'All fine',
   1: 'For your information',
   2: 'Needs attention',
-  3: 'Urgent',
+  3: 'Health concern',
   4: 'Emergency'
 };
 
@@ -97,8 +97,9 @@ export function AlertsPanel({ parentId, parentName, alerts, onChanged, onToast, 
 
       <div className="list">
         {shown.map((alt) => {
-          const tone = alt.level >= 3 ? 'critical' : alt.level >= 2 ? 'urgent' : '';
-          const Icon = alt.level >= 3 ? Siren : alt.level >= 2 ? BellRing : Info;
+          // Only an emergency (4) gets the siren and red: a fever or 'feeling unwell' (3) is a call-them-today, not an alarm.
+          const tone = alt.level >= 4 ? 'critical' : alt.level >= 2 ? 'urgent' : '';
+          const Icon = alt.level >= 4 ? Siren : alt.level === 3 ? Stethoscope : alt.level >= 2 ? BellRing : Info;
           const esc = alt.escalation;
           const live = esc?.status === 'active';
           const needsOutcome = alt.level >= 3 && !alt.outcome && (!!alt.acknowledgedAt || (esc && esc.status !== 'active'));
@@ -129,8 +130,8 @@ export function AlertsPanel({ parentId, parentName, alerts, onChanged, onToast, 
                 )}
 
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '10px', alignItems: 'center' }}>
-                  <span className={`badge ${alt.level >= 3 ? 'badge-red' : alt.level >= 2 ? 'badge-amber' : 'badge-neutral'}`}>
-                    Level {alt.level} · {LEVEL_LABEL[alt.level] || 'Alert'}
+                  <span className={`badge ${alt.level >= 4 ? 'badge-red' : alt.level >= 2 ? 'badge-amber' : 'badge-neutral'}`}>
+                    {LEVEL_LABEL[alt.level] || 'Alert'}
                   </span>
                   {alt.channel === 'whatsapp' && <span className="badge badge-neutral">Sent on WhatsApp</span>}
                   {alt.channel === 'email' && alt.level >= 2 && <span className="badge badge-neutral">Emailed</span>}

@@ -249,6 +249,46 @@ export async function claimAndEmailFallback(messageId: string, deps: NotifyDeps 
   return sent;
 }
 
+/** How long a level 3-4 message may sit without a "delivered" receipt before it is emailed (cron sweep). */
+export const UNDELIVERED_EMAIL_AFTER_MINUTES = 15;
+/** Older messages are left alone, so the first run after a deploy doesn't email old history. */
+const UNDELIVERED_LOOKBACK_HOURS = 24;
+
+/**
+ * Cron sweep: a level 3-4 WhatsApp message Meta accepted (`sent`) but never reported delivered, or one stuck in
+ * `pending` (the run stopped before sending), is emailed to that person once, like a message that failed outright.
+ */
+export async function emailUndeliveredSerious(
+  opts: { now?: Date; deps?: NotifyDeps; /** tests: only these accounts */ userIds?: string[] } = {}
+): Promise<{ emailed: number }> {
+  const now = opts.now || new Date();
+  const rows = await prisma.whatsAppMessage.findMany({
+    where: {
+      direction: 'out',
+      level: { gte: 3 },
+      userId: opts.userIds ? { in: opts.userIds } : { not: null },
+      status: { in: ['pending', 'sent'] },
+      fallbackEmailedAt: null,
+      createdAt: {
+        lte: new Date(now.getTime() - UNDELIVERED_EMAIL_AFTER_MINUTES * 60_000),
+        gte: new Date(now.getTime() - UNDELIVERED_LOOKBACK_HOURS * 3_600_000)
+      }
+    },
+    select: { id: true },
+    orderBy: { createdAt: 'asc' },
+    take: 50
+  });
+  let emailed = 0;
+  for (const row of rows) {
+    try {
+      emailed += await claimAndEmailFallback(row.id, opts.deps);
+    } catch (err) {
+      console.error(`[notify] Undelivered fallback for ${row.id} failed:`, err);
+    }
+  }
+  return { emailed };
+}
+
 /**
  * "X is handling it": everyone in the family except the person who said "I'm on it".
  * WhatsApp when configured and opted in; otherwise email, because during an emergency
