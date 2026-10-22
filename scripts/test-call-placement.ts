@@ -22,7 +22,7 @@ import { LinkedMedicineDetail } from '../src/lib/types';
 import { PLANS, healthMonitorPrice, healthMonitorListPrice, monthlyPrice, healthMonitorAvailable, cleanAddons, carriedPeriod, firmCallLimit } from '../src/lib/plans';
 import { updateUserSubscription } from '../src/lib/db';
 import { ownerHasHealthMonitor, canTrackReadings, isPremiumParent } from '../src/lib/planAccess';
-import { callLength } from '../src/lib/adminStats';
+import { callLength, pilotSummary } from '../src/lib/adminStats';
 
 let passed = 0;
 let failed = 0;
@@ -88,6 +88,19 @@ function partA() {
   const len = callLength([{ status: 'answered', durationSeconds: 45 }, { status: 'answered', durationSeconds: 75 }, { status: 'unanswered', durationSeconds: 0 }, { status: 'answered', durationSeconds: 0 }]);
   check('average length, billed minutes (every started minute), share over 60 s, monthly cost', len.calls === 2 && len.avgSeconds === 60 && len.avgBilledMinutes === 1.5 && len.over60Pct === 50 && len.estMonthlyCostPerParent === 662, len);
   check('no timed calls yet: nothing invented', callLength([]).avgBilledMinutes === null);
+
+  // pilot tracking: parent added 1 Oct, today 22 Oct = week 4
+  const pNow = new Date('2026-10-22T06:00:00Z');
+  const days = (from: number, to: number, reached: (d: number) => boolean) =>
+    Array.from({ length: to - from + 1 }, (_, i) => from + i).map(d => ({ date: `2026-10-${String(d).padStart(2, '0')}`, reached: reached(d), confirmed: reached(d) }));
+  const pilotOf = (checks: ReturnType<typeof days>, seen: Date | null = pNow) =>
+    pilotSummary({ startDate: '2026-10-01', today: '2026-10-22', checks, familyLastSeenAt: seen, now: pNow });
+  const steady = pilotOf(days(1, 22, () => true));
+  check('pilot: weeks counted from the start day, latest 4 shown', steady.weeks.map(w => w.week).join() === '1,2,3,4' && steady.weeks[0].total === 7 && steady.weeks[3].total === 1, steady.weeks);
+  check('pilot: answering every day + family looking = healthy', steady.health === 'healthy' && steady.confirmedPct === 100);
+  check('pilot: same, but family not seen for 8 days = fading', pilotOf(days(1, 22, () => true), new Date('2026-10-14T06:00:00Z')).health === 'fading');
+  check('pilot: stopped answering the last 3 days = at risk', pilotOf(days(1, 22, d => d < 20)).health === 'at_risk');
+  check('pilot: fewer than 3 checks this week = too early', pilotOf(days(21, 22, () => true)).health === 'early');
 
   console.log('\nA6. Changing plan inside a paid period: no double charge');
   const nowD = new Date('2026-10-10T06:00:00Z');
