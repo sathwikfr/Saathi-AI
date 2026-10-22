@@ -114,16 +114,52 @@ function nicknameFor(c: ExtractedMedicineCandidate): string | undefined {
 }
 
 /**
+ * Common Indian generics and brands -> the everyday name ("TAB. ZITEN M 20/500MG" -> "Sugar tablet").
+ * ponytail: hand list of the usual ones; a miss just means no suggestion, the family types their own.
+ */
+const NICKNAME_BY_NAME: [RegExp, string][] = [
+  [/metformin|glimepiride|gliclazide|glipizide|teneligliptin|vildagliptin|sitagliptin|linagliptin|dapagliflozin|empagliflozin|voglibose|pioglitazone|glycomet|ziten|tenepride|galvus|janumet|januvia|jalra|istavel|trajenta|amaryl|gemer|glimy|zoryl|forxiga|jardiance|gluconorm|glyciphage/, 'Sugar tablet'],
+  [/amlodipine|telmisartan|losartan|olmesartan|valsartan|metoprolol|atenolol|nebivolol|bisoprolol|cilnidipine|ramipril|enalapril|chlorthalidone|hydrochlorothiazide|\bmet xl\b|telma|amlong|stamlo|amlokind|losar|repace|olmezest|nebicard|concor|cilacar|prolomet|seloken|aten\b|tenormin/, 'BP tablet'],
+  [/atorvastatin|rosuvastatin|fenofibrate|rosuva|rozavel|rozucor|atorva|lipvas|storvas|tonact|lipicard/, 'Cholesterol tablet'],
+  [/pantoprazole|rabeprazole|omeprazole|esomeprazole|famotidine|ranitidine|sucralfate|domperidone|\bpan\b|pan-?d|pan ?40|pantocid|razo|rabekind|omez|nexpro|sucrafil|digene|gelusil|mucaine/, 'Gas tablet'],
+  [/levothyroxine|thyronorm|eltroxin|thyrox|lethyrox/, 'Thyroid tablet'],
+  [/aspirin|clopidogrel|ticagrelor|warfarin|apixaban|rivaroxaban|ecosprin|clopilet|deplatt|brilinta|eliquis|xarelto/, 'Blood thinner'],
+  [/hydroxyzine|cetirizine|levocetirizine|fexofenadine|montelukast|chlorpheniramine|atarax|okacet|allegra|montair|levocet|avil/, 'Allergy tablet'],
+  [/paracetamol|dolo|calpol|crocin/, 'Fever tablet'],
+  [/diclofenac|aceclofenac|ibuprofen|etoricoxib|tramadol|zerodol|voveran|hifenac|combiflam|ultracet/, 'Pain tablet'],
+  [/amoxicillin|clavulan|azithromycin|cefixime|cefuroxime|ciprofloxacin|ofloxacin|levofloxacin|doxycycline|metronidazole|augmentin|azee|azithral|taxim|zifi|ciplox|oflox/, 'Antibiotic tablet'],
+  [/calcium|shelcal|ccm\b|calcimax/, 'Calcium'],
+  [/neurobion|becosules|methylcobalamin|cholecalciferol|vitamin|uprise|\bd3\b|zincovit|supradyn/, 'Vitamin'],
+  [/ferrous|iron|livogen|orofer|dexorange/, 'Iron tablet'],
+  [/zolpidem|alprazolam|clonazepam|lorazepam|melatonin|restyl|zapiz|nitrest/, 'Sleep tablet'],
+  [/febuxostat|allopurinol|zyloric|febutaz/, 'Uric acid tablet'],
+  [/tamsulosin|silodosin|dutasteride|urimax|veltam|silodal/, 'Prostate tablet'],
+  [/lactulose|duphalac|isabgol|bisacodyl|dulcolax|cremaffin/, 'Constipation tablet']
+];
+
+/** The everyday nickname for a prescription name, as a capsule or syrup when it is one; undefined when unknown. */
+export function nicknameFromName(name: string | null | undefined): string | undefined {
+  const lower = (name || '').toLowerCase();
+  if (!lower.trim()) return undefined;
+  const base = NICKNAME_BY_NAME.find(([re]) => re.test(lower))?.[1];
+  if (!base || !/tablet$/.test(base)) return base;
+  if (/^\s*cap\b|capsule/.test(lower)) return base.replace(/tablet$/, 'capsule');
+  if (/^\s*(syp|syr|gel|susp)\b|syrup|suspension/.test(lower)) return base.replace(/tablet$/, 'syrup');
+  return base;
+}
+
+/**
  * Gives every draft row a nickname to approve: the category's ("BP tablet"), else the medicine's own name.
  * Each must be unique, so a second "BP tablet" becomes "Night BP tablet" (its first time), then "BP tablet 2".
  */
 export function withNicknames(rows: ExtractedMedicineCandidate[], takenNames: string[] = []): ExtractedMedicineCandidate[] {
   const taken = [...takenNames];
   return rows.map(c => {
-    const wanted = nicknameFor(c) || cleanMedicineNameForSpeech(c.name.replace(/\(.*?\)/g, ' ').replace(/\s+/g, ' ').trim());
+    const known = nicknameFor(c) || nicknameFromName(c.name);
+    const wanted = known || cleanMedicineNameForSpeech(c.name.replace(/\(.*?\)/g, ' ').replace(/\s+/g, ' ').trim());
     const nickname = wanted ? freeNickname(wanted, c.timingSlots?.length ? c.timingSlots : [c.timeOfDay], taken) : '';
     if (nickname) taken.push(nickname);
-    return { ...c, nickname, suggestedNickname: !!nicknameFor(c) };
+    return { ...c, nickname, suggestedNickname: !!known };
   });
 }
 

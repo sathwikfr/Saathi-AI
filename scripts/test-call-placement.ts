@@ -81,6 +81,11 @@ function partA() {
   const noMonitor = planCallExtras({ ...base, rhythm: { ...base.rhythm, lastSafetyLineAt: null, lastRefillCheckAt: null }, healthCarry: 'full', healthQuestions: false, lastAnswered: { createdAt: new Date('2026-10-11T03:30:00Z'), healthConcern: 'knee pain', pain: null, painWhere: null } });
   check('no Health Monitor: tablets only (no feeling, health question, refill or "is it better?")', !noMonitor.askFeeling && !noMonitor.wellbeingTopic && noMonitor.refillMedicines.length === 0 && !noMonitor.lastCallNote, noMonitor);
   check('no Health Monitor: no weekly safety line, only on the first (permission) call', !noMonitor.saySafetyLine && planCallExtras({ ...base, rhythm: { ...base.rhythm, parentConsent: null, lastSafetyLineAt: null }, healthQuestions: false }).saySafetyLine);
+  const noTablets = planCallExtras({ ...base, activeMedicineNames: [], rhythm: { ...base.rhythm, lastSafetyLineAt: null }, healthCarry: 'full', healthQuestions: false });
+  check('no Health Monitor, no tablets: still "How are you feeling?" (nothing else)', !!noTablets.askFeeling && !noTablets.wellbeingTopic && !noTablets.lastCallNote && !noTablets.saySafetyLine, noTablets);
+  check('no Health Monitor, no tablets: once a day only, never on the permission call',
+    !planCallExtras({ ...base, activeMedicineNames: [], healthCarry: 'none', healthQuestions: false }).askFeeling &&
+    !planCallExtras({ ...base, activeMedicineNames: [], rhythm: { ...base.rhythm, parentConsent: null }, healthCarry: 'full', healthQuestions: false }).askFeeling);
   check('old rule still there when nothing is decided', !!planCallExtras(base).askFeeling && !planCallExtras({ ...base, answeredToday: true }).askFeeling);
   check('retry gap is 30 minutes, no extra follow-up calls by default', RETRY_DELAY_MINUTES === 30 && maxFollowUpsPerDay() === 0);
 

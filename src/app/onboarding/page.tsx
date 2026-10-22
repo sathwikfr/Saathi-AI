@@ -56,7 +56,7 @@ import {
 import { PARENT_LANGUAGES } from '@/lib/parentLanguages';
 import { introScript, noticeLangFor, NOTICES } from '@/lib/parentNotices';
 
-function OnboardingContent() {
+function OnboardingContent({ onRestart }: { onRestart: () => void }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user } = useAuth();
@@ -102,10 +102,23 @@ function OnboardingContent() {
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [errorUpgradeHref, setErrorUpgradeHref] = useState<string | null>(null);
-  // The error box sits above the step; a long medicine list would hide it.
+  /** The input an error is about (its id): the message then shows under that field and focus moves there. */
+  const [errorField, setErrorField] = useState<string | null>(null);
+  const fail = (msg: string, field: string | null = null) => {
+    setErrorMsg(msg);
+    setErrorField(field);
+  };
+  /** Inline error under a field; role="alert" so screen readers hear it as focus lands on the field. */
+  const fieldError = (id: string) =>
+    errorField === id && errorMsg ? <span className="form-error" role="alert" id={`${id}-error`}>{errorMsg}</span> : null;
+  const invalid = (id: string) => (errorField === id && errorMsg ? { 'aria-invalid': true, 'aria-describedby': `${id}-error` } : {});
+  // A field error focuses (and scrolls to) its field; any other error box sits above the step, so scroll up to it.
   useEffect(() => {
-    if (errorMsg) window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, [errorMsg]);
+    if (!errorMsg) return;
+    const el = errorField ? document.getElementById(errorField) : null;
+    if (el) el.focus();
+    else window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [errorMsg, errorField]);
 
   // A new step starts at the top, and screen readers land on its heading instead of on <body>.
   const firstStep = useRef(true);
@@ -122,7 +135,8 @@ function OnboardingContent() {
   const [language, setLanguage] = useState('Hindi & English');
   /** Remind plan: the language of the WhatsApp messages to the person. */
   const [waLanguage, setWaLanguage] = useState('English');
-  const [timezone, setTimezone] = useState('Asia/Kolkata (IST)');
+  // Saathi only calls Indian numbers and every call time is India time, so there is nothing to choose.
+  const timezone = 'Asia/Kolkata (IST)';
 
   // Step 2: Medicines State
   const [hasMedicines, setHasMedicines] = useState<boolean | null>(null);
@@ -151,7 +165,7 @@ function OnboardingContent() {
     /** The prescription's name ("Amlodipine 5 mg"); `name` is the nickname Saathi says. Optional when typed. */
     officialName?: string;
   }>>([
-    { name: '', dosage: '1 tablet after breakfast', timeOfDay: 'morning', timingSlots: ['morning'], foodRelation: 'after_food', frequency: 'daily' }
+    { name: '', dosage: '1 tablet', timeOfDay: 'morning', timingSlots: ['morning'], foodRelation: 'after_food', frequency: 'daily' }
   ]);
 
   // Step 3: Call Schedule & Roadmap (Auto-generated from confirmed medicines)
@@ -161,8 +175,17 @@ function OnboardingContent() {
 
   // Step 4: Emergency Contacts
   const [emergencyContacts, setEmergencyContacts] = useState<Array<{ name: string; relation: string; phone: string; priority: 'primary' | 'secondary'; isLocal?: boolean }>>([
-    { name: user?.name || '', relation: 'Son / Primary Caregiver', phone: user?.phone || '', priority: 'primary', isLocal: false }
+    { name: user?.name || '', relation: 'Son / daughter', phone: user?.phone || '', priority: 'primary', isLocal: false }
   ]);
+  // On a fresh page load the account isn't known on the first render, so contact 1 ("you") started empty. Fill it once it is.
+  const [contactFilledFor, setContactFilledFor] = useState<string | null>(user?.id ?? null);
+  if (user && contactFilledFor !== user.id) {
+    setContactFilledFor(user.id);
+    const first = emergencyContacts[0];
+    if (first && !first.name && !first.phone) {
+      setEmergencyContacts([{ ...first, name: user.name || '', phone: user.phone || '' }, ...emergencyContacts.slice(1)]);
+    }
+  }
   const [address, setAddress] = useState('');
   const [livesAlone, setLivesAlone] = useState(false);
 
@@ -344,13 +367,13 @@ function OnboardingContent() {
   const handleConfirmExtraction = () => {
     const selected = extractedCandidates.filter(c => c.selected && c.name.trim());
     if (selected.length === 0) {
-      setErrorMsg('Please select at least one medicine row to confirm, or switch to manual entry.');
+      fail('Please select at least one medicine row to confirm, or switch to manual entry.');
       return;
     }
     const asMeds = selected.map(c => ({ ...c, name: (c.nickname || c.name).trim(), officialName: c.name.trim() }));
     const clash = nameClash(asMeds);
     if (clash) {
-      setErrorMsg(clash);
+      fail(clash);
       return;
     }
 
@@ -424,9 +447,14 @@ function OnboardingContent() {
   };
 
   // Auto-generate call schedule roadmap upon entering Step 3
+  // Only when the medicines changed: going Back to step 2 and forward again kept wiping the family's own times and labels.
+  const scheduleBuiltFor = useRef<string | null>(null);
   useEffect(() => {
     if (step === 3) {
       const activeMeds = hasMedicines ? medicines.filter(m => m.name.trim() !== '') : [];
+      const builtFor = JSON.stringify(activeMeds);
+      if (scheduleBuiltFor.current === builtFor) return;
+      scheduleBuiltFor.current = builtFor;
       const res = generateProposedSchedule(activeMeds);
       setCallSchedule(res.schedule);
       setUnspecifiedMeds(res.unspecifiedMedicines);
@@ -526,42 +554,45 @@ function OnboardingContent() {
 
   // Navigation handlers
   const handleNextStep = () => {
-    setErrorMsg('');
+    fail('');
     if (step === 1) {
       if (!name.trim()) {
-        setErrorMsg(waMode ? 'Please enter a name' : 'Please enter parent name');
+        fail(waMode ? 'Please enter a name.' : 'Please enter what Saathi should call them.', waMode ? 'wa-name' : 'parent-name');
         return;
       }
       if (!phone || phone.replace(/\D/g, '').length < 10) {
-        setErrorMsg('Please enter a valid 10-digit mobile or landline number');
+        fail('Please enter a 10-digit mobile or landline number.', waMode ? 'wa-phone' : 'parent-phone');
         return;
       }
       setStep(2);
     } else if (step === 2) {
       const clash = nameClash(medicines);
       if (clash) {
-        setErrorMsg(clash);
+        fail(clash);
         return;
       }
       setStep(3);
     } else if (step === 3) {
       if (unspecifiedMeds.length > 0) {
-        setErrorMsg('Please assign a timing slot for all medicines before proceeding.');
+        fail('Please assign a timing slot for all medicines before proceeding.');
         return;
       }
       if (callSchedule.filter(s => s.isActive).length === 0) {
-        setErrorMsg(waMode ? 'Please add at least one reminder time.' : 'Please configure at least one call time for your parent.');
+        fail(waMode ? 'Please add at least one reminder time.' : 'Please configure at least one call time for your parent.');
         return;
       }
       // WhatsApp reminders have no emergency calls, so no emergency plan step.
       setStep(waMode ? 5 : 4);
     } else if (step === 4) {
       if (!emergencyContacts[0]?.name || !emergencyContacts[0]?.phone) {
-        setErrorMsg('At least one primary emergency contact is required');
+        fail(
+          !emergencyContacts[0]?.name ? 'Please add the name of the person we phone first.' : 'Please add their mobile number.',
+          !emergencyContacts[0]?.name ? 'c-name-0' : 'c-phone-0'
+        );
         return;
       }
       if (livesAlone && !emergencyContacts.some(c => c.isLocal && c.name.trim() && c.phone.trim())) {
-        setErrorMsg(`Since ${name} lives alone, please add someone who lives nearby and can go and check on them.`);
+        fail(`Since ${name} lives alone, please add someone who lives nearby and can go and check on them.`);
         return;
       }
       setStep(5);
@@ -577,18 +608,18 @@ function OnboardingContent() {
         ? { name: user?.name || 'Me', phone: user?.phone || '' }
         : { name: caretakerName.trim(), phone: caretakerPhone.trim() };
     if (caretaker && (!caretaker.name || !caretaker.phone)) {
-      setErrorMsg(caretakerWho === 'me' ? 'Add a phone number to your account first, or choose someone else as caretaker.' : "Please add the caretaker's name and WhatsApp number, or choose no caretaker.");
+      fail(caretakerWho === 'me' ? 'Add a phone number to your account first, or choose someone else as caretaker.' : "Please add the caretaker's name and WhatsApp number, or choose no caretaker.");
       return;
     }
 
     // Someone setting up their own reminders consents by sending START; for someone else, the family confirms first.
     if (!consentConfirmed && !(waMode && forSelf)) {
-      setErrorMsg(waMode ? `Please confirm you have told ${name} about the reminders.` : 'Parent awareness and consent is mandatory to initiate calls');
+      fail(waMode ? `Please confirm you have told ${name} about the reminders.` : 'Parent awareness and consent is mandatory to initiate calls');
       return;
     }
 
     setSubmitting(true);
-    setErrorMsg('');
+    fail('');
     setErrorUpgradeHref(null);
 
     try {
@@ -623,7 +654,7 @@ function OnboardingContent() {
 
       const data = await res.json();
       if (!res.ok) {
-        setErrorMsg(data.error || 'Failed to create parent profile');
+        fail(data.error || 'Failed to create parent profile');
         if (data.code === 'PARENT_LIMIT' || data.code === 'PAYMENT_REQUIRED') {
           setErrorUpgradeHref(`/checkout/confirm?plan=${data.upgradePlanId || 'family'}`);
         }
@@ -642,7 +673,7 @@ function OnboardingContent() {
         })
         .catch(() => undefined);
     } catch {
-      setErrorMsg('Network error. Please try again.');
+      fail('Network error. Please try again.');
     } finally {
       setSubmitting(false);
     }
@@ -723,8 +754,8 @@ function OnboardingContent() {
   }
 
   return (
-    <WizardShell step={waMode ? (step >= 5 ? step - 1 : step) : step} steps={waMode ? WHATSAPP_STEPS : undefined}>
-      {errorMsg && (
+    <WizardShell step={waMode ? (step >= 5 ? step - 1 : step) : step} steps={waMode ? WHATSAPP_STEPS : undefined} dirty={step < 6 && (!!name.trim() || step > 1)}>
+      {errorMsg && !errorField && (
         <div className="alert-box error" role="alert">
           <AlertCircle size={18} />
           <span>
@@ -764,7 +795,8 @@ function OnboardingContent() {
               <div className="form-row">
                 <div className="form-group">
                   <label className="form-label" htmlFor="wa-name">{forSelf ? 'What should the reminders call you?' : 'Their name'}</label>
-                  <input id="wa-name" type="text" className="form-input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Priya" autoFocus />
+                  <input id="wa-name" type="text" className="form-input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Priya" autoFocus {...invalid('wa-name')} />
+                  {fieldError('wa-name')}
                 </div>
                 {!forSelf && (
                   <div className="form-group">
@@ -778,6 +810,7 @@ function OnboardingContent() {
               <div className="form-group">
                 <label className="form-label" htmlFor="wa-phone">{forSelf ? 'Your WhatsApp number' : 'Their WhatsApp number'}</label>
                 <PhoneField id="wa-phone" value={phone} onChange={setPhone} indiaOnly />
+                {fieldError('wa-phone')}
                 <span className="form-hint">
                   {forSelf
                     ? 'Reminders only start once you send START from this WhatsApp, in the last step.'
@@ -817,6 +850,7 @@ function OnboardingContent() {
             <label className="form-label" htmlFor="parent-name">What should Saathi call them?</label>
             <input
               id="parent-name"
+              {...invalid('parent-name')}
               type="text"
               placeholder="e.g. Amma, Appa, Dadi, Lakshmi Aunty"
               value={name}
@@ -825,7 +859,7 @@ function OnboardingContent() {
               autoFocus
               required
             />
-            <span className="form-hint">This is how they&apos;ll be greeted on every call.</span>
+            {fieldError('parent-name') ?? <span className="form-hint">This is how they&apos;ll be greeted on every call.</span>}
           </div>
 
           <div className="form-row">
@@ -853,20 +887,8 @@ function OnboardingContent() {
           <div className="form-group">
             <label className="form-label" htmlFor="parent-phone">Their phone number</label>
             <PhoneField id="parent-phone" value={phone} onChange={setPhone} indiaOnly />
-            <span className="form-hint">A mobile or a landline. No smartphone needed.</span>
-          </div>
-
-          <div className="form-group">
-            <label className="form-label" htmlFor="timezone">Where do they live?</label>
-            <select id="timezone" value={timezone} onChange={(e) => setTimezone(e.target.value)} className="form-input">
-              <option value="Asia/Kolkata (IST)">India (IST)</option>
-              <option value="America/New_York (EST)">US Eastern (EST)</option>
-              <option value="America/Los_Angeles (PST)">US Pacific (PST)</option>
-              <option value="Europe/London (GMT)">UK (GMT / BST)</option>
-              <option value="Asia/Dubai (GST)">UAE (GST)</option>
-              <option value="Asia/Singapore (SGT)">Singapore (SGT)</option>
-            </select>
-            <span className="form-hint">Calls follow their local clock, wherever you are.</span>
+            {fieldError('parent-phone')}
+            <span className="form-hint">A mobile or a landline in India. No smartphone needed. Call times are India time, wherever you are.</span>
           </div>
 
           <div className="wizard-nav">
@@ -1242,6 +1264,20 @@ function OnboardingContent() {
                         <span className="form-hint" style={{ display: 'block', marginTop: '4px' }}>{NAME_HINT}</span>
                         <MedicineNameChips folded value={med.name} onPick={(n) => updateMedicineField(idx, 'name', n)} />
                       </div>
+                      <div className="form-group">
+                        <span className="mini-label">When is it taken?</span>
+                        <SlotPicker
+                          isSelected={(s) => !!med.timingSlots?.includes(s) || (s === med.timeOfDay && (!med.timingSlots || med.timingSlots.length === 0))}
+                          onToggle={(s) => toggleManualMedicineSlot(idx, s)}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <span className="mini-label">With food?</span>
+                        <FoodPicker value={med.foodRelation} onChange={(v) => updateManualMedicineFoodRelation(idx, v)} />
+                      </div>
+                      {/* Name, time and food are all Saathi needs; the rest folds away so one tablet fits about one phone screen. */}
+                      <details className="med-more">
+                        <summary>More details (optional): real name, amount, how many days{waMode ? ', tablets left' : ', why it matters'}</summary>
                       <div className="med-pair" style={{ alignItems: 'start' }}>
                         <div className="form-group">
                           <label className="mini-label" htmlFor={`med-official-${idx}`}>Real medicine name (optional)</label>
@@ -1269,17 +1305,6 @@ function OnboardingContent() {
                       </div>
                       <div style={{ marginTop: '-10px' }}>
                         <DoseChips value={med.dosage} onPick={(d) => updateMedicineField(idx, 'dosage', d)} />
-                      </div>
-                      <div className="form-group">
-                        <span className="mini-label">When is it taken?</span>
-                        <SlotPicker
-                          isSelected={(s) => !!med.timingSlots?.includes(s) || (s === med.timeOfDay && (!med.timingSlots || med.timingSlots.length === 0))}
-                          onToggle={(s) => toggleManualMedicineSlot(idx, s)}
-                        />
-                      </div>
-                      <div className="form-group">
-                        <span className="mini-label">With food?</span>
-                        <FoodPicker value={med.foodRelation} onChange={(v) => updateManualMedicineFoodRelation(idx, v)} />
                       </div>
                       <div className="form-group">
                         <span className="mini-label">For how many more days?</span>
@@ -1316,8 +1341,10 @@ function OnboardingContent() {
                             className="form-input"
                             maxLength={160}
                           />
+                          <span className="form-hint">Saathi says this on the call, so a reason in your own words helps.</span>
                         </div>
                       )}
+                      </details>
                     </div>
                   </div>
                 ))}
@@ -1551,6 +1578,7 @@ function OnboardingContent() {
                     <label className="mini-label" htmlFor={`c-name-${idx}`}>Name</label>
                     <input
                       id={`c-name-${idx}`}
+                      {...invalid(`c-name-${idx}`)}
                       type="text"
                       placeholder="e.g. Priya Sharma"
                       value={c.name}
@@ -1562,6 +1590,7 @@ function OnboardingContent() {
                       className="form-input"
                       required
                     />
+                    {fieldError(`c-name-${idx}`)}
                   </div>
                   <div className="form-group">
                     <label className="mini-label" htmlFor={`c-rel-${idx}`}>Relationship</label>
@@ -1598,6 +1627,7 @@ function OnboardingContent() {
                     <label className="mini-label" htmlFor={`c-phone-${idx}`}>Mobile number</label>
                     <input
                       id={`c-phone-${idx}`}
+                      {...invalid(`c-phone-${idx}`)}
                       type="tel"
                       inputMode="tel"
                       placeholder="+91 98765 43210"
@@ -1610,6 +1640,7 @@ function OnboardingContent() {
                       className="form-input"
                       required
                     />
+                    {fieldError(`c-phone-${idx}`)}
                   </div>
                 </div>
               </div>
@@ -1958,10 +1989,15 @@ function OnboardingContent() {
                 {testCallResult.ok ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
                 <span>{testCallResult.message}</span>
               </div>
-            ) : (
+            ) : introDone ? (
               <button type="button" onClick={triggerTestCall} disabled={testCalling} className="btn btn-ghost btn-block">
                 {testCalling ? <><span className="spinner" /> Requesting…</> : <><Play size={15} fill="currentColor" /> Request a test call</>}
               </button>
+            ) : (
+              // A call from an unknown voice before the family has said anything is exactly what makes elders hang up.
+              <p style={{ fontSize: '0.88rem', color: 'var(--ink-muted)', margin: 0 }}>
+                Tell {name} first (above), then tap &ldquo;I&apos;ve told them&rdquo;. The test call opens here, so {name} knows who is calling.
+              </p>
             )}
           </div>
 
@@ -1973,13 +2009,7 @@ function OnboardingContent() {
             {currentPlan.parentsIncluded > 1 && (
               <button
                 type="button"
-                onClick={() => {
-                  setName('');
-                  setPhone('');
-                  setHasMedicines(null);
-                  setConsentConfirmed(false);
-                  setStep(1);
-                }}
+                onClick={onRestart}
                 className="btn btn-ghost btn-block"
               >
                 <UserPlus size={16} /> Add another parent
@@ -1994,9 +2024,12 @@ function OnboardingContent() {
 }
 
 export default function OnboardingPage() {
+  // "Add another parent" starts a fresh wizard: resetting a few fields by hand left the first parent's
+  // medicines, call times, contacts and address behind for the second one.
+  const [run, setRun] = useState(0);
   return (
     <Suspense fallback={<div className="wrap" style={{ paddingTop: '120px' }}><div className="skeleton" style={{ height: '480px', maxWidth: '720px', margin: '0 auto' }} /></div>}>
-      <OnboardingContent />
+      <OnboardingContent key={run} onRestart={() => { setRun(r => r + 1); window.scrollTo({ top: 0 }); }} />
     </Suspense>
   );
 }

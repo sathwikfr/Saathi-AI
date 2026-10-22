@@ -9,13 +9,14 @@ import { Brand } from '@/components/Navbar';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { FoodRelation, MedicineTimingSlot } from '@/lib/types';
 import { istLastDayOfCourse } from '@/lib/ist';
+import { nicknameFromName } from '@/lib/prescriptionHints';
 
 const STEPS = ['Parent', 'Medicines', 'Call times', 'Emergency plan', 'Consent'];
 /** Remind (WhatsApp reminders): no call times, no emergency plan. */
 export const WHATSAPP_STEPS = ['Who', 'Medicines', 'Reminder times', 'Start'];
 
 /** Focused full-page frame for the onboarding wizard. */
-export function WizardShell({ step, steps = STEPS, children }: { step: number; steps?: string[]; children: React.ReactNode }) {
+export function WizardShell({ step, steps = STEPS, dirty = false, children }: { step: number; steps?: string[]; /** Something is filled in and not saved yet: ask before "Exit setup" throws it away. */ dirty?: boolean; children: React.ReactNode }) {
   const pct = Math.min(100, ((step - 1) / steps.length) * 100 + (step > steps.length ? 0 : 100 / steps.length / 2));
   // Which way the last step change went: forward slides in from the right, back from the left.
   const [last, setLast] = useState(step);
@@ -31,7 +32,13 @@ export function WizardShell({ step, steps = STEPS, children }: { step: number; s
           <Brand href="/dashboard" />
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
             <ThemeToggle />
-            <Link href="/dashboard" className="btn btn-quiet btn-sm">
+            <Link
+              href="/dashboard"
+              className="btn btn-quiet btn-sm"
+              onClick={(e) => {
+                if (dirty && !window.confirm('Leave setup? What you have filled in so far will be lost.')) e.preventDefault();
+              }}
+            >
               <X size={16} /> Exit setup
             </Link>
           </div>
@@ -71,6 +78,15 @@ export function WizardShell({ step, steps = STEPS, children }: { step: number; s
             animate="on"
             exit="out"
             transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+            // The button that was pressed is gone after a step change, so focus fell to <body> and screen readers
+            // heard nothing. Move it to the new step's heading once the step has slid in.
+            onAnimationComplete={(def) => {
+              if (def !== 'on') return;
+              const h = document.querySelector<HTMLElement>('.wizard-panel h1');
+              if (!h) return;
+              h.tabIndex = -1;
+              h.focus();
+            }}
           >
             {children}
           </motion.div>
@@ -155,8 +171,31 @@ function QuickChips({ options, more = [], label, value, onPick }: { options: str
   );
 }
 
+/** `realName`: the prescription's name, turned into a one-tap suggestion ("TAB. ZITEN M" -> "Sugar tablet"). */
+function SuggestedName({ realName, value, onPick }: { realName?: string; value: string; onPick: (name: string) => void }) {
+  const suggested = nicknameFromName(realName);
+  if (!suggested) return null;
+  return (
+    <div className="pill-group" role="group" aria-label="Suggested name" style={{ marginTop: '8px', alignItems: 'center' }}>
+      <span style={{ fontSize: '0.8rem', color: 'var(--ink-subtle)' }}>From the real name:</span>
+      <button type="button" className="pill-toggle" aria-pressed={value.trim().toLowerCase() === suggested.toLowerCase()} onClick={() => onPick(suggested)}>
+        {suggested}
+      </button>
+    </div>
+  );
+}
+
 /** `folded`: just a "Pick a common name" link until tapped (photo reviews, where a name is already filled in). */
-export function MedicineNameChips({ value, onPick, folded = false }: { value: string; onPick: (name: string) => void; folded?: boolean }) {
+export function MedicineNameChips({ value, onPick, folded = false, realName }: { value: string; onPick: (name: string) => void; folded?: boolean; realName?: string }) {
+  return (
+    <>
+      <SuggestedName realName={realName} value={value} onPick={onPick} />
+      <NameChipList value={value} onPick={onPick} folded={folded} />
+    </>
+  );
+}
+
+function NameChipList({ value, onPick, folded }: { value: string; onPick: (name: string) => void; folded: boolean }) {
   // An empty name starts with the list open (that's the quickest way to fill it); a filled one starts folded.
   const [open, setOpen] = useState(!folded || !value.trim());
   if (!open) {
