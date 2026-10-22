@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { Navbar } from '@/components/Navbar';
 import { requireAdminPage } from '@/lib/admin';
-import { getAdminStats, AdminCustomer, PlanBucket } from '@/lib/adminStats';
+import { getAdminStats, AdminCustomer, PlanBucket, PilotHealth } from '@/lib/adminStats';
 import { Users, UserCheck, PhoneCall, PhoneIncoming, IndianRupee, HeartHandshake, ShieldCheck, Clock } from 'lucide-react';
 
 export const metadata: Metadata = {
@@ -34,6 +34,20 @@ const STATUS_LABEL: Record<string, string> = {
   past_due: 'Payment overdue',
   cancelled: 'Cancelled',
   ended: 'Trial ended'
+};
+
+const PILOT_LABEL: Record<PilotHealth, string> = {
+  early: 'Too early',
+  healthy: 'Healthy',
+  fading: 'Fading',
+  at_risk: 'At risk'
+};
+
+const PILOT_BADGE: Record<PilotHealth, string> = {
+  early: 'badge-neutral',
+  healthy: 'badge-green',
+  fading: 'badge-amber',
+  at_risk: 'badge-red'
 };
 
 const IST = 'Asia/Kolkata';
@@ -158,6 +172,64 @@ export default async function AdminPage() {
             </p>
           </div>
         </div>
+
+        <section className="panel" aria-labelledby="pilot-title">
+          <div className="panel-head">
+            <div>
+              <h3 id="pilot-title">Pilot families</h3>
+              <p>
+                One row per parent. Weeks count from the day the parent was added; % = calls answered (or reminders replied to).
+                Goal: 70%+ still answering in week 4.
+              </p>
+            </div>
+          </div>
+          <div className="table-wrap">
+            <table className="data">
+              <thead>
+                <tr>
+                  <th>Family</th><th>Started</th><th>Answering by week</th><th>Tablets confirmed</th>
+                  <th>Family last opened</th><th>Alerts acted on</th><th>Calls cost (30d)</th><th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {s.pilot.length === 0 ? (
+                  <tr><td colSpan={8} style={{ color: 'var(--ink-muted)' }}>No families yet.</td></tr>
+                ) : s.pilot.map((f) => (
+                  <tr key={f.parentId}>
+                    <td>
+                      <strong>{f.parentName}</strong>
+                      <div style={{ fontSize: '0.78rem', color: 'var(--ink-muted)' }}>
+                        {f.customerName} · {f.channel === 'whatsapp' ? 'WhatsApp' : 'Calls'}{f.paused ? ' · paused' : ''}
+                      </div>
+                    </td>
+                    <td>{fmtDate(f.startedAt)}</td>
+                    <td>
+                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                        {f.weeks.map((w) => {
+                          const pct = w.total ? Math.round((w.reached / w.total) * 100) : null;
+                          return (
+                            <span
+                              key={w.week}
+                              className={`badge ${pct === null ? 'badge-neutral' : pct >= 70 ? 'badge-green' : pct >= 40 ? 'badge-amber' : 'badge-red'}`}
+                              title={`Week ${w.week}: ${w.reached} of ${w.total}`}
+                            >
+                              W{w.week} {pct === null ? '—' : `${pct}%`}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </td>
+                    <td>{f.confirmedPct === null ? '—' : `${f.confirmedPct}%`}</td>
+                    <td>{f.familyLastSeenAt ? fmtDateTime(f.familyLastSeenAt) : 'Never'}</td>
+                    <td>{f.alertsNeeding ? `${f.alertsActedOn} of ${f.alertsNeeding}` : '—'}</td>
+                    <td>{f.channel === 'whatsapp' ? '—' : inr(f.callCost30)}</td>
+                    <td><span className={`badge ${PILOT_BADGE[f.health]}`}>{PILOT_LABEL[f.health]}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
 
         <section className="panel" aria-labelledby="engagement-title">
           <div className="panel-head">

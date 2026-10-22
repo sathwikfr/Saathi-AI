@@ -74,6 +74,155 @@ export interface AdminStats {
   engagement: AdminEngagement;
   /** The scheduler's last run; null = never recorded (or the CronRun table isn't there yet). */
   cron: { lastRunAt: string; ok: boolean; failed: string | null; durationMs: number } | null;
+  pilot: PilotFamily[];
+}
+
+// ---- Pilot: is each family still using it? ----------------------------------
+// One "check" = one scheduled call slot on one day (a retry that gets through still counts as reached),
+// or one WhatsApp reminder on the Remind plan. Test and manual calls are left out.
+
+export type PilotHealth = 'early' | 'healthy' | 'fading' | 'at_risk';
+
+export interface PilotCheck {
+  date: string; // IST YYYY-MM-DD
+  reached: boolean; // parent answered the call / replied to the reminder
+  confirmed: boolean; // tablets confirmed taken
+}
+
+export interface PilotWeek { week: number; reached: number; total: number }
+
+export interface PilotFamily {
+  parentId: string;
+  parentName: string;
+  customerName: string;
+  channel: 'call' | 'whatsapp';
+  startedAt: string;
+  paused: boolean;
+  weeks: PilotWeek[]; // the latest (up to) 4 weeks, counted from the day the parent was added
+  confirmedPct: number | null; // tablets confirmed, of the checks that reached the parent (last 30 days)
+  familyLastSeenAt: string | null; // owner or any family member, latest dashboard visit
+  alertsNeeding: number;
+  alertsActedOn: number;
+  callCost30: number; // ₹, billed minutes (every started minute)
+  health: PilotHealth;
+}
+
+const PILOT_WEEKS = 4;
+const PILOT_MIN_CHECKS = 3; // fewer than this in the last 7 days: too early to judge
+
+/** Pure: week-by-week reach and the family's health from its checks. */
+export function pilotSummary(input: { startDate: string; today: string; checks: PilotCheck[]; familyLastSeenAt: Date | null; now: Date }) {
+  const dayNo = (d: string) => Math.floor(Date.parse(`${d}T00:00:00Z`) / DAY_MS);
+  const start = dayNo(input.startDate);
+  const currentWeek = Math.floor((dayNo(input.today) - start) / 7) + 1;
+  const firstWeek = Math.max(1, currentWeek - PILOT_WEEKS + 1);
+  const weeks: PilotWeek[] = [];
+  for (let w = firstWeek; w <= currentWeek; w++) weeks.push({ week: w, reached: 0, total: 0 });
+  for (const c of input.checks) {
+    const w = weeks.find(x => x.week === Math.floor((dayNo(c.date) - start) / 7) + 1);
+    if (!w) continue;
+    w.total++;
+    if (c.reached) w.reached++;
+  }
+
+  const reachedChecks = input.checks.filter(c => c.reached);
+  const confirmedPct = reachedChecks.length ? Math.round((reachedChecks.filter(c => c.confirmed).length / reachedChecks.length) * 100) : null;
+
+  const last7 = input.checks.filter(c => dayNo(input.today) - dayNo(c.date) < 7);
+  const last3 = last7.filter(c => dayNo(input.today) - dayNo(c.date) < 3);
+  const rate7 = last7.length ? last7.filter(c => c.reached).length / last7.length : 0;
+  const familyAway = !input.familyLastSeenAt || input.now.getTime() - input.familyLastSeenAt.getTime() > 7 * DAY_MS;
+  let health: PilotHealth;
+  if (last7.length < PILOT_MIN_CHECKS) health = 'early';
+  else if (rate7 < 0.4 || (last3.length >= PILOT_MIN_CHECKS && !last3.some(c => c.reached))) health = 'at_risk';
+  else if (rate7 < 0.7 || familyAway) health = 'fading';
+  else health = 'healthy';
+
+  return { weeks, confirmedPct, health };
+}
+
+async function getPilotFamilies(now: Date): Promise<PilotFamily[]> {
+  const since = new Date(now.getTime() - (PILOT_WEEKS * 7 + 7) * DAY_MS);
+  const sinceDate = istDateString(since);
+  const since30 = new Date(now.getTime() - 30 * DAY_MS);
+  const today = istDateString(now);
+
+  const parents = await prisma.parentProfile.findMany({
+    where: { isDeleted: false, user: realUser },
+    orderBy: { createdAt: 'desc' },
+    take: CUSTOMER_LIMIT,
+    select: {
+      id: true, name: true, createdAt: true, isPaused: true, reminderChannel: true,
+      user: { select: { name: true, lastSeenAt: true, subscription: { select: { planId: true } } } },
+      caregivers: { where: { status: 'accepted', userId: { not: null } }, select: { userId: true } },
+      callLogs: {
+        where: { createdAt: { gte: since }, slotId: { not: null } },
+        select: { slotId: true, callDate: true, createdAt: true, status: true, medicationConfirmed: true, durationSeconds: true }
+      },
+      reminders: {
+        where: { reminderDate: { gte: sinceDate }, status: 'sent' },
+        select: { reminderDate: true, answer: true }
+      },
+      alerts: {
+        where: { level: { gte: 2 }, createdAt: { gte: since30 } },
+        select: { acknowledgedAt: true, outcome: true }
+      }
+    }
+  });
+
+  const memberIds = [...new Set(parents.flatMap(p => p.caregivers.map(c => c.userId!)))];
+  const members = memberIds.length
+    ? await prisma.user.findMany({ where: { id: { in: memberIds } }, select: { id: true, lastSeenAt: true } })
+    : [];
+  const seenById = new Map(members.map(m => [m.id, m.lastSeenAt]));
+
+  return parents.map(p => {
+    // calls: one check per slot per day; still ringing / waiting = not counted yet
+    const slots = new Map<string, PilotCheck>();
+    let billedMinutes = 0;
+    for (const c of p.callLogs) {
+      if (c.status === 'answered' && c.createdAt >= since30) billedMinutes += Math.ceil(c.durationSeconds / 60);
+      if (!['answered', 'unanswered', 'busy', 'failed'].includes(c.status)) continue;
+      const date = c.callDate || istDateString(c.createdAt);
+      const key = `${c.slotId}:${date}`;
+      const prev = slots.get(key) || { date, reached: false, confirmed: false };
+      slots.set(key, {
+        date,
+        reached: prev.reached || c.status === 'answered',
+        confirmed: prev.confirmed || (c.status === 'answered' && c.medicationConfirmed)
+      });
+    }
+    // WhatsApp reminders: paused days and today's unanswered ones don't count
+    const reminderChecks: PilotCheck[] = p.reminders
+      .filter(r => r.answer !== 'paused' && !(r.answer === null && r.reminderDate === today))
+      .map(r => ({ date: r.reminderDate, reached: !!r.answer && r.answer !== 'missed', confirmed: r.answer === 'taken' }));
+
+    const seen = [p.user.lastSeenAt, ...p.caregivers.map(c => seenById.get(c.userId!) || null)]
+      .filter((d): d is Date => !!d)
+      .sort((a, b) => b.getTime() - a.getTime())[0] || null;
+    const channel = p.user.subscription?.planId === 'essential' || p.reminderChannel === 'whatsapp' ? 'whatsapp' : 'call';
+    const summary = pilotSummary({
+      startDate: istDateString(p.createdAt),
+      today,
+      checks: [...slots.values(), ...reminderChecks],
+      familyLastSeenAt: seen,
+      now
+    });
+
+    return {
+      parentId: p.id,
+      parentName: p.name,
+      customerName: p.user.name,
+      channel,
+      startedAt: p.createdAt.toISOString(),
+      paused: p.isPaused,
+      ...summary,
+      familyLastSeenAt: seen?.toISOString() || null,
+      alertsNeeding: p.alerts.length,
+      alertsActedOn: p.alerts.filter(a => a.acknowledgedAt || a.outcome).length,
+      callCost30: Math.round(billedMinutes * RUPEES_PER_BILLED_MINUTE)
+    };
+  });
 }
 
 /** Is it working for families? (docs/v1-care-plan.md §6: measure it.) */
@@ -164,7 +313,7 @@ export function callLength(calls: Array<{ status: string; durationSeconds: numbe
 export async function getAdminStats(now: Date = new Date()): Promise<AdminStats> {
   const since30 = new Date(now.getTime() - CALL_WINDOW_DAYS * DAY_MS);
 
-  const [users, calls, alertRows, engagement, cronRow] = await Promise.all([
+  const [users, calls, alertRows, engagement, cronRow, pilot] = await Promise.all([
     prisma.user.findMany({
       where: realUser,
       orderBy: { createdAt: 'desc' },
@@ -195,7 +344,8 @@ export async function getAdminStats(now: Date = new Date()): Promise<AdminStats>
     }),
     getEngagement(now),
     // async wrapper: also covers a stale Prisma client without the model (throws synchronously), not just a missing table
-    (async () => prisma.cronRun.findUnique({ where: { name: 'dispatch' } }))().catch(() => null)
+    (async () => prisma.cronRun.findUnique({ where: { name: 'dispatch' } }))().catch(() => null),
+    getPilotFamilies(now)
   ]);
 
   // ---- calls -------------------------------------------------------------
@@ -332,6 +482,7 @@ export async function getAdminStats(now: Date = new Date()): Promise<AdminStats>
     engagement,
     cron: cronRow
       ? { lastRunAt: cronRow.lastRunAt.toISOString(), ok: cronRow.ok, failed: cronRow.failed, durationMs: cronRow.durationMs }
-      : null
+      : null,
+    pilot
   };
 }
