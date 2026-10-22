@@ -22,6 +22,7 @@ const STATUS_BADGE: Record<string, string> = {
   active: 'badge-green',
   trial: 'badge-teal',
   trialing: 'badge-teal',
+  pilot: 'badge-teal',
   past_due: 'badge-red',
   cancelled: 'badge-amber',
   ended: 'badge-neutral'
@@ -31,6 +32,7 @@ const STATUS_LABEL: Record<string, string> = {
   active: 'Paying',
   trial: 'Free trial',
   trialing: 'Paid trial',
+  pilot: 'Free pilot',
   past_due: 'Payment overdue',
   cancelled: 'Cancelled',
   ended: 'Trial ended'
@@ -137,7 +139,7 @@ export default async function AdminPage() {
           <div className="stat">
             <span className="panel-label"><UserCheck size={13} /> Paying now</span>
             <div className="stat-value" style={{ color: 'var(--green)' }}>{paidCustomers}</div>
-            <p>{s.plans.onPaidTrial} more on a paid-plan trial</p>
+            <p>{s.plans.onPaidTrial} more on a paid-plan trial · {s.plans.freePilot} on a free pilot</p>
           </div>
           <div className="stat">
             <span className="panel-label"><IndianRupee size={13} /> Monthly revenue</span>

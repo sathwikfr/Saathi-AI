@@ -53,6 +53,7 @@ export interface AdminStats {
   plans: {
     buckets: Record<PlanBucket, number>;
     payingActive: number;
+    freePilot: number;
     onPaidTrial: number;
     pastDue: number;
     cancelling: number;
@@ -388,6 +389,7 @@ export async function getAdminStats(now: Date = new Date()): Promise<AdminStats>
   // ---- customers, plans, parents ----------------------------------------
   const buckets: Record<PlanBucket, number> = { free_active: 0, free_ended: 0, essential: 0, solo: 0, family: 0, extended: 0 };
   let payingActive = 0;
+  let freePilot = 0;
   let onPaidTrial = 0;
   let pastDue = 0;
   let cancelling = 0;
@@ -407,9 +409,12 @@ export async function getAdminStats(now: Date = new Date()): Promise<AdminStats>
     const bucket = bucketFor(plan.id, !!plan.expired);
     buckets[bucket]++;
 
-    const status = plan.id === 'free' ? (plan.expired ? 'ended' : 'trial') : sub?.status || 'active';
+    // A free pilot (scripts/grant-pilot.ts): active, charged 0, no Razorpay. Never counted as paying.
+    const pilot = sub?.status === 'active' && u.subscription?.amount === 0 && !plan.expired;
+    const status = plan.id === 'free' ? (plan.expired ? 'ended' : 'trial') : pilot ? 'pilot' : sub?.status || 'active';
     if (plan.id !== 'free') {
-      if (status === 'active') {
+      if (status === 'pilot') freePilot++;
+      else if (status === 'active') {
         payingActive++;
         // What is charged: the plan plus its add-ons (the subscription row holds the total).
         estimatedMrr += u.subscription?.amount || PLANS[plan.id].priceMonthly;
@@ -458,7 +463,7 @@ export async function getAdminStats(now: Date = new Date()): Promise<AdminStats>
       new7d: users.filter((u) => u.createdAt.getTime() >= ms7).length,
       new30d: users.filter((u) => u.createdAt.getTime() >= ms30).length
     },
-    plans: { buckets, payingActive, onPaidTrial, pastDue, cancelling, estimatedMrr },
+    plans: { buckets, payingActive, freePilot, onPaidTrial, pastDue, cancelling, estimatedMrr },
     parents,
     calls: {
       today: callsToday,

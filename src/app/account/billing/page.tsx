@@ -146,8 +146,13 @@ export default function AccountBillingPage() {
   const periodEnd = formatDate(subscription?.currentPeriodEnd);
   const trialEnd = formatDate(subscription?.trialEndsAt);
 
+  // Free pilot (scripts/grant-pilot.ts): active, ₹0, no AutoPay. Nothing is ever charged.
+  const pilot = status === 'active' && subscription?.amount === 0 && !subscription?.razorpaySubscriptionId;
+
   const statusBadge =
-    status === 'cancelled'
+    pilot
+      ? { cls: 'badge-teal', text: `Free pilot${periodEnd ? ` until ${periodEnd}` : ''}` }
+      : status === 'cancelled'
       ? { cls: 'badge-amber', text: periodEnd ? `Ends ${periodEnd}` : 'Cancelled' }
       : status === 'trialing'
         ? { cls: 'badge-gold', text: `Free trial${trialEnd ? ` until ${trialEnd}` : ''}` }
@@ -208,7 +213,7 @@ export default function AccountBillingPage() {
                 </div>
                 {!isFree && periodEnd && (
                   <div className="summary-row">
-                    <span>{status === 'cancelled' ? 'Access until' : status === 'trialing' ? 'First charge' : 'Next charge'}</span>
+                    <span>{pilot ? 'Free until (no charge)' : status === 'cancelled' ? 'Access until' : status === 'trialing' ? 'First charge' : 'Next charge'}</span>
                     <b>{status === 'trialing' && trialEnd ? trialEnd : periodEnd}</b>
                   </div>
                 )}
