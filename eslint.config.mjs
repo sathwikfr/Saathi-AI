@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Not app code: old agent worktrees (full copies of the repo) and video renders.
+    ".claude/**",
+    "brag-output*/**",
   ]),
 ]);
 

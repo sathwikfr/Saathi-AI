@@ -523,7 +523,7 @@ function OnboardingContent({ onRestart }: { onRestart: () => void }) {
     const updatedMeds = [...medicines];
     if (updatedMeds[medIndex]) {
       updatedMeds[medIndex].timingSlots = [newSlot];
-      updatedMeds[medIndex].timeOfDay = (newSlot === 'as_needed' || newSlot === 'unspecified') ? 'morning' : (newSlot as any);
+      updatedMeds[medIndex].timeOfDay = (newSlot === 'as_needed' || newSlot === 'unspecified') ? 'morning' : newSlot;
       setMedicines(updatedMeds);
       const res = generateProposedSchedule(updatedMeds);
       setCallSchedule(res.schedule);
