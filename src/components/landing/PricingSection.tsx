@@ -78,7 +78,7 @@ export function PricingSection({ planHref }: { planHref: (id: PlanId) => string 
                   <span>/month</span>
                 </div>
                 <p className={x.perDay}>
-                  {plan.listPrice && <><s aria-label={`was ₹${plan.listPrice}`}>₹{plan.listPrice.toLocaleString('en-IN')}</s> · </>}
+                  {plan.listPrice && <><s><span className="sr-only">was </span>₹{plan.listPrice.toLocaleString('en-IN')}</s> · </>}
                   {perDay(id)}
                 </p>
 

@@ -117,7 +117,8 @@
   }
 }
 
-/* The popular plan: a border of the orb's colours, slowly turning (the same angle as .btn-glow). */
+/* The popular plan: a border of the orb's colours, slowly turning (the same angle as .btn-glow).
+   It repaints the card each frame, but only while Pricing is on screen (content-visibility skips it otherwise). */
 .featured {
   border: 2px solid transparent;
   background:
@@ -130,6 +131,10 @@
 @keyframes borderSpin {
   from { --glow-angle: 0deg; }
   to { --glow-angle: 360deg; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .featured { animation: none; }
 }
 
 .badge {

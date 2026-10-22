@@ -85,7 +85,7 @@ export function StepHeader({ eyebrow, title, children }: { eyebrow: string; titl
   return (
     <div className="step-head">
       <span className="eyebrow">{eyebrow}</span>
-      <h1>{title}</h1>
+      <h1 tabIndex={-1} style={{ outline: 'none' }}>{title}</h1>
       {children && <p>{children}</p>}
     </div>
   );

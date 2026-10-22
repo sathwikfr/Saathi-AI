@@ -1,8 +1,8 @@
 /* ==========================================================================
    Compare (CompareSection.tsx)
    A real table. The Aaptha column is raised like a featured card: tinted,
-   outlined in teal, with a solid teal head. Below 760px each row becomes a
-   small card listing the four options.
+   outlined in teal, with a solid teal head. Below 760px see the phone block
+   at the end.
    ========================================================================== */
 
 .frame {
@@ -166,10 +166,71 @@
 
 @media (max-width: 760px) {
   .frame {
-    padding: 0;
-    border: 0;
-    background: none;
-    box-shadow: none;
+    display: none;
+  }
+
+  .phone {
+    display: block;
+  }
+
+  .usList {
+    list-style: none;
+    margin: 0;
+    padding: 4px 18px;
+    border-radius: 22px;
+    background: var(--panel-elevated);
+    border: 1px solid var(--line-subtle);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .usList li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 13px 0;
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: var(--ink);
+  }
+
+  .usList li + li {
+    border-top: 1px solid var(--line-subtle);
+  }
+
+  .usList .textUs {
+    max-width: 58%;
+    text-align: right;
+    text-wrap: balance;
+  }
+
+  .more {
+    margin-top: 12px;
+  }
+
+  .more summary {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 48px;
+    padding: 10px 18px;
+    border-radius: var(--r-full);
+    border: 1px solid var(--line);
+    background: var(--panel-elevated);
+    color: var(--teal-text);
+    font-weight: 600;
+    font-size: 0.92rem;
+    text-align: center;
+    cursor: pointer;
+    list-style: none;
+  }
+
+  .more summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .more[open] summary {
+    margin-bottom: 12px;
   }
 
   .table,

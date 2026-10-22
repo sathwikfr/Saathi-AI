@@ -75,7 +75,7 @@ export function AfterCallSection() {
             <div className={x.label}>
               <span><MessageCircle size={15} /> On your WhatsApp</span>
             </div>
-            <div className={x.wa} aria-label="Example WhatsApp update">
+            <div className={x.wa} role="group" aria-label="Example WhatsApp update">
               <div className={x.waHead}>
                 <span className={x.waAvatar}><Heart size={14} fill="currentColor" strokeWidth={0} /></span>
                 <span className={x.who}>

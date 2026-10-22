@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, Suspense } from 'react';
+import React, { useState, useEffect, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
@@ -106,6 +106,14 @@ function OnboardingContent() {
   useEffect(() => {
     if (errorMsg) window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [errorMsg]);
+
+  // A new step starts at the top, and screen readers land on its heading instead of on <body>.
+  const firstStep = useRef(true);
+  useEffect(() => {
+    if (firstStep.current) { firstStep.current = false; return; }
+    window.scrollTo({ top: 0 });
+    document.querySelector<HTMLElement>('.step-head h1')?.focus({ preventScroll: true });
+  }, [step]);
 
   // Step 1: Parent Info
   const [name, setName] = useState('');
@@ -688,7 +696,7 @@ function OnboardingContent() {
               parentLimit.expired
                 ? 'Your free trial has ended'
                 : paymentFirst
-                  ? `Start your ${trialDays}-day free trial first`
+                  ? <>Start your <span style={{ whiteSpace: 'nowrap' }}>{trialDays}-day</span> free trial first</>
                   : `Your ${parentLimit.planName} plan is full`
             }
           >

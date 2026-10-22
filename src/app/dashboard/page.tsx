@@ -375,9 +375,13 @@ function DashboardContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ medicineId: medId })
       });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setToastMessage({ text: data.error || 'Could not change that medicine. Please try again.', type: 'error' });
+      }
       fetchParentDetails(selectedParentId);
     } catch {
-      // safe fallback
+      setToastMessage({ text: 'Could not reach the server. The medicine was not changed.', type: 'error' });
     }
   };
 
@@ -458,9 +462,9 @@ function DashboardContent() {
       <div className="wrap dash-page">
         <div className="panel empty" style={{ maxWidth: '560px', margin: '48px auto 0', padding: '56px 32px' }}>
           <span className="icon-tile gold"><Heart size={26} /></span>
-          <h3 style={{ fontSize: '1.7rem', letterSpacing: '-0.02em' }}>
+          <h1 style={{ fontSize: '1.7rem', letterSpacing: '-0.02em', marginBottom: '6px' }}>
             {user?.name ? `Welcome, ${user.name.split(' ')[0]}` : 'Welcome to Aaptha'}
-          </h3>
+          </h1>
           {needsPlan ? (
             <>
               <p style={{ marginBottom: '28px' }}>
