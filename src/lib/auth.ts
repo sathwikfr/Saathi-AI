@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs';
 import { cookies } from 'next/headers';
+import { unstable_rethrow } from 'next/navigation';
 import { User } from './types';
 import { getDBSession } from './security';
 import { getUserById } from './db';
@@ -34,6 +35,7 @@ export async function getSessionUser(): Promise<User | null> {
     if (!dbSession) return null;
     return await getUserById(dbSession.userId);
   } catch (err) {
+    unstable_rethrow(err); // Next's own signals (e.g. "this page reads cookies, render it per request") must pass through
     console.error('[auth] getSessionUser failed:', err);
     return null;
   }
