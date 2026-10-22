@@ -15,9 +15,9 @@ import { AlertCircle, ArrowRight, CheckCircle2, Phone, Mail, UserCheck, MessageS
 function SignUpContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  // Only paid plans (each with a 7-day trial) are offered; old ?plan=free links get Family.
+  // Only paid plans (each with a 7-day trial) are offered; no plan picked (or old ?plan=free links) gets Solo, the plan the landing page features.
   const requestedPlan = searchParams.get('plan');
-  const planParam: PlanId = requestedPlan === 'essential' || requestedPlan === 'solo' || requestedPlan === 'extended' ? requestedPlan : 'family';
+  const planParam: PlanId = requestedPlan === 'essential' || requestedPlan === 'family' || requestedPlan === 'extended' ? requestedPlan : 'solo';
   const selectedPlan = getPlan(planParam);
   const identifierParam = searchParams.get('identifier') || '';
   // Family members joining through an invite link go back to it (they don't need a plan of their own).

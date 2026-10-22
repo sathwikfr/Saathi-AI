@@ -656,7 +656,7 @@ function OnboardingContent({ onRestart }: { onRestart: () => void }) {
       if (!res.ok) {
         fail(data.error || 'Failed to create parent profile');
         if (data.code === 'PARENT_LIMIT' || data.code === 'PAYMENT_REQUIRED') {
-          setErrorUpgradeHref(`/checkout/confirm?plan=${data.upgradePlanId || 'family'}`);
+          setErrorUpgradeHref(`/checkout/confirm?plan=${data.upgradePlanId || 'solo'}`);
         }
         setSubmitting(false);
         return;

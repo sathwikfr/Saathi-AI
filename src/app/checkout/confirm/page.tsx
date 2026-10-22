@@ -11,9 +11,9 @@ import { CheckoutShell, PageTitle, CheckRow, SummaryRow } from '@/components/che
 function ConfirmContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  // Only paid plans are offered: each starts with a 7-day trial once AutoPay is set up (old ?plan=free links land on Family).
+  // Only paid plans are offered: each starts with a 7-day trial once AutoPay is set up (no plan, or old ?plan=free links, land on Solo).
   const requestedPlan = searchParams.get('plan');
-  const initialPlan: PlanId = requestedPlan === 'essential' || requestedPlan === 'solo' || requestedPlan === 'extended' ? requestedPlan : 'family';
+  const initialPlan: PlanId = requestedPlan === 'essential' || requestedPlan === 'family' || requestedPlan === 'extended' ? requestedPlan : 'solo';
 
   const [selectedPlanId, setSelectedPlanId] = useState<PlanId>(initialPlan);
   // The Health Monitor add-on on a calling plan. ?monitor=1 pre-ticks it.

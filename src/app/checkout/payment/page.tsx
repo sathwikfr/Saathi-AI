@@ -48,7 +48,7 @@ function loadRazorpayScript(): Promise<boolean> {
 function PaymentContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const planParam = (searchParams.get('plan') as PlanId) || 'family';
+  const planParam = (searchParams.get('plan') as PlanId) || 'solo';
   const plan = getPlan(planParam);
   // The add-on picked on the plan page (?monitor=1).
   const add = cleanAddons(plan.id, { healthMonitor: searchParams.get('monitor') === '1' });
