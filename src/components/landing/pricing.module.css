@@ -6,10 +6,10 @@
 
 .plans {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
   align-items: stretch;
-  max-width: 1200px;
+  max-width: 760px;
   margin: 0 auto;
 }
 
@@ -191,6 +191,13 @@
   margin-left: auto;
   font-size: 0.88rem;
   font-weight: 600;
+  white-space: nowrap;
+}
+
+.addonPrice a {
+  color: var(--teal);
+  text-decoration: underline;
+  text-underline-offset: 3px;
   white-space: nowrap;
 }
 

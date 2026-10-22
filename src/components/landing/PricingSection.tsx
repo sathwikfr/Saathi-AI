@@ -1,22 +1,24 @@
 import React from 'react';
 import Link from 'next/link';
-import { Check, Sparkles, HeartPulse } from 'lucide-react';
+import { Check, Sparkles, HeartPulse, Users } from 'lucide-react';
 import { Reveal } from '@/components/Reveal';
 import { WordReveal } from '@/components/motion/WordReveal';
 import { CountUp } from '@/components/motion/CountUp';
-import { PLANS, PAID_PLAN_IDS, FREE_TRIAL_DAYS, HEALTH_MONITOR, healthMonitorPrice } from '@/lib/plans';
+import { PLANS, FREE_TRIAL_DAYS, HEALTH_MONITOR, healthMonitorPrice } from '@/lib/plans';
 import { PlanId } from '@/lib/types';
 import s from './home.module.css';
 import x from './pricing.module.css';
 
 /**
- * Plans. Each card leads with what differs between plans (how many parents,
- * calls a day, a rough daily cost); what every plan shares is listed once
- * under the cards instead of being repeated three times. Prices, limits and
- * trial lengths all come from lib/plans.ts.
+ * Plans. Two cards only (2026-10-22, launch focus): Remind (WhatsApp) and Solo (calls).
+ * Family and Extended are still sold; they sit in one line under the cards for
+ * people looking after more than one parent. What every calling plan shares is
+ * listed once under the cards. Prices, limits and trial lengths all come from lib/plans.ts.
  */
 
-const PAID: PlanId[] = PAID_PLAN_IDS;
+const SHOWN: PlanId[] = ['essential', 'solo'];
+const FEATURED: PlanId = 'solo';
+const MORE_PARENTS: PlanId[] = ['family', 'extended'];
 
 /** What every calling plan includes (shown once, under the cards). Remind is WhatsApp-only, so it says so on its card. */
 const EVERY_PLAN = [
@@ -62,9 +64,9 @@ export function PricingSection({ planHref }: { planHref: (id: PlanId) => string 
         </Reveal>
 
         <div className={x.plans}>
-          {PAID.map((id, i) => {
+          {SHOWN.map((id, i) => {
             const plan = PLANS[id];
-            const featured = !!plan.popular;
+            const featured = id === FEATURED;
             return (
               <Reveal key={id} delay={i * 100} className={`${x.plan} ${featured ? x.featured : ''}`} data-spot>
                 {featured && <span className={x.badge}><Sparkles size={12} /> Most popular</span>}
@@ -92,6 +94,24 @@ export function PricingSection({ planHref }: { planHref: (id: PlanId) => string 
             );
           })}
         </div>
+
+        <Reveal className={x.addon}>
+          <span className={x.addonIcon}><Users size={20} /></span>
+          <div>
+            <strong>Looking after more than one parent?</strong>
+            <p>The same calls for each parent, with WhatsApp updates for more of the family.</p>
+          </div>
+          <span className={x.addonPrice}>
+            {MORE_PARENTS.map((id, i) => (
+              <React.Fragment key={id}>
+                {i > 0 && ' · '}
+                <Link href={planHref(id)}>
+                  {PLANS[id].name}: {PLANS[id].parentsIncluded === 2 ? '2 parents' : `up to ${PLANS[id].parentsIncluded}`}, ₹{PLANS[id].priceMonthly.toLocaleString('en-IN')}
+                </Link>
+              </React.Fragment>
+            ))}
+          </span>
+        </Reveal>
 
         <Reveal className={x.addon}>
           <span className={x.addonIcon}><HeartPulse size={20} /></span>
