@@ -148,7 +148,7 @@
   border-radius: var(--r-full);
   background: var(--marigold);
   color: var(--on-marigold);
-  font-size: 0.7rem;
+  font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -222,7 +222,7 @@
 }
 
 .everyTitle {
-  font-size: 0.74rem;
+  font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -262,11 +262,31 @@
   .plans {
     grid-template-columns: 1fr;
     max-width: 460px;
-    gap: 28px;
+    gap: 14px;
   }
 
   .tagline {
     min-height: 0;
+  }
+
+  /* Shorter cards on phones: less padding and tighter lists (they were ~2,900 px of scrolling in all). */
+  .plan {
+    padding: 24px 22px 22px;
+  }
+
+  .price {
+    margin-top: 16px;
+  }
+
+  .facts {
+    margin: 16px 0 18px;
+    padding-top: 16px;
+    gap: 8px;
+  }
+
+  .facts li {
+    font-size: 0.9rem;
+    line-height: 1.4;
   }
 
   .addon {
@@ -288,4 +308,19 @@
   .every ul {
     flex-direction: column;
   }
+}
+
+/* "See how it works" under the Remind card's facts */
+.more {
+  display: inline-block;
+  padding-block: 11px;             /* a 44px tap row ... */
+  margin-block: -11px 3px;         /* ... without moving the card (was margin-bottom: 14px) */
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--teal);
+  text-decoration: none;
+}
+
+.more:hover {
+  text-decoration: underline;
 }
