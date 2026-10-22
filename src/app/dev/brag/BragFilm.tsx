@@ -44,20 +44,20 @@ const CUT_OUT = 19800;
 
 /* ---------- Helpers ---------- */
 
-const clamp = (v: number, a = 0, b = 1) => Math.min(b, Math.max(a, v));
-const prog = (t: number, a: number, b: number) => clamp((t - a) / (b - a));
-const lerp = (a: number, b: number, p: number) => a + (b - a) * p;
-const easeOut = (x: number) => 1 - Math.pow(1 - x, 3);
-const easeIn = (x: number) => x * x * x;
-const easeInOut = (x: number) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
-const expoOut = (x: number) => (x >= 1 ? 1 : 1 - Math.pow(2, -10 * x));
+export const clamp = (v: number, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+export const prog = (t: number, a: number, b: number) => clamp((t - a) / (b - a));
+export const lerp = (a: number, b: number, p: number) => a + (b - a) * p;
+export const easeOut = (x: number) => 1 - Math.pow(1 - x, 3);
+export const easeIn = (x: number) => x * x * x;
+export const easeInOut = (x: number) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+export const expoOut = (x: number) => (x >= 1 ? 1 : 1 - Math.pow(2, -10 * x));
 const hash = (n: number) => {
   const v = Math.sin(n * 12.9898 + 78.233) * 43758.5453;
   return v - Math.floor(v);
 };
 
 /** Fade + rise in over [a, a+dur], fade + rise out over [b-dur, b]. */
-function inOut(t: number, a: number, b: number, dur = 500, rise = 14) {
+export function inOut(t: number, a: number, b: number, dur = 500, rise = 14) {
   const pin = expoOut(prog(t, a, a + dur));
   const pout = easeIn(prog(t, b - dur * 0.8, b));
   return { opacity: pin * (1 - pout), transform: `translateY(${(1 - pin) * rise - pout * rise}px)` };
@@ -71,8 +71,8 @@ const INSET = DW * 0.0454;               // screen inset
 const PT = DW * 0.0023135;               // one iOS point
 
 export type Cam = { x: number; y: number; s: number };
-const centred = (cx: number, cy: number, sc: number): Cam => ({ x: cx - (DW / 2) * sc, y: cy - (DH / 2) * sc, s: sc });
-const mixCam = (a: Cam, b: Cam, p: number): Cam => ({ x: lerp(a.x, b.x, p), y: lerp(a.y, b.y, p), s: lerp(a.s, b.s, p) });
+export const centred = (cx: number, cy: number, sc: number): Cam => ({ x: cx - (DW / 2) * sc, y: cy - (DH / 2) * sc, s: sc });
+export const mixCam = (a: Cam, b: Cam, p: number): Cam => ({ x: lerp(a.x, b.x, p), y: lerp(a.y, b.y, p), s: lerp(a.s, b.s, p) });
 /** Put device point (dx, dy) at film point (fx, fy) at scale sc. */
 const focus = (dx: number, dy: number, fx: number, fy: number, sc: number): Cam => ({ x: fx - dx * sc, y: fy - dy * sc, s: sc });
 const pt = (n: number) => INSET + n * PT;
@@ -184,7 +184,7 @@ function WaveDet({ t }: { t: number }) {
 
 /* ---------- Phone pieces (same markup as LiveCallPhone) ---------- */
 
-function StatusBar({ time = '8:30', color }: { time?: string; color?: string }) {
+export function StatusBar({ time = '8:30', color }: { time?: string; color?: string }) {
   return (
     <div className={c.status} style={color ? { color } : undefined} aria-hidden="true">
       <span className={c.statusSide}><time>{time}</time></span>
@@ -210,7 +210,7 @@ function StatusBar({ time = '8:30', color }: { time?: string; color?: string }) 
   );
 }
 
-function Shell({ cam, style, ringing, children }: { cam: Cam; style?: React.CSSProperties; ringing?: boolean; children: React.ReactNode }) {
+export function Shell({ cam, style, ringing, children }: { cam: Cam; style?: React.CSSProperties; ringing?: boolean; children: React.ReactNode }) {
   return (
     <div
       className={s.cam}
@@ -467,7 +467,7 @@ function Outro({ t }: { t: number }) {
 
 /** Pause every CSS animation/transition and set it to its age in film time. */
 const born = new WeakMap<Animation, number>();
-function syncAnimations(t: number) {
+export function syncAnimations(t: number) {
   for (const a of document.getAnimations()) {
     if (!born.has(a)) born.set(a, t);
     a.pause();

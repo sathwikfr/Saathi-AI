@@ -1,0 +1,97 @@
+/* HowSection.tsx: the toggle above the two "how it works" films. */
+
+.wrap {
+  position: relative;
+}
+
+/* "#remind" lands at the top of the section too (clear of the fixed navbar). */
+.anchor {
+  position: absolute;
+  top: 0;
+  scroll-margin-top: 0;
+}
+
+.bar {
+  display: flex;
+  justify-content: center;
+  padding: 18px var(--gutter, 16px) 0;
+  height: 72px;
+  background: var(--paper);
+}
+
+.toggle {
+  position: relative;
+  display: inline-grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 4px;
+  border-radius: var(--r-full);
+  background: var(--panel);
+  border: 1px solid var(--line-subtle);
+}
+
+.toggle button {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 20px;
+  border: 0;
+  border-radius: var(--r-full);
+  background: none;
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--ink-muted);
+  cursor: pointer;
+  transition: color var(--dur-fast) ease;
+}
+
+.toggle button[aria-pressed='true'] {
+  color: var(--ink);
+}
+
+.toggle button:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+
+/* The pill that slides under the chosen side. */
+.thumb {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 4px;
+  width: calc(50% - 4px);
+  border-radius: var(--r-full);
+  background: var(--panel-elevated);
+  box-shadow: var(--shadow-xs);
+  transition: transform 420ms var(--ease-out);
+}
+
+.thumb[data-tab='remind'] {
+  transform: translateX(100%);
+}
+
+/* The film that comes in fades up (a new one mounts on every switch). */
+.film {
+  animation: filmIn 500ms var(--ease-out) both;
+}
+
+@keyframes filmIn {
+  from { opacity: 0; transform: translateY(8px); }
+}
+
+@media (max-width: 480px) {
+  .toggle button {
+    padding: 9px 12px;
+    font-size: 0.88rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .film { animation: none; }
+  .thumb { transition: none; }
+}

@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { useReducedMotion } from 'motion/react';
+import { Pause, Play } from 'lucide-react';
 // The /dev/brag launch film's scenes: every frame is a pure function of film time `t`.
 import { CallPhone, WaPhone, ANSWER_AT, CUT_WA, TAP_AT, DW, DH, type Cam } from '@/app/dev/brag/BragFilm';
 import { Reveal } from '@/components/Reveal';
@@ -40,8 +41,14 @@ const BEATS = [
 ];
 const ACCENT = new Set(['Amma.', 'language.', 'mentions.', 'WhatsApp.', 'it.']);
 
-export function HowFilm() {
+/**
+ * `embedded`: shown inside HowSection (no id of its own, a little shorter to leave room for the toggle).
+ * `onEnd`: called when the film has rested and faded out, instead of looping (HowSection then shows the other film).
+ */
+export function HowFilm({ embedded = false, onEnd }: { embedded?: boolean; onEnd?: () => void }) {
   const reduce = useReducedMotion();
+  const onEndRef = useRef(onEnd);
+  useEffect(() => { onEndRef.current = onEnd; }, [onEnd]);
   const root = useRef<HTMLElement>(null);
   const slot = useRef<HTMLDivElement>(null);
   const tRef = useRef(0);
@@ -49,8 +56,11 @@ export function HowFilm() {
   const [k, setK] = useState(1);
   const [fading, setFading] = useState(false);
   const [lang, setLang] = useState<CallLang>('en');
+  const [paused, setPaused] = useState(false);   // WCAG 2.2.2: the film that starts by itself can be stopped
+  const pausedRef = useRef(false);
+  useEffect(() => { pausedRef.current = paused; }, [paused]);
 
-  const seek = (v: number) => { tRef.current = v; setT(v); setFading(false); };
+  const seek =(v: number) => { tRef.current = v; setT(v); setFading(false); };
 
   // "Hear it" in the Languages section switches the call's language and plays it from the start.
   useEffect(() => {
@@ -82,6 +92,7 @@ export function HowFilm() {
     let last = 0;
     let held = 0;
     const tick = (now: number) => {
+      if (pausedRef.current) { last = now; raf = requestAnimationFrame(tick); return; }
       const dt = last ? Math.min(64, now - last) : 0;
       last = now;
       let next = tRef.current;
@@ -89,6 +100,7 @@ export function HowFilm() {
         held += dt;
         if (held > HOLD_MS + FADE_MS) {
           held = 0;
+          if (onEndRef.current) { onEndRef.current(); cancelAnimationFrame(raf); return; }
           next = 0;
           setFading(false);
         } else if (held > HOLD_MS) {
@@ -111,7 +123,7 @@ export function HowFilm() {
 
   if (reduce) {
     return (
-      <section id="how" className={`section ${s.alt}`}>
+      <section id={embedded ? undefined : 'how'} className={`section ${s.alt}`}>
         <div className="wrap">
           <Reveal className={s.head}>
             <WordReveal>Set it up once. <span className={s.grad}>Saathi does the rest.</span></WordReveal>
@@ -131,7 +143,7 @@ export function HowFilm() {
   };
 
   return (
-    <section id="how" ref={root} className={x.film} aria-label="How it works: an example morning call">
+    <section id={embedded ? undefined : 'how'} ref={root} className={`${x.film} ${embedded ? x.embedded : ''}`} aria-label="How it works: an example morning call">
       <div className={`wrap ${x.grid}`}>
         <div className={x.copy}>
           <p className={x.eyebrow}>How it works</p>
@@ -169,10 +181,15 @@ export function HowFilm() {
             ))}
           </ol>
 
-          <div className={x.langs} role="group" aria-label="Call language">
-            {CALL_LANGS.map((l) => (
-              <button key={l.key} type="button" aria-pressed={lang === l.key} onClick={() => { setLang(l.key); seek(0); }}>{l.label}</button>
-            ))}
+          <div className={x.controls}>
+            <div className={x.langs} role="group" aria-label="Call language">
+              {CALL_LANGS.map((l) => (
+                <button key={l.key} type="button" aria-pressed={lang === l.key} onClick={() => { setLang(l.key); seek(0); }}>{l.label}</button>
+              ))}
+            </div>
+            <button type="button" className={x.pause} aria-pressed={paused} aria-label={paused ? 'Play the film' : 'Pause the film'} onClick={() => setPaused((p) => !p)}>
+              {paused ? <Play size={15} fill="currentColor" /> : <Pause size={15} fill="currentColor" />}
+            </button>
           </div>
         </div>
 

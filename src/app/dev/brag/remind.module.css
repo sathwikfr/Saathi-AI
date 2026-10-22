@@ -1,0 +1,226 @@
+/* The Remind film (RemindFilm.tsx): the WhatsApp medicine check on the person's phone, the caretaker's alert
+   on yours. Sizes in iOS points like brag.module.css; the shared WhatsApp pieces come from there. */
+
+/* Messages stack from the bottom; older ones scroll off the top. */
+.chat {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 0 calc(var(--pt) * 12) calc(var(--pt) * 10);
+  overflow: hidden;
+}
+
+/* A new message opens its own room (grid rows 0fr -> 1fr), so the chat scrolls up smoothly. */
+.grow {
+  display: grid;
+  flex: none;
+}
+
+.growIn {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.growBody {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding-top: calc(var(--pt) * 9);
+}
+
+.growBody[data-out] {
+  align-items: flex-end;
+}
+
+.growBody[data-chip] {
+  align-items: center;
+}
+
+.bubble {
+  max-width: 82%;
+  padding: calc(var(--pt) * 7) calc(var(--pt) * 10) calc(var(--pt) * 6);
+  border-radius: calc(var(--pt) * 12);
+  border-top-left-radius: calc(var(--pt) * 3);
+  background: #fff;
+  box-shadow: 0 calc(var(--pt) * 1) calc(var(--pt) * 0.5) rgba(11, 20, 26, 0.13);
+  font-size: calc(var(--pt) * 16);
+  line-height: 1.35;
+}
+
+.bubble[data-out] {
+  border-top-left-radius: calc(var(--pt) * 12);
+  border-top-right-radius: calc(var(--pt) * 3);
+  background: #d9fdd3;
+}
+
+.ticks {
+  display: inline-flex;
+  vertical-align: -0.15em;
+  margin-left: calc(var(--pt) * 3);
+  color: #53bdeb;
+}
+
+.ticks svg {
+  width: calc(var(--pt) * 15);
+  height: calc(var(--pt) * 15);
+}
+
+.pressed {
+  background: #e9edef;
+}
+
+/* ---------- Lock screen (the film's opening) ---------- */
+
+.lock {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  color: #fff;
+  background:
+    radial-gradient(80% 50% at 20% 10%, rgba(130, 190, 255, 0.55), transparent 70%),
+    radial-gradient(70% 45% at 90% 90%, rgba(242, 163, 58, 0.45), transparent 70%),
+    linear-gradient(170deg, #0b4f86 0%, #1a2f5a 55%, #3b2450 100%);
+}
+
+.lockDate {
+  margin-top: calc(var(--pt) * 92);
+  font-size: calc(var(--pt) * 19);
+  font-weight: 600;
+  opacity: 0.9;
+}
+
+.lockTime {
+  font-size: calc(var(--pt) * 92);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.notif {
+  position: relative;
+  width: calc(100% - var(--pt) * 20);
+  margin-top: calc(var(--pt) * 40);
+  display: flex;
+  gap: calc(var(--pt) * 10);
+  padding: calc(var(--pt) * 12);
+  border-radius: calc(var(--pt) * 22);
+  background: rgba(245, 245, 247, 0.82);
+  color: #111;
+  overflow: hidden;
+  box-shadow: 0 calc(var(--pt) * 8) calc(var(--pt) * 24) rgba(0, 0, 0, 0.25);
+}
+
+.notifIcon {
+  flex: none;
+  width: calc(var(--pt) * 38);
+  height: calc(var(--pt) * 38);
+  border-radius: calc(var(--pt) * 9);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: linear-gradient(160deg, #5ef08a, #1fae4b);
+}
+
+.notifIcon svg {
+  width: 60%;
+  height: 60%;
+}
+
+.notifText {
+  min-width: 0;
+  font-size: calc(var(--pt) * 15);
+  line-height: 1.3;
+}
+
+.notifTop {
+  display: flex;
+  justify-content: space-between;
+  font-weight: 600;
+}
+
+.notifTop small {
+  font-size: calc(var(--pt) * 13);
+  font-weight: 400;
+  color: #666;
+}
+
+.notifTap {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.12);
+}
+
+/* ---------- "Who it's for" ---------- */
+
+.whoGrid {
+  margin-top: 28px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.whoCard {
+  align-self: flex-start;
+  padding: 11px 16px;
+  border-radius: 16px 16px 16px 5px;
+  background: #fff;
+  border: 1px solid var(--line-subtle);
+  box-shadow: var(--shadow-xs);
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.whoCard:nth-child(even) {
+  align-self: flex-end;
+  border-radius: 16px 16px 5px 16px;
+  background: #d9fdd3;
+  border-color: rgba(37, 211, 102, 0.3);
+}
+
+/* ---------- Outro price ---------- */
+
+.price {
+  margin-top: 26px;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  font-family: var(--font-serif);
+}
+
+.price b {
+  font-size: 58px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  color: var(--teal);
+}
+
+.price span {
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--ink-muted);
+}
+
+.price s {
+  font-size: 22px;
+  color: var(--ink-subtle);
+}
+
+.planPill {
+  margin-left: auto;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: rgba(37, 211, 102, 0.14);
+  color: #128c4b;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 700;
+}

@@ -1,0 +1,29 @@
+/* RemindSection.tsx: howFilm.module.css's player and layout, mirrored (phone on the left). */
+
+.plan {
+  margin-left: 6px;
+  padding: 2px 9px;
+  border-radius: var(--r-full);
+  background: rgba(37, 211, 102, 0.14);
+  color: var(--green);
+  letter-spacing: 0.06em;
+}
+
+.steps {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.glow {
+  --glow: rgba(37, 211, 102, 0.36);
+}
+
+/* Desktop: the phone on the left, the captions on the right (phones keep captions above the phone). */
+@media (min-width: 900px) {
+  .grid {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .slot {
+    order: -1;
+  }
+}

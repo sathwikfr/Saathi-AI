@@ -146,7 +146,8 @@
 .steps button {
   display: block;
   width: 100%;
-  padding: 8px 0;                /* a comfortable target around the 3px bar */
+  padding: 20.5px 0;             /* a 44px target around the 3px bar ... */
+  margin: -12.5px 0;             /* ... without moving anything */
   border: 0;
   background: none;
   cursor: pointer;
@@ -175,6 +176,37 @@
   border-radius: 4px;
 }
 
+/* Language switch + pause button on one row. */
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+}
+
+.pause {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line-subtle);
+  border-radius: 50%;
+  background: var(--panel);
+  color: var(--ink-muted);
+  cursor: pointer;
+  transition: background var(--dur-fast) ease, color var(--dur-fast) ease;
+}
+
+.pause:hover {
+  background: var(--panel-elevated);
+  color: var(--ink);
+}
+
+.pause:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+
 .langs {
   display: inline-flex;
   align-self: flex-start;
@@ -186,6 +218,7 @@
 }
 
 .langs button {
+  position: relative;
   padding: 7px 14px;
   border: 0;
   border-radius: var(--r-full);
@@ -195,6 +228,12 @@
   color: var(--ink-muted);
   cursor: pointer;
   transition: background var(--dur-fast) ease, color var(--dur-fast) ease;
+}
+
+.langs button::after {
+  content: '';
+  position: absolute;
+  inset: -5px 0;                 /* 44px+ tap area, same look */
 }
 
 .langs button[aria-pressed='true'] {
@@ -261,6 +300,16 @@
   will-change: auto !important;
 }
 
+/* Inside HowSection: as tall as the phone needs, not a whole screen (on tall screens that left a big gap
+   before the next section). */
+.embedded {
+  min-height: 0;
+}
+
+.embedded .slot {
+  height: clamp(400px, calc(100svh - 88px - 72px - var(--pad) * 2), 780px);
+}
+
 /* ---------- Tablets and phones: captions above, phone below ---------- */
 
 @media (max-width: 899px) {
@@ -302,5 +351,9 @@
   .slot {
     width: 100%;
     height: clamp(340px, calc(100svh - 88px - var(--pad) * 2 - 304px), 620px);
+  }
+
+  .embedded .slot {
+    height: clamp(320px, calc(100svh - 88px - 72px - var(--pad) * 2 - 304px), 620px);
   }
 }
