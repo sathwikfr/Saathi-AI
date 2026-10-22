@@ -141,8 +141,8 @@
 }
 
 .markYes {
-  background: var(--panel-sunken);
-  color: var(--ink-muted);
+  background: var(--line-subtle);
+  color: var(--ink);
 }
 
 .markNo {
@@ -164,6 +164,11 @@
 
 /* ---------- Phones: one card per row ---------- */
 
+.phone {
+  display: none;
+}
+
+/* Phones: the Aaptha column as one short list; the full comparison (one card per row) opens on request. */
 @media (max-width: 760px) {
   .frame {
     display: none;

@@ -20,11 +20,12 @@ export function Footer() {
           <div>
             <h4>Product</h4>
             <div style={{ display: 'grid', gap: '10px', fontSize: '0.9rem' }}>
-              <Link href="/#how">The morning call</Link>
-              <Link href="/#safety">Meet Saathi</Link>
-              <Link href="/#why">Why a call</Link>
-              <Link href="/#plans">Plans</Link>
-              <Link href="/#faq">Questions</Link>
+              <Link href="/#how">How it works</Link>
+              <Link href="/#remind">WhatsApp reminders</Link>
+              <Link href="/#safety">Safety</Link>
+              <Link href="/#why">Why Aaptha</Link>
+              <Link href="/#plans">Pricing</Link>
+              <Link href="/#faq">FAQ</Link>
             </div>
           </div>
 
@@ -62,8 +63,8 @@ export function Footer() {
           <span style={{ display: 'inline-flex', gap: '18px', flexWrap: 'wrap' }}>
             <Link href="/terms">Terms</Link>
             <Link href="/privacy">Privacy</Link>
-            <span>Made in India, for families who live apart.</span>
             <Link href="/refunds">Refunds</Link>
+            <span>Made in India, for families who live apart.</span>
           </span>
         </div>
       </div>

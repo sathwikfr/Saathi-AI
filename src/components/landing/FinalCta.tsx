@@ -6,7 +6,6 @@ import { ArrowRight, Heart, CircleCheck } from 'lucide-react';
 import { MagneticLink } from '@/components/motion/MagneticLink';
 import { WordReveal } from '@/components/motion/WordReveal';
 import { Reveal } from '@/components/Reveal';
-import { VantaFog } from './VantaFog';
 import s from './finalCta.module.css';
 
 /**
@@ -18,11 +17,9 @@ import s from './finalCta.module.css';
 
 export function FinalCta({ primaryHref, primaryLabel, trialDays }: { primaryHref: string; primaryLabel: string; trialDays: number }) {
   return (
-    <section className="section">
+    <section id="start" className="section">
       <div className="wrap">
         <Reveal variant="scale" className={`${s.card} stage-dark`}>
-          <VantaFog className={s.fog} />
-
           <span className={s.icon} aria-hidden="true"><Heart size={26} fill="currentColor" strokeWidth={0} /></span>
           <WordReveal className={s.title}>Set it up tonight. <span className={s.accent}>Saathi calls tomorrow.</span></WordReveal>
           <p className={s.text}>

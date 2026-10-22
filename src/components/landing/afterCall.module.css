@@ -9,7 +9,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   gap: 22px;
-  align-items: stretch;
+  align-items: center;   /* the shorter dashboard card sits level with the WhatsApp one, no blank gap inside it */
   max-width: 1080px;
   margin: 0 auto;
 }
@@ -50,7 +50,7 @@
   border-radius: var(--r-full);
   background: var(--gold-soft);
   border: 1px solid var(--gold-border);
-  font-size: 0.66rem;
+  font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -147,7 +147,7 @@
   border-radius: var(--r-full);
   background: var(--green-soft);
   color: var(--green);
-  font-size: 0.74rem;
+  font-size: 0.75rem;
   font-weight: 700;
   white-space: nowrap;
 }
@@ -189,10 +189,11 @@
 .pill[data-tone='calm'] { background: var(--gold-soft); color: var(--gold); }
 .pill[data-tone='warn'] { background: var(--amber-soft); color: var(--amber); }
 .pill[data-tone='plain'] { padding: 0; color: var(--ink); }
+.pill[data-tone='bad'] { background: var(--red-soft); color: var(--red); }
 
 /* Ties back to the WhatsApp reply */
 .handled {
-  margin-top: auto;
+  margin-top: 18px;
   display: flex;
   align-items: center;
   gap: 10px;

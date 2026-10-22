@@ -10,6 +10,10 @@
   text-align: center;
 }
 
+@media (max-width: 640px) {
+  .head { margin-bottom: 32px; }
+}
+
 .head h2 {
   font-size: clamp(2rem, 4.2vw, 3.1rem);
   font-weight: 600;

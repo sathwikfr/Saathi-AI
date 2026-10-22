@@ -9,10 +9,11 @@ import { ThemeToggle } from '@/components/ThemeToggle';
 import { Heart, User as UserIcon, LogOut, CreditCard, ChevronDown, LayoutDashboard, UserPlus, Menu, X, ShieldCheck, ArrowRight } from 'lucide-react';
 
 const MARKETING_LINKS = [
-  { href: '/#how', label: 'The morning call' },
-  { href: '/#safety', label: 'Meet Saathi' },
-  { href: '/#why', label: 'Why a call' },
-  { href: '/#plans', label: 'Plans' },
+  { href: '/#how', label: 'How it works' },   // calls and WhatsApp reminders, behind one toggle
+  { href: '/#safety', label: 'Safety' },
+  { href: '/#why', label: 'Why Aaptha' },
+  { href: '/#plans', label: 'Pricing' },
+  { href: '/#faq', label: 'FAQ' },
 ];
 
 const APP_LINKS = [
@@ -81,12 +82,12 @@ export function Navbar() {
   // Scroll-spy: the section crossing the middle of the screen is the active link.
   useEffect(() => {
     if (!float) return;
-    const sections = ['how', 'why', 'safety', 'plans']
+    const sections = ['how', 'remind', 'why', 'safety', 'plans', 'faq', 'start']
       .map((id) => document.getElementById(id))
       .filter((el): el is HTMLElement => el !== null);
     const io = new IntersectionObserver(
       (entries) => {
-        for (const e of entries) if (e.isIntersecting) setActiveHash(e.target.id);
+        for (const e of entries) if (e.isIntersecting) setActiveHash(e.target.id === 'start' ? '' : e.target.id === 'remind' ? 'how' : e.target.id);
       },
       { rootMargin: '-45% 0px -50% 0px' },
     );
@@ -148,8 +149,8 @@ export function Navbar() {
     setSheetOpen(false);
   };
 
-  // Folded into the island (landing, scrolled, menu sheet closed).
-  const compact = float && scrolled && !sheetOpen;
+  // The scrolled "island" capsule (links folded into a dark pill naming the section) is switched off (user, 2026-10-18).
+  const compact = false;
   const islandLabel = links.find((l) => isActive(l.href))?.label ?? 'Aaptha';
 
   const navEl = (
@@ -264,7 +265,7 @@ export function Navbar() {
                 Log in
               </Link>
               <Link href="/signup" className="btn btn-primary btn-sm">
-                <span>Try<span className="hide-mobile"> 7 days</span> free</span> <ArrowRight size={15} className="hide-mobile" />
+                <span>Start<span className="hide-mobile"> free trial</span></span> <ArrowRight size={15} className="hide-mobile" />
               </Link>
             </>
           )}
@@ -297,7 +298,7 @@ export function Navbar() {
         {!user && (
           <div className="sheet-actions" style={{ '--i': links.length } as React.CSSProperties}>
             <Link href="/login" className="btn btn-ghost" onClick={closeAll} tabIndex={sheetOpen ? 0 : -1}>Log in</Link>
-            <Link href="/signup" className="btn btn-primary" onClick={closeAll} tabIndex={sheetOpen ? 0 : -1}>Try 7 days free</Link>
+            <Link href="/signup" className="btn btn-primary" onClick={closeAll} tabIndex={sheetOpen ? 0 : -1}>Start free trial</Link>
           </div>
         )}
       </div>

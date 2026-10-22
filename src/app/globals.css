@@ -96,7 +96,7 @@
   --space-10: 40px;
   --space-12: 48px;
   --space-16: 64px;
-  --section-y: clamp(72px, 10vw, 128px);
+  --section-y: clamp(44px, 7.5vw, 96px);   /* was clamp(72px, 10vw, 128px): the page felt too airy */
 
   /* Shape */
   --r-xs: 8px;
@@ -726,7 +726,9 @@ button, input, select, textarea {
   box-shadow: 0 0 0 4px var(--teal-soft);
 }
 
-.form-input.error {
+.form-input.error,
+.form-input[aria-invalid='true'],
+.input-affix:has(+ .form-error) {
   border-color: var(--red);
   background: var(--red-soft);
 }
@@ -1175,6 +1177,24 @@ header.app-header[data-stage='on'].scrolled {
   background: var(--teal-soft);
 }
 
+/* Taller invisible tap area (44px+) without changing how the links look. */
+.nav-link,
+.brand-link {
+  position: relative;
+}
+
+.nav-link::after,
+.brand-link::after {
+  content: '';
+  position: absolute;
+  inset: -5px 0;
+}
+
+.nav-actions > .btn {
+  min-height: 44px;
+  min-width: 44px;
+}
+
 .nav-link.active {
   color: var(--ink);
   background: var(--panel-elevated);
@@ -1263,6 +1283,13 @@ header.app-header.float.scrolled {
   box-shadow: none;
 }
 
+/* Scrolled: the island capsule is off, so the links sit on the normal solid bar (they used to run over the text). */
+header.app-header.float.scrolled {
+  background: var(--header-bg);
+  border-bottom-color: var(--line-subtle);
+  box-shadow: 0 6px 20px -16px rgba(41, 30, 15, 0.22);
+}
+
 /* Keeps the bar above the full-screen menu sheet. */
 header.app-header.float .app-nav {
   position: relative;
@@ -1342,6 +1369,45 @@ header.app-header.float .nav-link.active {
   color: var(--ink);
 }
 
+/* Landing, at the top and scrolled: the links sit together in one soft capsule, and a white pill slides
+   under the hovered or current link (the same indicator as before, now inside a frame). */
+@media (min-width: 901px) {
+  header.app-header.float:not(.compact) .island {
+    padding: 4px;
+    background: color-mix(in oklab, var(--panel-elevated) 62%, transparent);
+    border-color: var(--line-subtle);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.55) inset, 0 8px 24px -18px rgba(41, 30, 15, 0.35);
+    -webkit-backdrop-filter: blur(12px) saturate(1.2);
+    backdrop-filter: blur(12px) saturate(1.2);
+  }
+
+  header.app-header.float:not(.compact) .nav-links {
+    gap: 2px;
+  }
+
+  header.app-header.float:not(.compact) .nav-link {
+    padding: 7px 16px;
+    font-size: 0.9rem;
+    font-weight: 550;
+    letter-spacing: -0.005em;
+  }
+
+  header.app-header.float:not(.compact) .nav-link.active {
+    font-weight: 600;
+  }
+
+  header.app-header.float:not(.compact) .nav-indicator {
+    height: 34px;
+    background: var(--panel-elevated);
+    box-shadow: 0 1px 2px rgba(41, 30, 15, 0.1), 0 0 0 1px var(--line-subtle);
+  }
+}
+
+:root[data-theme='dark'] header.app-header.float:not(.compact) .island {
+  background: color-mix(in oklab, var(--panel) 70%, transparent);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 8px 24px -18px rgba(0, 0, 0, 0.6);
+}
+
 header.app-header.float.compact .island .nav-link {
   color: var(--island-muted);
 }
@@ -1376,6 +1442,13 @@ header.app-header.float.compact .nav-indicator {
   font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
+  position: relative;
+}
+
+.island-peek::after {
+  content: '';
+  position: absolute;
+  inset: -5px 0;                 /* 44px tap area, same look */
 }
 
 .island-peek:focus-visible {
@@ -1658,6 +1731,13 @@ header.app-header.float.compact .nav-indicator {
   transition: color var(--dur-fast) ease;
 }
 
+/* Footer links: a 44px tap row (padding, not extra gap, so the columns keep their rhythm). */
+.site-footer a:not(.brand-link) {
+  display: inline-block;
+  padding-block: 12px;
+  margin-block: -12px;
+}
+
 .site-footer a:hover {
   color: #fff;
 }
@@ -1838,7 +1918,7 @@ header.app-header.float.compact .nav-indicator {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: clamp(20px, 4vh, 48px);
+  margin-bottom: clamp(12px, 2.5vh, 32px);
 }
 
 .auth-top-actions {
@@ -1969,7 +2049,7 @@ header.app-header.float.compact .nav-indicator {
   height: 100dvh;
   overflow: hidden;
   isolation: isolate;
-  background: var(--teal-deep);
+  background: radial-gradient(120% 80% at 50% 45%, #141a2e 0%, #0b0e17 60%, #07080d 100%);   /* the orb's night, both themes */
   color: rgba(255, 255, 255, 0.78);
   padding: clamp(36px, 4.5vw, 64px);
   display: flex;
@@ -2015,194 +2095,229 @@ header.app-header.float.compact .nav-indicator {
   color: #8ccdf7;
 }
 
-/* Example morning in the auth side panel: the call, then the WhatsApp update. */
-.auth-day {
-  list-style: none;
-  display: grid;
-  gap: 18px;
-  max-width: 440px;
-  position: relative;
+/* The form side, tighter: the whole sign-up form (to Continue) fits on one laptop screen. */
+.auth-body .form-group {
+  margin-bottom: 14px;
+  gap: 6px;
 }
 
-.auth-day::before {
-  content: '';
-  position: absolute;
-  left: 7px;
-  top: 10px;
-  bottom: 10px;
-  width: 1px;
-  background: linear-gradient(rgba(125, 211, 252, 0.6), rgba(199, 125, 255, 0.6));
-  transform-origin: 50% 0;
-  animation: auth-line 900ms var(--ease-out) 450ms both;
+.auth-body .form-input {
+  min-height: 46px;
 }
 
-.auth-day > li {
-  position: relative;
-  padding-left: 30px;
+.auth-body .auth-sub {
+  margin-bottom: 20px;
 }
 
-.auth-day > li::before {
-  content: '';
-  position: absolute;
-  left: 2px;
-  top: 4px;
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  background: var(--teal-deep);
-  border: 2px solid #7dd3fc;
+.auth-body .auth-plan {
+  margin-bottom: 18px;
+  padding: 12px 14px;
 }
 
-.auth-day > li + li::before {
-  border-color: #c77dff;
+.auth-body .segmented {
+  margin-bottom: 18px !important;
 }
 
-.auth-day-time {
-  display: block;
-  font-size: 0.74rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  color: rgba(255, 255, 255, 0.55);
-  margin-bottom: 8px;
+/* The side panel reads down its middle: headline, orb, what is being said, the points. */
+.auth-aside > div:first-child {
+  text-align: center;
 }
 
-.auth-day-card {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: var(--r-lg);
-  padding: 16px 18px;
+.auth-aside .auth-aside-eyebrow {
+  justify-content: center;
 }
 
-.auth-day-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 12px;
-}
-
-.auth-day-head > div {
+/* Tomorrow morning in the auth side panel: the orb, and what is being said under it (AuthUI MorningStory). */
+.auth-story {
   flex: 1;
-  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 
-.auth-day-avatar {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  flex-shrink: 0;
+.auth-orb {
+  width: min(100%, 44vh, 420px);
+  aspect-ratio: 1;
+  margin: -6% 0 -4%;
+  animation: auth-in 900ms var(--ease-out) 250ms both;
+}
+
+/* One line at a time, in the same place; each new one rises in. */
+.auth-caption {
+  width: 100%;
+  max-width: 440px;
+  min-height: 118px;
   display: grid;
-  place-items: center;
-  background: linear-gradient(145deg, #60a5fa, #1d4ed8);
+  align-items: start;
+}
+
+.auth-line {
+  grid-area: 1 / 1;
+  margin: 0;
+  padding: 14px 18px 15px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
   color: #fff;
-  font-family: var(--font-serif);
-  font-weight: 600;
+  font-size: 1.02rem;
+  line-height: 1.5;
+  animation: auth-cap 520ms var(--ease-out) both;
 }
 
-.auth-day-name {
-  color: #fff;
-  font-weight: 600;
-  font-size: 0.92rem;
-}
-
-.auth-day-meta {
-  font-size: 0.76rem;
-  color: rgba(255, 255, 255, 0.55);
-}
-
-.auth-day-badge {
-  font-size: 0.72rem;
-  font-weight: 700;
-  color: #86d9a8;
-  background: rgba(134, 217, 168, 0.12);
-  padding: 4px 10px;
-  border-radius: 999px;
-}
-
-.auth-day-quote {
-  font-size: 0.9rem;
-  line-height: 1.55;
-  color: rgba(255, 255, 255, 0.85);
-  font-style: italic;
-  font-family: var(--font-serif);
-}
-
-.auth-day-label {
+.auth-line small {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 0.76rem;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.6);
-  margin-bottom: 10px;
-}
-
-.auth-day-wa {
-  font-size: 0.88rem;
-  line-height: 1.5;
-  color: rgba(255, 255, 255, 0.88);
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 4px 14px 14px 14px;
-  padding: 10px 12px 8px;
-}
-
-.auth-day-ticks {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  gap: 4px;
-  margin-top: 4px;
-  font-size: 0.7rem;
-  color: rgba(255, 255, 255, 0.5);
-}
-
-.auth-day-ticks svg {
+  margin-bottom: 4px;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
   color: #7dd3fc;
 }
 
-/* The panel tells its morning in order: title, the call, the line down, the WhatsApp update, the points. */
+.auth-line[data-who='saathi'] {
+  border-bottom-left-radius: 6px;
+}
+
+.auth-line[data-who='parent'] {
+  border-bottom-right-radius: 6px;
+  background: rgba(255, 106, 180, 0.08);
+  border-color: rgba(255, 106, 180, 0.22);
+}
+
+.auth-line[data-who='parent'] small {
+  color: #f9a8d4;
+}
+
+.auth-line[data-who='wa'] {
+  background: rgba(37, 211, 102, 0.1);
+  border-color: rgba(37, 211, 102, 0.28);
+  font-size: 0.95rem;
+}
+
+.auth-line[data-who='wa'] small {
+  color: #86efac;
+}
+
+.auth-line[data-who='ring'] {
+  justify-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 18px 10px 10px;
+  border-radius: var(--r-full);
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.auth-ring {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #30d158;
+  color: #fff;
+  animation: auth-ring 1.2s ease-in-out infinite;
+}
+
+.auth-ticks {
+  display: inline-flex;
+  vertical-align: -2px;
+  margin-left: 6px;
+  color: #53bdeb;
+}
+
+.auth-typing {
+  justify-self: start;
+  display: inline-flex;
+  gap: 5px;
+  padding: 14px 16px;
+}
+
+.auth-typing i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #86efac;
+  animation: auth-dot 900ms ease-in-out infinite;
+}
+
+.auth-typing i:nth-child(2) {
+  animation-delay: 150ms;
+}
+
+.auth-typing i:nth-child(3) {
+  animation-delay: 300ms;
+}
+
+@keyframes auth-cap {
+  from { opacity: 0; translate: 0 12px; filter: blur(4px); }
+}
+
+@keyframes auth-ring {
+  0%, 100% { rotate: 0deg; }
+  20% { rotate: -14deg; }
+  40% { rotate: 12deg; }
+  60% { rotate: -8deg; }
+}
+
+@keyframes auth-dot {
+  50% { translate: 0 -4px; opacity: 0.5; }
+}
+
+/* The panel opens in order: title, the orb, the points. */
 .auth-aside h2 { animation: auth-in 700ms var(--ease-out) 100ms both; }
-.auth-day > li { animation: auth-in 700ms var(--ease-out) 350ms both; }
-.auth-day > li + li { animation-delay: 1050ms; }
 .auth-points li { animation: auth-in 600ms var(--ease-out) both; }
-.auth-points li:nth-child(1) { animation-delay: 1400ms; }
-.auth-points li:nth-child(2) { animation-delay: 1500ms; }
-.auth-points li:nth-child(3) { animation-delay: 1600ms; }
+.auth-points li:nth-child(1) { animation-delay: 900ms; }
+.auth-points li:nth-child(2) { animation-delay: 1000ms; }
+.auth-points li:nth-child(3) { animation-delay: 1100ms; }
 
 @keyframes auth-in {
   from { opacity: 0; translate: 0 16px; filter: blur(3px); }
-}
-
-@keyframes auth-line {
-  from { transform: scaleY(0); }
 }
 
 @keyframes auth-glow {
   to { translate: -60px 40px; scale: 1.15; }
 }
 
-/* Short screens: the quote is the first thing to go so the panel never clips. */
-@media (max-height: 760px) {
-  .auth-day-quote { display: none; }
-  .auth-day-head { margin-bottom: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .auth-line,
+  .auth-orb,
+  .auth-ring,
+  .auth-typing i {
+    animation: none;
+  }
 }
 
 .auth-points {
-  display: grid;
-  gap: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
   list-style: none;
-  font-size: 0.95rem;
+  font-size: 0.86rem;
 }
 
 .auth-points li {
-  display: flex;
-  gap: 12px;
-  align-items: flex-start;
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  padding: 7px 13px;
+  border-radius: var(--r-full);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .auth-points svg {
   color: #8ccdf7;
   flex-shrink: 0;
-  margin-top: 3px;
 }
 
 @media (max-width: 960px) {
@@ -2860,6 +2975,17 @@ a.link:hover {
 .med-fields { display: grid; gap: 18px; }
 .med-fields .form-group { margin-bottom: 0; }
 .med-fields .mini-label { justify-content: flex-start; align-items: center; flex-wrap: wrap; }
+/* Optional medicine details, folded (onboarding). */
+.med-more { border-top: 1px dashed var(--line); padding-top: 4px; }
+.med-more > summary {
+  display: flex; align-items: center; gap: 8px; min-height: 44px; cursor: pointer;
+  font-size: 0.88rem; font-weight: 600; color: var(--teal); list-style: none;
+}
+.med-more > summary::-webkit-details-marker { display: none; }
+.med-more > summary::before { content: ''; width: 7px; height: 7px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); transition: transform var(--dur-fast) ease; flex: none; }
+.med-more[open] > summary::before { transform: rotate(45deg); }
+.med-more > summary:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; border-radius: 6px; }
+.med-more[open] { display: grid; gap: 18px; padding-bottom: 4px; }
 .med-pair { display: grid; grid-template-columns: 3fr 2fr; gap: 14px 16px; align-items: end; }
 @media (max-width: 640px) { .med-pair { grid-template-columns: 1fr; } }
 .med-fields .rx-line {
@@ -3054,6 +3180,8 @@ a.link:hover {
   flex-wrap: wrap;
 }
 
+.dash-title > h2 { font: inherit; font-weight: 600; letter-spacing: inherit; line-height: inherit; min-width: 0; overflow-wrap: anywhere; }
+
 .dash-meta {
   display: flex;
   flex-wrap: wrap;
@@ -3240,7 +3368,7 @@ a.link:hover {
 
 .status-orb.good { background: var(--green-soft); color: var(--green); }
 .status-orb.warn { background: var(--amber-soft); color: var(--amber); }
-.status-orb.live { background: none; }   /* the glass orb is the status */
+.status-orb.live { background: var(--teal-light); color: var(--teal); }
 
 .today-status h3 {
   font-size: 1.45rem;
@@ -4364,11 +4492,57 @@ table.data tr:hover td {
 
 /* Ticker */
 .ticker {
+  position: relative;
   overflow: hidden;
   border-block: 1px solid var(--line-subtle);
   background: transparent; /* same as the page */
+}
+
+/* The edge fade is on the track's viewport, so the pause button is not faded with it. */
+.ticker-viewport {
+  overflow: hidden;
   mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
   -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+}
+
+/* Pause / play (WCAG 2.2.2): 44px tap area, a small quiet disc. */
+.ticker-pause {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  z-index: 2;
+  width: 44px;
+  height: 44px;
+  margin-top: -22px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink-muted);
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity var(--dur-fast) ease, background var(--dur-fast) ease;
+}
+
+.ticker-pause:hover,
+.ticker-pause:focus-visible {
+  opacity: 1;
+  background: var(--teal-soft);
+}
+
+.ticker-pause:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: -2px;
+}
+
+.ticker[data-paused] .ticker-track,
+.ticker:focus-within .ticker-track {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ticker-pause { display: none; }
 }
 
 .ticker-track {
@@ -4377,8 +4551,11 @@ table.data tr:hover td {
   animation: marquee 38s linear infinite;
 }
 
-.ticker:hover .ticker-track {
-  animation-play-state: paused;
+/* Pause on mouse hover only; on touch a tap would leave it stuck paused (the pause button covers touch). */
+@media (hover: hover) and (pointer: fine) {
+  .ticker:hover .ticker-track {
+    animation-play-state: paused;
+  }
 }
 
 .ticker-item {
@@ -5061,19 +5238,7 @@ svg .steam + .steam {
 }
 .ask-bubble.me { justify-self: end; background: var(--teal-fill); color: var(--on-teal); border-bottom-right-radius: 6px; }
 .ask-bubble.ai { justify-self: start; background: var(--panel-elevated); border: 1px solid var(--line-subtle); border-bottom-left-radius: 6px; }
-/* "Going through Amma's calls…": the glass orb in a dark pill (same in both themes, like the hero's capsule). */
-.ask-bubble.ai.ask-thinking {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 5px 20px 5px 5px;
-  border-radius: var(--r-full);
-  background: linear-gradient(180deg, rgba(34, 35, 44, 0.98) 0%, rgba(13, 14, 20, 0.98) 100%);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 10px 24px -14px rgba(10, 8, 40, 0.6);
-  color: rgba(255, 255, 255, 0.62);
-  font-weight: 500;
-}
+.ask-thinking { display: flex; align-items: center; gap: 10px; color: var(--ink-muted); }
 .ask-form { display: flex; gap: 8px; }
 .ask-form .form-input { flex: 1; }
 
@@ -5089,9 +5254,12 @@ svg .steam + .steam {
   background: var(--line-subtle);
   display: inline-block;
 }
+/* Each state has its own shape too (dot / diamond / ring), so it never rests on red vs green alone. */
 .med-week i.taken { background: var(--green); }
-.med-week i.missed, .med-week i.stopped { background: var(--red); }
-.med-week i.later, .med-week i.unknown { background: var(--amber); }
+.med-week i.missed, .med-week i.stopped { background: var(--red); border-radius: 2px; transform: rotate(45deg) scale(0.85); }
+.med-week i.later, .med-week i.unknown { background: transparent; box-shadow: inset 0 0 0 2.5px var(--amber); }
+.med-week-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: 10px 0 0; font-size: 0.78rem; color: var(--ink-muted); }
+.med-week-legend .med-week:not(:first-child) { margin-left: 10px; }
 
 .checklist { list-style: none; display: grid; gap: 10px; }
 .checklist li { display: flex; gap: 12px; align-items: flex-start; }
@@ -5216,6 +5384,451 @@ svg .steam + .steam {
 .duo-grid > .panel + .panel { margin-top: 0; }
 @media (max-width: 900px) { .duo-grid { grid-template-columns: 1fr; } }
 
+
+/* ---- App pages (dashboard, account, billing, login) pick up the landing's look ----
+   Same ivory paper with a soft sky/marigold glow behind, translucent header, softer lifting cards.
+   The landing itself ([data-scene='hero']) and dark scenes are left alone. */
+body:not(:has(#main > [data-scene='hero']:first-child)):not(:has(#main > .stage-dark:first-child)) {
+  background:
+    radial-gradient(60rem 32rem at 12% -8%, color-mix(in oklab, var(--teal) 9%, transparent), transparent 70%),
+    radial-gradient(48rem 28rem at 100% 0%, color-mix(in oklab, var(--marigold) 10%, transparent), transparent 70%),
+    var(--paper);
+  background-attachment: fixed;
+}
+
+header.app-header:not(.float) {
+  background: color-mix(in oklab, var(--paper) 78%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  backdrop-filter: blur(14px) saturate(1.3);
+}
+
+.panel {
+  border-radius: 28px;
+  transition: transform var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out), border-color var(--dur) ease;
+}
+
+@media (hover: hover) {
+  .panel:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+    border-color: color-mix(in oklab, var(--teal) 18%, var(--line-subtle));
+  }
+}
+
+.dash-title,
+.panel-head h2,
+.panel-head h3,
+.auth-title {
+  font-family: var(--font-serif);
+  letter-spacing: -0.025em;
+}
+
+.btn-primary {
+  box-shadow: 0 10px 24px -12px color-mix(in oklab, var(--teal-fill) 70%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel { transition: none; }
+  .panel:hover { transform: none; }
+}
+
+/* Dashboard welcome (no parent yet): glow behind the card and the three steps ahead. */
+.empty-welcome {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(22rem 12rem at 50% 0%, color-mix(in oklab, var(--marigold) 18%, transparent), transparent 70%),
+    var(--panel-elevated);
+}
+
+.welcome-steps {
+  list-style: none;
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px 22px;
+  margin: 32px 0 0;
+  padding: 20px 0 0;
+  border-top: 1px dashed var(--line);
+  font-size: 0.86rem;
+  color: var(--ink-muted);
+}
+
+.welcome-steps b {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--teal-soft);
+  color: var(--teal);
+  font-size: 0.75rem;
+}
+
+/* ---- Dashboard overview, premium pass ---- */
+.family-head h1 {
+  font-family: var(--font-serif);
+  font-size: clamp(2.1rem, 4vw, 3rem);
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+}
+
+.family-date {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--gold);
+}
+
+.family-date::before {
+  content: '';
+  width: 18px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--marigold);
+}
+
+/* One glass strip: hairline of light on top, big serif numbers, each cell warms on hover. */
+.family-stats {
+  position: relative;
+  overflow: hidden;
+  border-radius: 26px;
+  background: color-mix(in oklab, var(--panel-elevated) 86%, transparent);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  box-shadow: var(--shadow-sm), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.family-stats::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--teal) 30%, var(--marigold) 70%, transparent);
+  opacity: 0.55;
+}
+
+.family-stat {
+  padding: 24px 26px;
+  transition: background-color var(--dur) ease;
+}
+
+.family-stat:hover {
+  background: var(--teal-soft);
+}
+
+.family-stat.warn:hover {
+  background: var(--gold-soft);
+}
+
+.family-stat .icon-tile {
+  width: 46px;
+  height: 46px;
+  border-radius: 16px;
+}
+
+.family-stat b {
+  font-family: var(--font-serif);
+  font-size: 2.3rem;
+  font-weight: 500;
+  letter-spacing: -0.04em;
+}
+
+.family-list-head h2 {
+  font-family: var(--font-serif);
+  font-size: 1.35rem;
+  letter-spacing: -0.02em;
+}
+
+.family-row {
+  padding: 18px 22px;
+  border-radius: 24px;
+  box-shadow: var(--shadow-xs);
+}
+
+.family-row:hover {
+  border-color: color-mix(in oklab, var(--teal) 28%, var(--line-subtle));
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+.family-row[aria-selected='true'] {
+  background: linear-gradient(100deg, var(--teal-soft), transparent 55%), var(--panel-elevated);
+}
+
+.family-row .parent-avatar {
+  width: 52px !important;
+  height: 52px !important;
+  border-radius: 17px !important;
+  font-size: 1.3rem !important;
+}
+
+.family-row-main b {
+  font-family: var(--font-serif);
+  font-size: 1.15rem;
+  letter-spacing: -0.015em;
+}
+
+.family-row-chev {
+  transition: transform var(--dur) var(--ease-out), color var(--dur) ease;
+}
+
+.family-row:hover .family-row-chev {
+  transform: translateX(4px);
+  color: var(--teal);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .family-row, .family-row-chev, .family-stat { transition: none; }
+  .family-row:hover, .family-row:hover .family-row-chev { transform: none; }
+}
+
+/* ---- Family rail (story-style avatars) + profile card ---- */
+.family-rail {
+  display: flex;
+  gap: 18px;
+  overflow-x: auto;
+  margin: 26px -4px 0;
+  padding: 6px 4px 10px;
+  scrollbar-width: none;
+}
+
+.family-rail::-webkit-scrollbar { display: none; }
+
+.rail-item {
+  --tone: var(--ink-subtle);
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  flex: none;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--ink-muted);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.rail-item[data-tone='green'] { --tone: #2f9e63; }
+.rail-item[data-tone='amber'] { --tone: var(--marigold); }
+.rail-item[data-tone='red'] { --tone: #d6453d; }
+.rail-item[data-tone='neutral'] { --tone: color-mix(in oklab, var(--teal) 55%, var(--paper)); }
+
+.rail-ring {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  padding: 3px;
+  background: conic-gradient(from 200deg, var(--tone), color-mix(in oklab, var(--tone) 35%, var(--marigold)), var(--tone));
+  transition: transform var(--dur) var(--ease-out), box-shadow var(--dur) ease;
+}
+
+.rail-avatar {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  border: 3px solid var(--paper);
+  background: linear-gradient(145deg, #0a7cc4, #003860);
+  color: #fff;
+  font-family: var(--font-serif);
+  font-size: 1.7rem;
+  font-weight: 600;
+}
+
+.rail-dot {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--tone);
+  border: 3px solid var(--paper);
+}
+
+.rail-name {
+  font-size: 0.82rem;
+  font-weight: 600;
+  max-width: 84px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rail-item:hover .rail-ring { transform: translateY(-2px) scale(1.04); }
+
+.rail-item[aria-selected='true'] .rail-ring {
+  transform: scale(1.08);
+  box-shadow: 0 10px 26px -10px var(--tone);
+}
+
+.rail-item[aria-selected='true'] .rail-name { color: var(--ink); }
+
+.rail-item:focus-visible .rail-ring { outline: 2px solid var(--teal); outline-offset: 3px; }
+
+.rail-add .rail-ring { background: none; border: 2px dashed var(--line); }
+.rail-add .rail-avatar { background: var(--teal-soft); color: var(--teal); border: 0; }
+
+.profile-card {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-top: 8px;
+  padding: 20px 24px;
+  border-radius: 28px;
+  border: 1px solid var(--line-subtle);
+  background:
+    radial-gradient(26rem 10rem at 0% 0%, var(--teal-soft), transparent 70%),
+    var(--panel-elevated);
+  box-shadow: var(--shadow-sm);
+}
+
+.profile-card-ring {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  padding: 3px;
+  background: conic-gradient(from 200deg, var(--teal), var(--marigold), var(--teal));
+  flex: none;
+}
+
+.profile-card[data-tone='green'] .profile-card-ring { background: conic-gradient(from 200deg, #2f9e63, #8fd6a9, #2f9e63); }
+.profile-card[data-tone='red'] .profile-card-ring { background: conic-gradient(from 200deg, #d6453d, var(--marigold), #d6453d); }
+
+.profile-card-avatar {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  border: 3px solid var(--panel-elevated);
+  background: linear-gradient(145deg, #0a7cc4, #003860);
+  color: #fff;
+  font-family: var(--font-serif);
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.profile-card-main { flex: 1; min-width: 0; }
+
+.profile-card-main h2 {
+  font-family: var(--font-serif);
+  font-size: 1.5rem;
+  letter-spacing: -0.025em;
+  line-height: 1.1;
+}
+
+.profile-card-main p { margin-top: 4px; font-size: 0.88rem; color: var(--ink-muted); }
+
+@media (max-width: 560px) {
+  .profile-card { flex-wrap: wrap; padding: 18px; }
+  /* A real basis, so a long name pushes the badge to its own line instead of squeezing the text to one word a line. */
+  .profile-card-main { flex: 1 1 180px; }
+  .profile-card-main h2 { overflow-wrap: anywhere; }
+  .profile-card .badge { margin-left: 82px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rail-ring { transition: none; }
+  .rail-item:hover .rail-ring, .rail-item[aria-selected='true'] .rail-ring { transform: none; }
+}
+
+/* ---- Parent detail (Today, Calls, Medicines…): app-style tabs, profile header, quick actions ---- */
+.detail-head {
+  border-top: 0;
+  padding: 22px 24px;
+  margin-top: 18px;
+  border-radius: 28px;
+  border: 1px solid var(--line-subtle);
+  background:
+    radial-gradient(28rem 12rem at 100% 0%, color-mix(in oklab, var(--marigold) 14%, transparent), transparent 70%),
+    radial-gradient(24rem 12rem at 0% 0%, var(--teal-soft), transparent 70%),
+    var(--panel-elevated);
+  box-shadow: var(--shadow-sm);
+}
+
+.detail-head .parent-avatar {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  font-size: 1.9rem;
+  border: 3px solid var(--panel-elevated);
+  box-shadow: 0 0 0 3px var(--teal), 0 14px 28px -12px rgba(0, 107, 170, 0.55);
+}
+
+/* Tabs become a floating pill bar that scrolls sideways on a phone, like a mobile app's segmented control. */
+.tabbar {
+  gap: 2px;
+  padding: 5px;
+  margin: 0 0 24px;
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--r-full);
+  background: color-mix(in oklab, var(--panel) 70%, var(--panel-elevated));
+}
+
+.tab {
+  min-height: 44px;
+  padding: 9px 16px;
+  border-radius: var(--r-full);
+  transition: color var(--dur-fast) ease, background-color var(--dur) ease, box-shadow var(--dur) ease;
+}
+
+.tab:hover:not([aria-selected='true']) {
+  background: var(--teal-soft);
+  color: var(--ink);
+}
+
+.tab[aria-selected='true'] {
+  background: var(--panel-elevated);
+  box-shadow: var(--shadow-sm), 0 0 0 1px var(--line-subtle);
+}
+
+.tab[aria-current='page']::after { display: none; }
+
+/* Quick actions: tappable cards with a lift. */
+.action {
+  border-radius: 20px;
+  transition: transform var(--dur) var(--ease-out), box-shadow var(--dur) ease, border-color var(--dur) ease;
+}
+
+@media (hover: hover) {
+  .action:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+    border-color: color-mix(in oklab, var(--teal) 25%, var(--line-subtle));
+  }
+}
+
+/* Daily check-ins: glowing "next" node. */
+.timeline li.next .node {
+  box-shadow: 0 0 0 5px var(--teal-soft);
+}
+
+.panel-head h2,
+.panel-head h3,
+.panel h3 {
+  font-family: var(--font-serif);
+}
+
+@media (max-width: 560px) {
+  .detail-head { padding: 18px; }
+  /* The bar scrolls sideways with no scrollbar: fade the right edge so the hidden tabs (Records, Settings) read as "more",
+     and pad the end so the last tab can scroll clear of the fade. */
+  .tabbar {
+    margin-inline: -4px;
+    padding-right: 36px;
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent);
+  }
+}
 
 /* Keyboard focus: inputs removed the browser outline, so the only cue was a pale 1px border. Give them a real ring. */
 .form-input:focus-visible,

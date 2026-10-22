@@ -56,8 +56,8 @@ const PALETTE = {
 
 // The two ribbons inside the glass: Saathi's (cyan into violet) and the family's (pink into blue).
 const RIBBONS = [
-  { who: 'saathi' as const, yaw: 0.4, pitch: 0.55, roll: 0.25, spin: 0.07, rad: 0.62, width: 0.16, twist: 1, speed: 0.22, to: 'violet' as const },
-  { who: 'family' as const, yaw: -0.9, pitch: -0.45, roll: -0.6, spin: -0.05, rad: 0.52, width: 0.12, twist: 2, speed: -0.16, to: 'blue' as const },
+  { who: 'saathi' as const, yaw: 0.4, pitch: 0.55, roll: 0.25, spin: 0.14, rad: 0.62, width: 0.22, twist: 1, speed: 0.38, to: 'violet' as const },
+  { who: 'family' as const, yaw: -0.9, pitch: -0.45, roll: -0.6, spin: -0.11, rad: 0.52, width: 0.17, twist: 2, speed: -0.3, to: 'blue' as const },
 ];
 
 // The voice's recent loudness, kept for the rings: HIST samples, HIST_DT apart (~0.46 s centre to rim).
@@ -187,7 +187,7 @@ attribute vec4 aV;                 // direction on the unit ball, seed
 uniform mat3 uRot;
 uniform float uTime; uniform float uScale; uniform float uAspect; uniform vec2 uShift;
 uniform float uAmp; uniform float uFine; uniform float uFlow; uniform float uBreath; uniform float uPoint; uniform float uPx;
-uniform vec3 uGrad; uniform float uFireAmt; uniform float uThink;
+uniform vec3 uGrad; uniform float uFireAmt; uniform float uThink; uniform float uSweep;
 uniform vec3 uC1; uniform vec3 uC2; uniform vec3 uC3; uniform vec3 uSpeak; uniform float uSpeakMix;
 uniform vec3 uTouch; uniform float uTouchAmp; uniform float uTouchWide; uniform float uTouchGlow;   // the pointer on the ball; how far and how wide the surface reaches for it; its glow
 uniform vec3 uStretch; uniform float uSquash;                             // squash and stretch (direction x amount), a press
@@ -284,7 +284,11 @@ void main() {
   float rho = length(dv.xy);
   vRing = clamp(rings(rho), 0.0, 1.0) * smoothstep(0.3, 0.8, rho);
   float arc = uThink * pow(max(cos(atan(pr.y, pr.x) - uTime * 4.5), 0.0), 18.0);
-  vFire = clamp(smoothstep(0.55, 0.85, act) * uFireAmt + touch + abs(ripples(dv)) * 0.7 + arc, 0.0, 1.0);
+  // Every ~6 s a soft band of light runs across the net, bottom left to top right, as if a pulse
+  // were travelling through the connections (wobbly, so it never reads as a straight scan line).
+  float lane = dot(dv, vec3(0.62, 0.72, 0.3)) + 0.12 * snoise(d * 1.7 + vec3(uTime * 0.2));
+  float sweep = exp(-pow((lane - (fract(uTime * 0.16) * 3.6 - 1.8)) * 4.5, 2.0));
+  vFire = clamp(smoothstep(0.55, 0.85, act) * uFireAmt + touch + abs(ripples(dv)) * 0.7 + arc + sweep * uSweep, 0.0, 1.0);
 
   float k = cam / (cam - pr.z);                  // perspective
   vec2 q = pr.xy * k + uShift;
@@ -319,7 +323,7 @@ void main() {
   // a rainbow shimmer along the glass edge
   vec3 irid = 0.55 + 0.45 * cos(6.2831 * (fres * 0.9 + vec3(0.0, 0.33, 0.67) + uFTime * 0.04));
   vec3 col = mix(vCol, irid, 0.45 * pow(fres, 3.0) * (1.0 - 0.7 * uFInk));
-  float a = 0.03 + 0.75 * rim + vWisp * (0.04 + 0.1 * uFVoice) * (1.0 - rim) + vFire * 0.06;
+  float a = 0.03 + 0.75 * rim + vWisp * (0.08 + 0.1 * uFVoice) * (1.0 - rim) + vFire * 0.06;
   // A soft sheen and a sharp glint that slide over the bumps, and a faint warm light from
   // down and to the right.
   vec3 r = reflect(vec3(0.0, 0.0, -1.0), n);
@@ -334,7 +338,17 @@ void main() {
   // tint of its colour on light pages)
   float tl = clamp(vTouch, 0.0, 1.0);
   col = mix(col, mix(vec3(0.82, 0.93, 1.0), mix(vCol, vec3(1.0), 0.35), uFInk), tl * 0.6);
-  a = (a + spec * 0.3 + edge * 0.45 + warm * 0.12 + tl * tl * mix(0.5, 0.3, uFInk)) * uFAlpha;
+  // Light pages (ink): white light shows only over the tinted glass, so the shine is a broad soft
+  // window highlight up and to the left, the sharp glint, and a thin white bevel just inside the
+  // coloured outline on the lit side, like a glass marble.
+  float soft = pow(max(dot(n, uFLight), 0.0), 5.0) * vFront;
+  float glintInk = (sheen * 0.6 + glint) * vFront;
+  vec2 litSide = normalize(uFLight.xy + 1e-4);
+  float bevel = smoothstep(0.5, 0.78, fres) * (1.0 - smoothstep(0.86, 0.97, fres)) * smoothstep(0.0, 0.6, dot(normalize(n.xy + 1e-4), litSide));
+  float under = pow(max(dot(n, normalize(vec3(0.55, -0.6, 0.6))), 0.0), 10.0) * vFront;   // light bouncing back up from below right
+  float shine = clamp(soft * 0.9 + glintInk + bevel * 0.9 + under * 0.5, 0.0, 1.0) * uFInk;
+  col = mix(col, vec3(1.0), shine);
+  a = (a + spec * 0.3 + edge * 0.45 + warm * 0.12 + tl * tl * mix(0.5, 0.3, uFInk) + (soft * 0.5 + glintInk * 0.8 + bevel * 0.45 + under * 0.2) * uFInk) * uFAlpha;
 ${OUT}
 }`;
 
@@ -344,8 +358,9 @@ ${MESH_VARYINGS}
 uniform float uFAlpha; uniform float uFInk; uniform vec3 uFRing;
 void main() {
   float fres = clamp(vFres, 0.0, 1.0);
-  float a = (0.1 + 0.9 * pow(fres, 1.5) + vFire * mix(0.8, 0.4, uFInk) + vRing * mix(0.7, 0.4, uFInk)) * mix(0.18, 1.0, vFront) * uFAlpha;
+  float a = (mix(0.1, 0.16, uFInk) + 0.9 * pow(fres, 1.5) + vFire * mix(0.8, 0.6, uFInk) + vRing * mix(0.7, 0.4, uFInk)) * mix(0.18, 1.0, vFront) * uFAlpha;
   vec3 col = mix(vCol, vec3(1.0), (0.25 * pow(fres, 4.0) + 0.45 * vFire) * (1.0 - uFInk));
+  col = mix(col, mix(uFRing, vec3(1.0), 0.55), vFire * 0.65 * uFInk * vFront);   // light pages: lit lines turn to light
   col = mix(col, uFRing, vRing * 0.75);          // the voice's rings, in the speaker's colour
 ${OUT}
 }`;
@@ -363,6 +378,9 @@ void main() {
   float a = smoothstep(0.5, 0.0, l) * (tw + vFire * mix(1.3, 0.6, uFInk) + vRing * mix(1.0, 0.5, uFInk)) * (0.25 + 0.75 * clamp(vFres, 0.0, 1.0)) * mix(0.2, 1.0, vFront) * uFAlpha;
   vec3 col = mix(vCol, vec3(1.0), (0.35 + 0.4 * vFire) * (1.0 - uFInk));
   col = mix(col, uFRing, vRing * 0.7);
+  // light pages: a bead of glass, white at the centre, its colour round the edge (brighter when lit)
+  col = mix(col, vec3(1.0), smoothstep(0.3, 0.05, l) * (0.6 + 0.4 * vFire) * uFInk * vFront * (1.0 - smoothstep(0.45, 0.8, vFres)));
+  a *= 1.0 + 0.35 * uFInk;
 ${OUT}
 }`;
 
@@ -398,11 +416,11 @@ void main() {
   float k = 4.5 / (4.5 - p.z);
   vec2 q = p.xy * k;
   gl_Position = vec4((q.x + uShift.x) * uScale / uAspect, (q.y + uShift.y) * uScale, 0.0, 1.0);
-  // Brightest where the ribbon folds edge-on and along its two edges; faint in the middle of
-  // the ball (behind the captions) and at the back.
+  // Brightest where the ribbon folds edge-on and along its two edges; a little softer in the
+  // middle of the ball and at the back.
   float side = abs(aR.y);
-  vA = (0.05 + 0.55 * pow(edgeOn, 2.0) + 0.4 * pow(side, 6.0))
-     * mix(0.3, 1.0, smoothstep(0.12, 0.6, length(q)))
+  vA = (0.1 + 0.55 * pow(edgeOn, 2.0) + 0.4 * pow(side, 6.0))
+     * mix(0.75, 1.0, smoothstep(0.12, 0.6, length(q)))
      * (0.6 + 0.4 * smoothstep(-0.5, 0.5, p.z));
   vCol = mix(uCa, uCb, 0.5 + 0.5 * sin(a + uPhase * 0.5));
 }`;
@@ -509,9 +527,9 @@ uniform vec3 uK1; uniform vec3 uK2; uniform vec3 uK3;
 void main() {
   vec2 p = vec2((vUv.x * 2.0 - 1.0) * uCAspect, vUv.y * 2.0 - 1.0) / uCScale + vec2(0.0, 0.1) - uCOff;
   float sw = uCSwirl;
-  vec2 c1 = 0.2 * vec2(cos(sw), sin(sw * 1.3));
-  vec2 c2 = 0.2 * vec2(cos(sw * 0.8 + 2.1), sin(sw * 1.1 + 2.1));
-  vec2 c3 = 0.2 * vec2(cos(sw * 1.2 + 4.2), sin(sw * 0.9 + 4.2));
+  vec2 c1 = 0.3 * vec2(cos(sw), sin(sw * 1.3));
+  vec2 c2 = 0.3 * vec2(cos(sw * 0.8 + 2.1), sin(sw * 1.1 + 2.1));
+  vec2 c3 = 0.3 * vec2(cos(sw * 1.2 + 4.2), sin(sw * 0.9 + 4.2));
   float r2 = uCR * uCR;
   float g1 = exp(-dot(p - c1, p - c1) / r2);
   float g2 = exp(-dot(p - c2, p - c2) / r2);
@@ -807,7 +825,7 @@ export function SaathiBlob({ mode = 'idle', scale = 0.6, variant = 'night', clas
 
     const locs = (prog: WebGLProgram, names: string[]) =>
       Object.fromEntries(names.map((n) => [n, gl.getUniformLocation(prog, n)])) as Record<string, WebGLUniformLocation | null>;
-    const MESH_U = ['uRot', 'uTime', 'uScale', 'uAspect', 'uShift', 'uAmp', 'uFine', 'uFlow', 'uBreath', 'uPoint', 'uPx', 'uGrad', 'uFireAmt', 'uThink',
+    const MESH_U = ['uRot', 'uTime', 'uScale', 'uAspect', 'uShift', 'uAmp', 'uFine', 'uFlow', 'uBreath', 'uPoint', 'uPx', 'uGrad', 'uFireAmt', 'uThink', 'uSweep',
       'uC1', 'uC2', 'uC3', 'uSpeak', 'uSpeakMix', 'uTouch', 'uTouchAmp', 'uTouchWide', 'uTouchGlow', 'uStretch', 'uSquash', 'uRip', 'uRipAmp', 'uOut', 'uIn', 'uEnvFrac', 'uRingsOn',
       'uFTime', 'uFAlpha', 'uFInk', 'uFVoice', 'uFGloss', 'uFLight', 'uFGlint', 'uFHiss', 'uFRing'];
     const meshProgs = [skinProg, lineProg, nodeProg].map((prog) => ({ prog, u: locs(prog, MESH_U), aV: gl.getAttribLocation(prog, 'aV') }));
@@ -1013,7 +1031,7 @@ export function SaathiBlob({ mode = 'idle', scale = 0.6, variant = 'night', clas
       if (m === 'family') st.dir = -1;
       else if (m === 'saathi') st.dir = 1;
       st.flow += dt * (0.1 + 0.5 * st.talk) * st.dir;
-      st.spin += dt * (0.12 + 0.15 * st.talk + 0.25 * st.think);
+      st.spin += dt * (0.15 + 0.15 * st.talk + 0.25 * st.think);
       st.swirl += dt * (0.04 + 0.4 * st.talk);
       const glowT = speaking ? 0.92 + 0.1 * st.talk : m === 'ringing' ? 0.95 + 0.4 * shiver : m === 'ended' ? 0.55 : 0.85;
       st.glow += (glowT - st.glow) * ease(4);
@@ -1079,9 +1097,9 @@ export function SaathiBlob({ mode = 'idle', scale = 0.6, variant = 'night', clas
       const coreT = speaking ? 0.2 + 0.3 * loud : thinking ? 0.27 + 0.08 * Math.sin(t * 5.5)
         : m === 'ringing' ? 0.22 + 0.2 * shiver : m === 'ended' ? 0.08 : 0.21;
       st.core += (coreT - st.core) * ease(speaking ? 25 : 5);
-      st.coreSwirl += dt * (0.35 + 1.0 * st.talk + 2.4 * st.think);
+      st.coreSwirl += dt * (0.7 + 1.0 * st.talk + 2.4 * st.think);
       // The whole ball breathes out a little on every syllable.
-      const breath = 1 + (reduced ? 0 : 0.015 * Math.sin(t * 1.3) + (m === 'family' ? 0.035 : 0.05) * st.loud) - 0.025 * st.think;
+      const breath = 1 + (reduced ? 0 : 0.022 * Math.sin(t * 1.3) + (m === 'family' ? 0.035 : 0.05) * st.loud) - 0.025 * st.think;
       const gAng = -0.72 + (reduced ? 0 : 0.25 * Math.sin(t * 0.07));
       const grad = [Math.cos(gAng) * 0.88, Math.sin(gAng) * 0.88, 0.35];
       const gLen = Math.hypot(grad[0], grad[1], grad[2]);
@@ -1114,7 +1132,7 @@ export function SaathiBlob({ mode = 'idle', scale = 0.6, variant = 'night', clas
         gl.uniform3fv(du.uC1, pal.blue);
         gl.uniform3fv(du.uC3, pal.magenta);
         gl.uniform3fv(du.uGrad, gradN);
-        gl.uniform1f(du.uFAlpha, (day ? 0.55 : 0.7) * (m === 'ended' ? 0.5 : 1));
+        gl.uniform1f(du.uFAlpha, (day ? 0.7 : 0.7) * (m === 'ended' ? 0.5 : 1));
         gl.uniform1f(du.uFInk, day ? 1 : 0);
         gl.drawArrays(gl.POINTS, 0, dust.length / 4);
 
@@ -1122,7 +1140,7 @@ export function SaathiBlob({ mode = 'idle', scale = 0.6, variant = 'night', clas
         const tint = (c: number[]) => {
           const k = Math.min(0.6, st.speakMix * 1.3);
           const out = c.map((v, i) => v + (st.speak[i] - v) * k);
-          return day ? out.map((v) => v * 0.55 + 0.45) : out;
+          return day ? out.map((v) => v * 0.72 + 0.28) : out;
         };
         gl.useProgram(coreProg);
         gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
@@ -1131,7 +1149,7 @@ export function SaathiBlob({ mode = 'idle', scale = 0.6, variant = 'night', clas
         gl.uniform1f(cu.uCAspect, aspect);
         gl.uniform1f(cu.uCScale, scaleRef.current);
         gl.uniform1f(cu.uCSwirl, reduced ? 1 : st.coreSwirl);
-        gl.uniform1f(cu.uCAmt, (st.core + 0.06 * Math.max(0, sp.glow.x)) * dim * (day ? 1.6 : 1) * (px < 1 ? 0.3 : 1));
+        gl.uniform1f(cu.uCAmt, (st.core + 0.06 * Math.max(0, sp.glow.x)) * dim * (day ? 1.9 : 1) * (px < 1 ? 0.3 : 1));
         gl.uniform1f(cu.uCR, 0.36 + 0.1 * loud);
         gl.uniform1f(cu.uCInk, day ? 1 : 0);
         gl.uniform2f(cu.uCOff, sp.lx.x + 0.25 * near * sp.tx.x, sp.ly.x + 0.25 * near * sp.ty.x);
@@ -1161,7 +1179,7 @@ export function SaathiBlob({ mode = 'idle', scale = 0.6, variant = 'night', clas
           gl.uniform1f(ru.uWob, 0.4 + 0.8 * v);
           gl.uniform3fv(ru.uCa, pal[r.who]);
           gl.uniform3fv(ru.uCb, pal[r.to]);
-          gl.uniform1f(ru.uFAlpha, (day ? 0.32 : 0.42) * (0.75 + (day ? 0.35 : 0.6) * v) * dim);
+          gl.uniform1f(ru.uFAlpha, (day ? 0.6 : 0.55) * (0.75 + (day ? 0.35 : 0.6) * v) * dim);
           gl.drawElements(gl.TRIANGLES, rib.idx.length, gl.UNSIGNED_SHORT, 0);
         });
 
@@ -1181,11 +1199,12 @@ export function SaathiBlob({ mode = 'idle', scale = 0.6, variant = 'night', clas
           gl.uniform1f(u.uFine, reduced ? 0.025 : fine);
           gl.uniform1f(u.uFlow, st.flow);
           gl.uniform1f(u.uBreath, breath);
-          gl.uniform1f(u.uPoint, 2.4 * dpr);
+          gl.uniform1f(u.uPoint, (day ? 2.8 : 2.4) * dpr);
           gl.uniform1f(u.uPx, px);
           gl.uniform3fv(u.uGrad, gradN);
-          gl.uniform1f(u.uFireAmt, reduced ? 0.3 : st.fire * (day ? 0.6 : 1));
+          gl.uniform1f(u.uFireAmt, reduced ? 0.3 : st.fire * (day ? 0.85 : 1));
           gl.uniform1f(u.uThink, st.think);
+          gl.uniform1f(u.uSweep, reduced ? 0 : (day ? 0.85 : 0.6) * dim);
           gl.uniform3fv(u.uC1, pal.blue);
           gl.uniform3fv(u.uC2, pal.violet);
           gl.uniform3fv(u.uC3, pal.magenta);
@@ -1283,8 +1302,8 @@ export function SaathiBlob({ mode = 'idle', scale = 0.6, variant = 'night', clas
         gl.uniform1i(glowU.uWide, 1);
         // on light pages the haze doesn't grow while someone talks (it would read as darker)
         const glowAmt = day ? Math.min(st.glow, 0.88) : st.glow + 0.08 * loud;
-        gl.uniform1f(glowU.uTightAmt, (day ? 0.32 : 0.7) * glowAmt);
-        gl.uniform1f(glowU.uWideAmt, (day ? 0.4 : 0.85) * glowAmt);
+        gl.uniform1f(glowU.uTightAmt, (day ? 0.62 : 0.7) * glowAmt);
+        gl.uniform1f(glowU.uWideAmt, (day ? 0.62 : 0.85) * glowAmt);
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
         gl.activeTexture(gl.TEXTURE0);
       } else {

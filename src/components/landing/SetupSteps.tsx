@@ -1,16 +1,17 @@
 import React from 'react';
-import { UserRound, Pill, Clock, PhoneCall } from 'lucide-react';
+import { UserRound, Pill, Clock, BellRing } from 'lucide-react';
 import c from './liveCallPhone.module.css';
 
 /**
  * "Set it up once": the three things a family does at signup (the same order as
  * the onboarding wizard), then Saathi takes over. Sits between the "How it works"
- * heading and the phone, which shows the "does the rest" part.
+ * heading and the phone, which shows the "does the rest" part. Covers both ways in: calls (the
+ * calling plans) and WhatsApp checks (Remind), which can be for the person themself.
  */
 const STEPS = [
-  { icon: UserRound, title: 'Add your parent', note: 'Name, number, language' },
-  { icon: Pill, title: 'Add their medicines', note: 'Snap the prescription' },
-  { icon: Clock, title: 'Choose call times', note: 'Morning, evening, bedtime' },
+  { icon: UserRound, title: 'Add your parent', note: 'Or yourself: name, number, language' },
+  { icon: Pill, title: 'Add the medicines', note: 'In your own words, no prescription needed' },
+  { icon: Clock, title: 'Pick the times', note: 'A call or a WhatsApp, morning to bedtime' },
 ];
 
 export function SetupSteps() {
@@ -26,10 +27,10 @@ export function SetupSteps() {
         </li>
       ))}
       <li className={`${c.setupStep} ${c.setupDone}`}>
-        <span className={c.setupIcon}><PhoneCall size={17} /></span>
+        <span className={c.setupIcon}><BellRing size={17} /></span>
         <span className={c.setupText}>
-          <b>Saathi takes over</b>
-          <small>Calls on time, every day</small>
+          <b>Aaptha takes over</b>
+          <small>Calls or WhatsApp checks, on time</small>
         </span>
       </li>
     </ol>

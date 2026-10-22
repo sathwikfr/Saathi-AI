@@ -9,11 +9,11 @@ import { type OrbMode, type SaathiOrbHandle } from '@/components/voice/SaathiOrb
 import { SaathiBlob } from '@/components/voice/SaathiBlob';
 import { SaathiGlass } from '@/components/voice/SaathiGlass';
 import { MagneticLink } from '@/components/motion/MagneticLink';
-import { WordReveal } from '@/components/motion/WordReveal';
 import { HeroWaves } from './HeroWaves';
 import { HeroFilmModal } from './HeroFilmModal';
 import { CALL_LANG_EVENT, isCallLang } from './callScript';
 import s from './voiceHero.module.css';
+import { PLANS } from '@/lib/plans';
 
 /**
  * Landing hero, three columns on a soft aurora:
@@ -64,7 +64,7 @@ const LANGS: Record<LangKey, {
   },
 };
 
-const TO_YOU = 'Hello to you too. I’m Saathi. I’ll call your mother like this every day, and tell you how she is.';
+const TO_YOU = 'I’m Saathi. I’ll call your parents like this every day, and tell you how they are.';
 
 type Line = { text: string; lang: string; voice?: SpeechSynthesisVoice; en: string; to: 'parent' | 'reply' | 'you'; pitch: number };
 type Status = 'idle' | 'speaking' | 'done';
@@ -136,8 +136,37 @@ function loadVoices(synth: SpeechSynthesis): Promise<SpeechSynthesisVoice[]> {
   });
 }
 
-/* The accent line, word by word (so it can wrap on a phone). */
+/**
+ * A heading whose words rise out of a mask one after another. Both hero headings use it, as CSS from the first
+ * paint, so they start together (the left one used to wait for hydration, and the right one did not).
+ * `step` is the gap between words: 0.06 s for the 11-word left heading, 0.15 s for the 5-word right one, so both
+ * finish together. ('br' = a line break; motion's AnimatePresence initial={false} would skip a motion entrance.)
+ */
+function RiseWords({ items, step }: { items: (React.ReactNode | 'br')[]; step: number }) {
+  let n = 0;
+  return (
+    <>
+      {items.map((w, i) => w === 'br'
+        ? <br key={i} />
+        : (
+          <React.Fragment key={i}>
+            {n > 0 && items[i - 1] !== 'br' && ' '}
+            <span className={s.idleWord}>
+              <span style={{ ['--w' as string]: n++, ['--step' as string]: `${step}s` }}>{w}</span>
+            </span>
+          </React.Fragment>
+        ))}
+    </>
+  );
+}
+
 const ACCENT = ['Peace', 'of', 'mind', 'for', 'you.'];
+const LEFT_WORDS: (React.ReactNode | 'br')[] = [
+  'A', 'daily', 'call', 'for', 'br', 'your', 'parents.', 'br',
+  ...ACCENT.map((w, i) => <em key={w} style={{ ['--i' as string]: i }}>{w}</em>),
+];
+const RIGHT_WORDS: React.ReactNode[] = ['Hear', 'how', 'Saathi', 'greets', <em key="amma">Amma</em>];
+
 
 const SUB_RIGHT = 'Short, friendly calls at medicine time, in their language, and an update on your WhatsApp after every call.';
 
@@ -340,14 +369,12 @@ export function VoiceHero({ primaryHref, primaryLabel, trialDays }: { primaryHre
   parts.forEach((p, i) => { if (p.start <= Math.max(0, reached - 1)) ci = i; });
   const current = parts[ci];
   const litTo = current ? Math.max(0, Math.min(current.text.length, reached - current.start)) : 0;
-  const enParts = line?.en ? chunk(line.en) : [];
-  const enText = enParts.length === parts.length ? enParts[ci]?.text : line?.en;
 
   const speaking = status === 'speaking';
 
   const captionKey = status === 'idle' ? 'idle' : status === 'done' ? 'done' : line && current ? `${lang}-${lineIdx}-${ci}` : 'ring';
   const caption = status === 'idle'
-    ? <>Hear how Saathi greets <em>Amma</em></>
+    ? <RiseWords items={RIGHT_WORDS} step={0.15} />
     : status === 'done'
       ? <>“That’s how Saathi checks in, <em>every day”</em></>
       : line && current
@@ -370,10 +397,7 @@ export function VoiceHero({ primaryHref, primaryLabel, trialDays }: { primaryHre
       <div className={s.panel}>
         {/* Left: the pitch */}
         <div className={s.left} data-hero-copy>
-          <WordReveal as="h1" className={s.h1} delay={0.35} onLoad>
-            A daily call for<br />your parents.<br />
-            {ACCENT.flatMap((w, i) => [i ? ' ' : null, <em key={w} style={{ ['--i' as string]: i }}>{w}</em>])}
-          </WordReveal>
+          <h1 className={s.h1}><RiseWords items={LEFT_WORDS} step={0.06} /></h1>
           <p className={`${s.sub} ${s.rise}`} style={rise(6)}>
             Aaptha calls your parents at medicine time, in their own language, and tells you how every call went.
           </p>
@@ -411,7 +435,7 @@ export function VoiceHero({ primaryHref, primaryLabel, trialDays }: { primaryHre
         <div className={s.right} data-hero-side>
           {/* With the pitch on the left: the heading and its line at the top, then the buttons and the language + note level with the left's */}
           <div className={s.rtop}>
-          <div className={`${s.caption} ${s.rise}`} style={rise(6)} aria-live="polite">
+          <div className={s.caption} aria-live="polite">
             <AnimatePresence mode="popLayout" initial={false}>
               <motion.p
                 key={captionKey}
@@ -426,17 +450,22 @@ export function VoiceHero({ primaryHref, primaryLabel, trialDays }: { primaryHre
               </motion.p>
             </AnimatePresence>
           </div>
-          <p className={`${s.rsub} ${s.rise}`} style={rise(7)}>{speaking && enText ? enText : SUB_RIGHT}</p>
+          <p className={`${s.rsub} ${s.rise}`} style={rise(6)}>{SUB_RIGHT}</p>
             {/* What Saathi says, in the chosen language (the live captions take over while it plays) */}
-            {!speaking && (
-              <blockquote className={`${s.greet} ${s.rise}`} style={rise(8)}>
-                <p lang={lang}>“{LANGS[lang].native}”</p>
-                {LANGS[lang].en && <small>{LANGS[lang].en}</small>}
-                <footer><i aria-hidden="true" />Saathi · 8:30 AM morning call</footer>
-              </blockquote>
-            )}
+            {/* While a line is being said the card shows that whole line (its English meaning when it isn't English), so the column stays full */}
+            {(() => {
+              const live = speaking && line;
+              const who = !line ? '' : line.to === 'reply' ? 'Amma' : 'Saathi';
+              return (
+                <blockquote className={`${s.greet} ${s.rise}`} style={rise(7)} data-live={live || undefined}>
+                  {live ? <p lang={line.en ? 'en' : lang}>“{line.en || line.text}”</p>
+                    : <><p lang={lang}>“{LANGS[lang].native}”</p>{LANGS[lang].en && <small>{LANGS[lang].en}</small>}</>}
+                  <footer><i aria-hidden="true" />{live ? `${who} · ${line.to === 'reply' ? 'replying' : 'speaking'}` : 'Saathi · 8:30 AM morning call'}</footer>
+                </blockquote>
+              );
+            })()}
           </div>
-          <div className={`${s.rctas} ${s.rise}`} style={rise(8)}>
+          <div className={`${s.rctas} ${s.rise}`} style={rise(7)}>
             <button type="button" className={s.btnInk} onClick={onPlay} aria-pressed={speaking}>
               {speaking ? <><Square size={14} fill="currentColor" /> Stop</>
                 : status === 'done' ? <><RotateCcw size={17} /> Hear it again</>
@@ -449,7 +478,7 @@ export function VoiceHero({ primaryHref, primaryLabel, trialDays }: { primaryHre
           </div>
           <div className={s.rfoot}>
             {/* The greeting's language; the How it works film follows it too (CALL_LANG_EVENT). */}
-            <div className={`${s.langs} ${s.rise}`} style={rise(9)} role="group" aria-label="Greeting language">
+            <div className={`${s.langs} ${s.rise}`} style={rise(8)} role="group" aria-label="Greeting language">
               {(['en', 'te', 'hi'] as LangKey[]).map((k) => (
                 <button
                   key={k}
@@ -461,7 +490,7 @@ export function VoiceHero({ primaryHref, primaryLabel, trialDays }: { primaryHre
                 </button>
               ))}
             </div>
-            <p className={`${s.note} ${s.rise}`} style={rise(10)}>{note}</p>
+            <p className={`${s.note} ${s.rise}`} style={rise(8)}>{note}</p>
           </div>
         </div>
 
@@ -480,6 +509,7 @@ export function VoiceHero({ primaryHref, primaryLabel, trialDays }: { primaryHre
           { icon: <BellRing size={17} />, text: 'Urgent alerts to family and neighbours' },
           { icon: <ShieldCheck size={17} />, text: 'Never gives medical advice' },
           { icon: <Pause size={17} />, text: 'Pause any time for a trip' },
+          { icon: <BellRing size={17} />, text: `Just reminders? ${PLANS.essential.name} on WhatsApp, ₹${PLANS.essential.priceMonthly} a month` },
           { icon: <Sparkles size={17} />, text: `${trialDays}-day free trial` },
         ]}
       />

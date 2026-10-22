@@ -12,7 +12,7 @@
 
 .hero {
   /* Ball radius of the orb: from the width, capped so everything fits the screen height. */
-  --r: clamp(110px, min(10.6vw, (100svh - 220px) * 0.31), 205px);   /* capped so the side columns keep room on big screens */
+  --r: clamp(90px, min(8.5vw, (100svh - 220px) * 0.25), 165px);   /* capped so the side columns keep room on big screens (was 10.6vw / 0.31 / 205px) */
 
   /* Light: pastel studio light (the dark theme overrides these below) */
   --hero-bg: linear-gradient(180deg, #f6f4fb 0%, #f8f5f4 60%, var(--paper) 100%);
@@ -268,9 +268,15 @@
   transition: transform var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out);
 }
 
-.btnOutline:hover {
-  transform: translateY(-2px);
-  box-shadow: inset 0 0 0 1px var(--glass-line), 0 12px 26px -12px rgba(26, 26, 36, 0.35);
+@media (hover: hover) and (pointer: fine) {
+  .btnOutline:hover {
+    transform: translateY(-2px);
+    box-shadow: inset 0 0 0 1px var(--glass-line), 0 12px 26px -12px rgba(26, 26, 36, 0.35);
+  }
+}
+
+.btnOutline:active {
+  transform: scale(0.97);
 }
 
 .proof {
@@ -288,6 +294,12 @@
   margin: 0 8px;
 }
 
+/* Phones: the small print under the buttons was hard to read. */
+@media (max-width: 640px) {
+  .proof { font-size: 14px; color: var(--dim); }
+  .note { font-size: 13.5px; }
+}
+
 /* ---------- Centre: the orb and the capsule ---------- */
 
 .stage {
@@ -297,7 +309,7 @@
   justify-self: center;
   position: relative;
   z-index: 1;
-  width: calc(var(--r) * 3.3);
+  width: calc(var(--r) * 4.1);                                   /* wider than the ball: keeps the side columns as they were when the ball shrank */
   height: calc(var(--r) * 2.2 + max(42px, var(--r) * 0.34));   /* the ball, then the capsule under it */
   margin: 0 calc(var(--r) * 0.1) 0 calc(var(--r) * -0.22);   /* reaches into the pitch's gutter, like the mockup */
 }
@@ -315,6 +327,11 @@
   -webkit-mask-image: radial-gradient(closest-side, #000 80%, transparent 100%);
   mask-image: radial-gradient(closest-side, #000 80%, transparent 100%);
   animation: orbForm 1.7s cubic-bezier(0.16, 1, 0.3, 1) 0.15s both;
+}
+
+/* The night orb's glow is loud against the dark page: a little quieter. */
+:global(:root[data-theme='dark']) .orb[data-kind='blob'] {
+  opacity: 0.82;
 }
 
 /* /?orb=glass: the Siri-style glass ball needs only a little room for its glow, and no fade mask. */
@@ -382,13 +399,20 @@
     conic-gradient(from 200deg, #2c66ff, #8b4bff, #ff4fbf, #6d6bff, #2c66ff) border-box;
   border: 3px solid transparent;
   box-shadow: 0 0 0 5px rgba(120, 100, 255, 0.16), 0 0 28px 2px rgba(120, 96, 255, 0.55);
-  animation: micPop 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) 0.45s both;
+  animation: micPop 0.6s cubic-bezier(0.23, 1, 0.32, 1) 0.45s both;   /* settles, no overshoot bounce */
   transition: transform var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out);
 }
 
-.mic:hover {
-  transform: scale(1.06);
-  box-shadow: 0 0 0 6px rgba(120, 100, 255, 0.22), 0 0 36px 4px rgba(120, 96, 255, 0.7);
+/* Hover lift only where there is a real hover (a tap on a phone must not leave it raised). */
+@media (hover: hover) and (pointer: fine) {
+  .mic:hover {
+    transform: scale(1.06);
+    box-shadow: 0 0 0 6px rgba(120, 100, 255, 0.22), 0 0 36px 4px rgba(120, 96, 255, 0.7);
+  }
+}
+
+.mic:active {
+  transform: scale(0.96);
 }
 
 .mic:focus-visible {
@@ -397,7 +421,7 @@
 }
 
 @keyframes micPop {
-  from { transform: scale(0); opacity: 0; }
+  from { transform: scale(0.9); opacity: 0; }
 }
 
 /* While Saathi talks, rings breathe out of the mic. */
@@ -463,6 +487,25 @@
   background-clip: text;
   color: transparent;
   animation: gradSweep 2.2s cubic-bezier(0.16, 1, 0.3, 1) 0.2s both;
+}
+
+/* The right heading's words rise out of a mask, one after another (matches the left headline's word reveal). */
+.idleWord {
+  display: inline-block;
+  overflow: hidden;
+  vertical-align: top;
+  padding-bottom: 0.12em;
+  margin-bottom: -0.12em;
+}
+
+.idleWord > span {
+  display: inline-block;
+  /* Both headings start at 0.35 s; --step is set per heading so they also finish together (RiseWords in VoiceHero.tsx). */
+  animation: wordRise 0.9s cubic-bezier(0.16, 1, 0.3, 1) calc(0.35s + var(--w) * var(--step)) both;
+}
+
+@keyframes wordRise {
+  from { transform: translateY(105%); opacity: 0; }
 }
 
 @keyframes gradSweep {
@@ -541,9 +584,16 @@
   backdrop-filter: blur(10px);
 }
 
-.btnInk:hover,
-.btnLight:hover {
-  transform: translateY(-2px);
+@media (hover: hover) and (pointer: fine) {
+  .btnInk:hover,
+  .btnLight:hover {
+    transform: translateY(-2px);
+  }
+}
+
+.btnInk:active,
+.btnLight:active {
+  transform: scale(0.97);
 }
 
 .btnInk:focus-visible,
@@ -565,6 +615,7 @@
 }
 
 .langs button {
+  position: relative;
   padding: 6px 14px;
   border: 0;
   border-radius: var(--r-full);
@@ -575,6 +626,12 @@
   color: var(--dim);
   cursor: pointer;
   transition: background var(--dur-fast) ease, color var(--dur-fast) ease, box-shadow var(--dur-fast) ease;
+}
+
+.langs button::after {
+  content: '';
+  position: absolute;
+  inset: -6px 0;                 /* 44px+ tap area, same look */
 }
 
 .langs button:hover {
@@ -636,8 +693,12 @@
   }
 
   .h1 { font-size: clamp(34px, 3.9vw, 68px); }
+
+  /* The two buttons stay on one row (stacked, they pushed the right column's buttons out of line). */
+  .ctas { flex-wrap: nowrap; }
+  .ctas > * { flex: 0 1 auto; min-width: 0; padding: 0 clamp(16px, 1.4vw, 28px); }
   .caption { --qfs: clamp(26px, 3vw, 52px); }
-  .quoteLive { font-size: clamp(20px, 2vw, 34px); }
+  .quoteLive { font-size: clamp(22px, 2.5vw, 42px); }
 
   .caption,
   .h1 {
@@ -648,6 +709,19 @@
     align-self: start;
     margin-top: clamp(16px, 2.4vh, 24px);
   }
+
+  /* Right column: heading, line, quote card, buttons and language switch all share one width and one edge,
+     with even gaps between them (they used to shrink to their own content, so every row ended somewhere else). */
+  .right { justify-items: stretch; }
+  .rsub { max-width: none; min-height: 0; }
+  .greet { max-width: none; margin-top: clamp(20px, 3vh, 28px); }
+  .rctas { flex-wrap: nowrap; padding-top: clamp(24px, 3.4vh, 36px); }
+  .rctas > * { flex: 1 1 0; justify-content: center; padding: 0 12px; }
+  /* .right prefix: .rfoot itself is declared again further down the file. */
+  .right .rfoot { flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: 14px; padding-top: 16px; }
+  .right .rfoot .langs { margin-top: 0; display: flex; }
+  .right .rfoot .langs button { flex: 1; text-align: center; }
+  .right .rfoot .note { max-width: none; text-align: center; }
 
   /* The right heading and its line stay together at the top, across the left's headline + subline rows. */
   .rtop {
@@ -688,24 +762,12 @@
   text-align: left;                    /* stays a left-aligned card even where the column centres its text */
   margin-top: clamp(18px, 2.8vh, 28px);
   max-width: 30em;
-  padding: 16px 18px 14px 20px;
-  border-radius: 18px;
+  padding: 16px 20px 14px;
+  border-radius: 16px;
   background: var(--glass);
-  box-shadow: inset 0 0 0 1px var(--glass-line), 0 18px 40px -28px rgba(76, 58, 170, 0.45);
+  box-shadow: inset 0 0 0 1px var(--glass-line);   /* a plain card: no coloured edge bar, no tinted glow */
   -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
-}
-
-/* A thin bar down the left edge in the orb's colours. */
-.greet::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 14px;
-  bottom: 14px;
-  width: 3px;
-  border-radius: 3px;
-  background: linear-gradient(180deg, #5b8cff, #9b4dff, #ff6ab4);
 }
 
 .greet p {
@@ -757,7 +819,7 @@
 
 @media (max-width: 1099px) {
   .hero {
-    --r: clamp(96px, 26vw, 170px);
+    --r: clamp(80px, 21vw, 140px);
   }
 
   .panel {
@@ -802,7 +864,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .aurora, .orb, .capsule, .mic, .rise, .quote em {
+  .aurora, .orb, .capsule, .mic, .rise, .quote em, .idleWord > span {
     animation: none !important;
   }
   .capsule[data-live] .mic::after { animation: none; }
