@@ -370,7 +370,7 @@ function DashboardContent() {
   // Toggle Medicine Active State
   const handleToggleMed = async (medId: string) => {
     try {
-      await fetch(`/api/parents/${selectedParentId}/medicines`, {
+      const res = await fetch(`/api/parents/${selectedParentId}/medicines`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ medicineId: medId })
