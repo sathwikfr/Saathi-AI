@@ -1,11 +1,11 @@
 /* ==========================================================================
    Landing hero (VoiceHero.tsx): three columns on a soft aurora.
-   - left: the pitch. centre: the orb with a dark capsule across it (mic +
-     voice waves). right: the call as it happens (words, buttons).
+   - left: the pitch. centre: the orb (Blob | Glass switch above it) and, only
+     while the sample plays, a dark capsule under it (mic + voice waves). right: the call as it happens (words, buttons).
    - a row of four promises underneath.
    The hero slides up under the (transparent at the top) navbar, so the aurora
    reaches the top of the screen. It opens like a film: the light comes up,
-   the orb forms out of a blur, the capsule opens from the mic, the rest rises.
+   the orb forms out of a blur, the rest rises.
    Below 1100px it stacks: pitch, orb, call, promises.
    The "Watch video" player (HeroFilmModal.tsx) is styled at the end.
    ========================================================================== */
@@ -312,6 +312,7 @@
   width: calc(var(--r) * 4.1);                                   /* wider than the ball: keeps the side columns as they were when the ball shrank */
   height: calc(var(--r) * 2.2 + max(42px, var(--r) * 0.34));   /* the ball, then the capsule under it */
   margin: 0 calc(var(--r) * 0.1) 0 calc(var(--r) * -0.22);   /* reaches into the pitch's gutter, like the mockup */
+  --ball: 0.72;                    /* how big the ball is drawn (user, 2026-10-23: tried 0.78 and 0.65, settled here) */
 }
 
 /* The ball (radius --r) at the top of the stage, the capsule under it. The blob's canvas is 3.85 x --r
@@ -326,7 +327,19 @@
   pointer-events: none;
   -webkit-mask-image: radial-gradient(closest-side, #000 80%, transparent 100%);
   mask-image: radial-gradient(closest-side, #000 80%, transparent 100%);
+  scale: var(--ball);             /* `scale` composes with orbForm's transform */
+  transform-origin: 0 0;          /* scale about the point the translate(-50%) centres on, or the ball drifts right/down */
   animation: orbForm 1.7s cubic-bezier(0.16, 1, 0.3, 1) 0.15s both;
+}
+
+/* Blob | Glass, above the ball (both orbs are shown to people until one is picked). Reuses .langs. */
+.orbSwitch {
+  position: absolute;
+  left: 50%;
+  top: calc(var(--r) * (1.02 - var(--ball)));   /* the ball's top edge */
+  translate: -50% calc(-100% - 22px);
+  z-index: 2;
+  margin: 0;
 }
 
 /* The night orb's glow is loud against the dark page: a little quieter. */
@@ -352,8 +365,8 @@
   --mic: calc(var(--h) * 0.86);
   position: absolute;
   left: 50%;
-  top: calc(var(--r) * 2.2);
-  width: calc(var(--r) * 2.05);
+  top: calc(var(--r) * (1.24 + var(--ball)));   /* just under the ball */
+  width: calc(var(--r) * (0.45 + 2 * var(--ball)));   /* a little wider than the ball */
   max-width: 100%;
   height: var(--h);
   translate: -50% 0;
@@ -362,8 +375,17 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), inset 0 0 0 1px var(--capsule-line), var(--capsule-shadow);
   -webkit-backdrop-filter: blur(14px);
   backdrop-filter: blur(14px);
-  /* Opens from the mic outward, like a film's letterbox. */
-  animation: capsuleOpen 1.1s cubic-bezier(0.7, 0, 0.2, 1) 0.75s both;
+  /* Hidden until a sample plays; then it opens from the mic outward, like a film's letterbox. */
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.25s ease, visibility 0s linear 0.25s;
+}
+
+.capsule[data-live] {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.2s ease;
+  animation: capsuleOpen 0.8s cubic-bezier(0.7, 0, 0.2, 1) both;
 }
 
 @keyframes capsuleOpen {
@@ -399,7 +421,6 @@
     conic-gradient(from 200deg, #2c66ff, #8b4bff, #ff4fbf, #6d6bff, #2c66ff) border-box;
   border: 3px solid transparent;
   box-shadow: 0 0 0 5px rgba(120, 100, 255, 0.16), 0 0 28px 2px rgba(120, 96, 255, 0.55);
-  animation: micPop 0.6s cubic-bezier(0.23, 1, 0.32, 1) 0.45s both;   /* settles, no overshoot bounce */
   transition: transform var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out);
 }
 
@@ -418,10 +439,6 @@
 .mic:focus-visible {
   outline: 2px solid #8fb0ff;
   outline-offset: 4px;
-}
-
-@keyframes micPop {
-  from { transform: scale(0.9); opacity: 0; }
 }
 
 /* While Saathi talks, rings breathe out of the mic. */
@@ -848,7 +865,7 @@
     align-self: center;
     width: min(100%, calc(var(--r) * 3.3));
     height: calc(var(--r) * 2.2 + max(42px, var(--r) * 0.34));
-    margin: 4px 0;
+    margin: 40px 0 4px;              /* room for the Blob | Glass switch above the ball */
   }
 
   .caption { justify-content: center; --qfs: clamp(28px, 7.6cqi, 46px); }

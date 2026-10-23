@@ -18,9 +18,9 @@ import { PLANS } from '@/lib/plans';
 /**
  * Landing hero, three columns on a soft aurora:
  *  - left: the pitch and the trial button.
- *  - centre: Saathi's voice orb (the living glass blob, SaathiBlob; /?orb=glass shows the Siri-style SaathiGlass) and a dark capsule
- *    under it: the mic in the middle plays a sample greeting (browser speech synthesis), and the capsule's waves move with the
- *    voice, Saathi's on the left, Amma's on the right.
+ *  - centre: Saathi's voice orb (the living glass blob, SaathiBlob, or the Siri-style SaathiGlass: a switch above picks one) and,
+ *    only while the sample plays, a dark capsule under it: the mic in the middle stops it, and the capsule's waves move with
+ *    the voice, Saathi's on the left, Amma's on the right.
  *  - right: the call as it happens: the words being said (spoken part lit), the
  *    translation, "Hear a sample call" and "Watch video" (the call film, in a player that grows out
  *    of the button).
@@ -41,17 +41,17 @@ const LANGS: Record<LangKey, {
   en: {
     label: 'English',
     voice: 'en',
-    native: 'Hello Amma! This is Saathi. Have you had breakfast? Did you take your BP tablet?',
-    roman: 'Hello Amma! This is Saathi. Have you had breakfast? Did you take your BP tablet?',
+    native: 'Good morning, Amma. It’s Saathi. Have you had your breakfast? And your BP tablet?',
+    roman: 'Good morning, Amma. It’s Saathi. Have you had your breakfast? And your BP tablet?',
     en: '',
-    reply: { native: 'Yes, I took it.', roman: 'Yes, I took it.', en: '' },
+    reply: { native: 'Yes, I took it after breakfast.', roman: 'Yes, I took it after breakfast.', en: '' },
   },
   te: {
     label: 'తెలుగు',
     voice: 'te',
     native: 'నమస్కారం అమ్మగారు! నేను సాథీ. టిఫిన్ అయ్యిందా? బీపీ టాబ్లెట్ వేసుకున్నారా?',
     roman: 'Namaskaram Ammagaru! Nenu Saathi. Tiffin ayyinda? BP tablet vesukunnara?',
-    en: 'Hello Ammagaru! I’m Saathi. Have you had breakfast? Did you take your BP tablet?',
+    en: 'Good morning, Amma. It’s Saathi. Have you had breakfast? Did you take your BP tablet?',
     reply: { native: 'ఆ, వేసుకున్నాను.', roman: 'Aa, vesukunnanu.', en: 'Yes, I took it.' },
   },
   hi: {
@@ -59,12 +59,12 @@ const LANGS: Record<LangKey, {
     voice: 'hi',
     native: 'नमस्ते अम्मा जी! मैं साथी हूँ। नाश्ता हो गया? बीपी की गोली ली?',
     roman: 'Namaste Amma ji! Main Saathi hoon. Nashta ho gaya? BP ki goli li?',
-    en: 'Hello Amma ji! I’m Saathi. Have you had breakfast? Did you take your BP tablet?',
+    en: 'Good morning, Amma ji. It’s Saathi. Have you had breakfast? Did you take your BP tablet?',
     reply: { native: 'हाँ, ले ली।', roman: 'Haan, le li.', en: 'Yes, I took it.' },
   },
 };
 
-const TO_YOU = 'I’m Saathi. I’ll call your parents like this every day, and tell you how they are.';
+const TO_YOU = 'Hi, I’m Saathi. I’ll check on your parents like this at every medicine time, and send you the answer on WhatsApp.';
 
 type Line = { text: string; lang: string; voice?: SpeechSynthesisVoice; en: string; to: 'parent' | 'reply' | 'you'; pitch: number };
 type Status = 'idle' | 'speaking' | 'done';
@@ -182,7 +182,7 @@ const subscribeTheme = (cb: () => void) => {
   return () => mo.disconnect();
 };
 const readDarkTheme = () => document.documentElement.getAttribute('data-theme') === 'dark';
-// The Siri-style glass orb is saved for later (user, 2026-10-17): the blob is live, /?orb=glass shows the glass one.
+// Both orbs are shown to people for now (user, 2026-10-23): the switch above the orb picks one, /?orb=glass starts on glass.
 const readGlass = () => new URLSearchParams(window.location.search).get('orb') === 'glass';
 const noSubscribe = () => () => {};
 
@@ -190,7 +190,9 @@ export function VoiceHero({ primaryHref, primaryLabel, trialDays }: { primaryHre
   const orb = useRef<SaathiOrbHandle>(null);
   const [orbMode, setOrbMode] = useState<OrbMode>('idle');
   const dark = useSyncExternalStore(subscribeTheme, readDarkTheme, () => false);
-  const glass = useSyncExternalStore(noSubscribe, readGlass, () => false);
+  const urlGlass = useSyncExternalStore(noSubscribe, readGlass, () => false);
+  const [orbPick, setOrbPick] = useState<'blob' | 'glass' | null>(null);
+  const glass = orbPick ? orbPick === 'glass' : urlGlass;
 
   const [lang, setLang] = useState<LangKey>('en');
   const [status, setStatus] = useState<Status>('idle');
@@ -312,7 +314,7 @@ export function VoiceHero({ primaryHref, primaryLabel, trialDays }: { primaryHre
         if (id !== runId.current) return;
         if (i >= lines.length) { finish(); return; }
         const l = lines[i];
-        const u = new SpeechSynthesisUtterance(l.text);
+        const u = new SpeechSynthesisUtterance(l.text.replace(/Saathi/g, 'Saathee'));   // English voices say 'Sati' otherwise
         u.lang = l.lang;
         if (l.voice) u.voice = l.voice;
         u.rate = l.to === 'reply' ? 0.88 : 0.95;
@@ -414,6 +416,13 @@ export function VoiceHero({ primaryHref, primaryLabel, trialDays }: { primaryHre
 
         {/* Centre: the orb, and the capsule across it with the mic and the voice */}
         <div className={s.stage} data-hero-orb>
+          <div className={`${s.langs} ${s.orbSwitch}`} role="group" aria-label="Orb style">
+            {(['blob', 'glass'] as const).map((k) => (
+              <button key={k} type="button" aria-pressed={glass === (k === 'glass')} onClick={() => setOrbPick(k)}>
+                {k === 'blob' ? 'Blob' : 'Glass'}
+              </button>
+            ))}
+          </div>
           <div className={s.orb} data-kind={glass ? 'glass' : 'blob'} aria-hidden="true">
             {glass ? <SaathiGlass ref={orb} mode={orbMode} /> : <SaathiBlob ref={orb} mode={orbMode} variant={dark ? 'night' : 'day'} scale={0.52} />}
           </div>

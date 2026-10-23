@@ -161,7 +161,7 @@ src/components/landing/LiveCallPhone.tsx   "How it works": scripted example call
                               (IslandWave.tsx, canvas) flow left->right green for Saathi, right->left red for Amma.
                               Script in callScript.ts: hand-written English/Telugu/Hindi, shared timings, no API.
                               Plays twice by itself, then waits with "Ring again". The summary card's call length reads CALL_MS.
-src/components/voice/SaathiGlass.tsx   SAVED alternative hero orb (2026-10-17; the user keeps the blob live for now, see it at /?orb=glass): a Siri-style "Glass Liquid" shader, ported
+src/components/voice/SaathiGlass.tsx   alternative hero orb (2026-10-17; since 2026-10-23 a Blob | Glass switch above the hero orb picks it, /?orb=glass starts on it; the mic capsule only shows while the sample plays): a Siri-style "Glass Liquid" shader, ported
                               to WebGL1): a dark glass ball, the same in both themes, with a white crest + gold/cyan/pink/violet bands
                               inside, lens refraction with a rainbow fringe, a thin rim, key/fill lights. Voice = SaathiBlob's word-to-
                               sounds level (speed, band spread, outline wobble, sheen); cyan for Saathi, pink for family; thinking
