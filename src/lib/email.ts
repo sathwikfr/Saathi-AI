@@ -145,7 +145,7 @@ function renderAapthaTemplate({
       font-weight: 700;
       letter-spacing: -0.5px;
       text-decoration: none;
-      font-family: 'Fraunces', Georgia, serif;
+      font-family: 'Bricolage Grotesque', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
     }
     .logo-dot {
       color: #c98a3a;
@@ -176,7 +176,7 @@ function renderAapthaTemplate({
       font-weight: 700;
       color: #2b2621;
       margin: 0 0 16px;
-      font-family: 'Fraunces', Georgia, serif;
+      font-family: 'Bricolage Grotesque', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
       line-height: 1.3;
     }
     .btn-container {
