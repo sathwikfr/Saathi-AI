@@ -231,6 +231,8 @@ export function MedicinesPanel({ parentId, parentName, parent, familyName, medic
   const names = new Map(medicines.filter(o => o.isActive).map(o => [o.id, o.name]));
   for (const m of medicines) {
     if (!nicknameFromName(m.name)) continue;
+    // A name that differs from the saved real name was picked by the family ("Rosuva Gold"): leave it alone.
+    if (m.officialName && medicineKey(m.officialName) !== medicineKey(m.name)) continue;
     const wanted = nicknameFromName(m.officialName || m.name);
     if (!wanted || medicineKey(wanted) === medicineKey(m.name)) continue;
     const others = [...names].filter(([id]) => id !== m.id).map(([, n]) => n);
