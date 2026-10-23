@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { isLocalDevRequest } from '@/lib/devMode';
 import { getUserByEmail } from '@/lib/db';
-import { createPasswordResetToken, checkRateLimit, recordFailedAttempt } from '@/lib/security';
+import { createPasswordResetToken, checkLastingLimit, recordLastingFailure } from '@/lib/security';
 import { sendPasswordResetEmail } from '@/lib/email';
 
 export async function POST(req: Request) {
@@ -15,7 +15,7 @@ export async function POST(req: Request) {
     const rateLimitKey = `forgot:${cleanEmail}`;
 
     // 1. Rate limiting (max 3 requests in 15 minutes)
-    const rateStatus = checkRateLimit(rateLimitKey, 3, 15 * 60 * 1000);
+    const rateStatus = await checkLastingLimit(rateLimitKey, 3, 15 * 60 * 1000);
     if (!rateStatus.allowed) {
       return NextResponse.json(
         {
@@ -25,7 +25,7 @@ export async function POST(req: Request) {
       );
     }
 
-    recordFailedAttempt(rateLimitKey);
+    await recordLastingFailure(rateLimitKey);
 
     // 2. Strict Account Check (Generic Response - No Enumeration)
     const user = await getUserByEmail(cleanEmail);

@@ -111,6 +111,41 @@ export function consumeRateLimit(key: string, maxAttempts: number, windowMs: num
 }
 
 // ---------------------------------------------------------------------------
+// 1b. LASTING LIMITS (2026-10-23) for what guards an account: sign-in, password / email / phone changes,
+// account deletion, reset emails, OTP codes. Kept in the database, so every server instance shares them and a
+// restart doesn't reset them. Counter rows live in the AskUsage table (a plain key/count table) under "rl:".
+// ponytail: fixed windows, so up to 2x the limit is possible across a window boundary; use a sliding window if that ever matters.
+// ---------------------------------------------------------------------------
+const DEFAULT_WINDOW_MS = 15 * 60 * 1000;
+const windowKey = (key: string, windowMs: number, now: number) => `rl:${key}:${Math.floor(now / windowMs)}`;
+
+export async function checkLastingLimit(key: string, maxAttempts = 5, windowMs = DEFAULT_WINDOW_MS): Promise<{ allowed: boolean; remaining: number; retryAfterSec?: number }> {
+  const now = Date.now();
+  const row = await prisma.askUsage.findUnique({ where: { key: windowKey(key, windowMs, now) }, select: { count: true } });
+  const used = row?.count ?? 0;
+  if (used < maxAttempts) return { allowed: true, remaining: maxAttempts - used };
+  const windowEnd = (Math.floor(now / windowMs) + 1) * windowMs;
+  return { allowed: false, remaining: 0, retryAfterSec: Math.ceil((windowEnd - now) / 1000) };
+}
+
+export async function recordLastingFailure(key: string, windowMs = DEFAULT_WINDOW_MS): Promise<void> {
+  const k = windowKey(key, windowMs, Date.now());
+  // One atomic INSERT … ON CONFLICT (Prisma's native upsert): no lost counts, no error logged when the row exists.
+  await prisma.askUsage.upsert({ where: { key: k }, create: { key: k, count: 1 }, update: { count: { increment: 1 } } });
+}
+
+/** After a successful sign-in: every window of this key. */
+export async function clearLastingLimit(key: string): Promise<void> {
+  await prisma.askUsage.deleteMany({ where: { key: { startsWith: `rl:${key}:` } } });
+}
+
+/** Daily clean-up (cron): counters older than a day can't block anyone any more. */
+export async function pruneLastingLimits(now = new Date()): Promise<{ removed: number }> {
+  const res = await prisma.askUsage.deleteMany({ where: { key: { startsWith: 'rl:' }, updatedAt: { lt: new Date(now.getTime() - 86400000) } } });
+  return { removed: res.count };
+}
+
+// ---------------------------------------------------------------------------
 // 2. OTP CODES (stored hashed in the database only)
 // ---------------------------------------------------------------------------
 const OTP_MAX_ATTEMPTS = 5;

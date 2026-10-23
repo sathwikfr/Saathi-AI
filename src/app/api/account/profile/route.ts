@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSessionUser, comparePassword } from '@/lib/auth';
 import { getUserById, getUserPasswordHash, updateUserProfile } from '@/lib/db';
-import { checkRateLimit, recordFailedAttempt, clearRateLimit } from '@/lib/security';
+import { checkLastingLimit, recordLastingFailure, clearLastingLimit } from '@/lib/security';
 import { sendVerificationEmail } from '@/lib/email';
 import { NotificationPreferences } from '@/lib/types';
 import { normalizePhone } from '@/lib/phone';
@@ -74,19 +74,19 @@ export async function PATCH(req: Request) {
     if (emailChanging || phoneChanging) {
       const hash = await getUserPasswordHash(sessionUser.id);
       if (hash) {
-        const limit = checkRateLimit(`reauth:${sessionUser.id}`, 5, 15 * 60 * 1000);
+        const limit = await checkLastingLimit(`reauth:${sessionUser.id}`, 5, 15 * 60 * 1000);
         if (!limit.allowed) {
           return NextResponse.json({ error: 'Too many wrong passwords. Please try again in a few minutes.', code: 'RATE_LIMITED' }, { status: 429 });
         }
         const given = typeof body.currentPassword === 'string' ? body.currentPassword : '';
         if (!given || !(await comparePassword(given, hash))) {
-          recordFailedAttempt(`reauth:${sessionUser.id}`);
+          await recordLastingFailure(`reauth:${sessionUser.id}`);
           return NextResponse.json(
             { error: 'Enter your current password to change your email or phone number.', code: 'REAUTH_REQUIRED' },
             { status: 403 }
           );
         }
-        clearRateLimit(`reauth:${sessionUser.id}`);
+        await clearLastingLimit(`reauth:${sessionUser.id}`);
       }
     }
 

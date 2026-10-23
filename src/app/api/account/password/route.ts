@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSessionUser, getSessionToken, comparePassword, hashPassword } from '@/lib/auth';
-import { checkRateLimit, recordFailedAttempt, clearRateLimit, revokeOtherUserSessions } from '@/lib/security';
+import { checkLastingLimit, recordLastingFailure, clearLastingLimit, revokeOtherUserSessions } from '@/lib/security';
 import { getUserPasswordHash, updateUserPasswordHash } from '@/lib/db';
 
 export async function POST(req: Request) {
@@ -33,16 +33,16 @@ export async function POST(req: Request) {
     }
 
     const limitKey = `pwchange:${sessionUser.id}`;
-    const limit = checkRateLimit(limitKey, 5, 15 * 60 * 1000);
+    const limit = await checkLastingLimit(limitKey, 5, 15 * 60 * 1000);
     if (!limit.allowed) {
       return NextResponse.json({ error: 'Too many wrong passwords. Please try again in a few minutes.' }, { status: 429 });
     }
     const isMatch = await comparePassword(currentPassword, currentHash);
     if (!isMatch) {
-      recordFailedAttempt(limitKey);
+      await recordLastingFailure(limitKey);
       return NextResponse.json({ error: 'Incorrect current password. Please try again.' }, { status: 400 });
     }
-    clearRateLimit(limitKey);
+    await clearLastingLimit(limitKey);
 
     const newHash = await hashPassword(newPassword);
     const updated = await updateUserPasswordHash(sessionUser.id, newHash);

@@ -9,6 +9,7 @@ import { istMinutesOfDay } from '@/lib/ist';
 import { requestSecret, safeEqual } from '@/lib/secrets';
 import { runReminders } from '@/lib/reminders';
 import { prisma } from '@/lib/prisma';
+import { pruneLastingLimits } from '@/lib/security';
 import { rescueStalledEmergencies } from '@/lib/alerts';
 import { ALERT_TITLES } from '@/lib/callInterpretation';
 import { PARENT_EMERGENCY_TITLE } from '@/lib/whatsappInbound';
@@ -102,7 +103,8 @@ async function handle(req: Request) {
   const daily = minutes >= DAILY_JOBS_FROM_MINUTES && minutes < DAILY_JOBS_FROM_MINUTES + DAILY_JOBS_WINDOW_MINUTES
     ? {
         insights: await step('Insights', () => runInsightsForAll({ now })),
-        transcripts: await step('Transcript clean-up', () => clearOldTranscripts({ now }))
+        transcripts: await step('Transcript clean-up', () => clearOldTranscripts({ now })),
+        signInCounters: await step('Old sign-in counters', () => pruneLastingLimits(now))
       }
     : null;
 

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { isLocalDevRequest } from '@/lib/devMode';
 import { getUserByPhone, isPhoneRegistered } from '@/lib/db';
-import { checkRateLimit, recordFailedAttempt, createAndStoreOtp } from '@/lib/security';
+import { checkLastingLimit, recordLastingFailure, createAndStoreOtp } from '@/lib/security';
 import { normalizePhone } from '@/lib/phone';
 
 /**
@@ -44,7 +44,7 @@ export async function POST(req: Request) {
     const rateLimitKey = `otp_send:${cleanPhone}`;
 
     // Max 3 requests per 10 minutes
-    const rateStatus = checkRateLimit(rateLimitKey, 3, 10 * 60 * 1000);
+    const rateStatus = await checkLastingLimit(rateLimitKey, 3, 10 * 60 * 1000);
     if (!rateStatus.allowed) {
       return NextResponse.json(
         {
@@ -72,7 +72,7 @@ export async function POST(req: Request) {
       );
     }
 
-    recordFailedAttempt(rateLimitKey, 10 * 60 * 1000);
+    await recordLastingFailure(rateLimitKey, 10 * 60 * 1000);
     const { code } = await createAndStoreOtp(cleanPhone, purpose);
 
     console.log(`[Aaptha SMS Gateway][dev] OTP for ${phoneResult.e164}: ${code}`);

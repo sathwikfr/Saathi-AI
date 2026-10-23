@@ -17,11 +17,8 @@ export const dayKey = (userId: string, now: Date) => `day:${userId}:${istDateStr
 /** Takes one use if fewer than `limit` have been used. */
 export async function claimAsk(key: string, limit: number): Promise<{ ok: boolean; used: number }> {
   if (limit <= 0) return { ok: false, used: 0 };
-  try {
-    await prisma.askUsage.create({ data: { key, count: 0 } });
-  } catch {
-    // Already there (or another request just created it): fine.
-  }
+  // INSERT … ON CONFLICT DO NOTHING: already there (or another request just created it) is fine, and nothing is logged.
+  await prisma.askUsage.createMany({ data: [{ key, count: 0 }], skipDuplicates: true });
   const res = await prisma.askUsage.updateMany({ where: { key, count: { lt: limit } }, data: { count: { increment: 1 } } });
   if (res.count === 1) {
     const row = await prisma.askUsage.findUnique({ where: { key }, select: { count: true } });

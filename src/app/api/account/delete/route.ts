@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireUser } from '@/lib/access';
 import { AUTH_COOKIE_NAME, comparePassword } from '@/lib/auth';
-import { checkRateLimit, recordFailedAttempt, clearRateLimit, revokeAllUserSessions } from '@/lib/security';
+import { checkLastingLimit, recordLastingFailure, clearLastingLimit, revokeAllUserSessions } from '@/lib/security';
 import { getUserPasswordHash } from '@/lib/db';
 import { prisma } from '@/lib/prisma';
 import { cancelRazorpaySubscription } from '@/lib/razorpay';
@@ -25,14 +25,14 @@ export async function POST(req: Request) {
   const hash = await getUserPasswordHash(user.id);
   if (hash) {
     const limitKey = `acctdelete:${user.id}`;
-    if (!checkRateLimit(limitKey, 5, 15 * 60 * 1000).allowed) {
+    if (!(await checkLastingLimit(limitKey, 5, 15 * 60 * 1000)).allowed) {
       return NextResponse.json({ error: 'Too many wrong passwords. Please try again in a few minutes.' }, { status: 429 });
     }
     if (typeof password !== 'string' || !(await comparePassword(password, hash))) {
-      recordFailedAttempt(limitKey);
+      await recordLastingFailure(limitKey);
       return NextResponse.json({ error: 'Incorrect password.' }, { status: 400 });
     }
-    clearRateLimit(limitKey);
+    await clearLastingLimit(limitKey);
   }
 
   try {

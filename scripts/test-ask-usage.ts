@@ -6,6 +6,7 @@ import 'dotenv/config';
 import './lib/testDb';
 import { prisma } from '../src/lib/prisma';
 import { claimAsk, releaseAsk, askUsed, monthKey, dayKey } from '../src/lib/askUsage';
+import { checkLastingLimit, recordLastingFailure, clearLastingLimit, pruneLastingLimits } from '../src/lib/security';
 
 let passed = 0;
 let failed = 0;
@@ -47,9 +48,25 @@ async function main() {
 
     await releaseAsk(`${key}-none`);
     check('giving back with nothing recorded never goes below zero', (await askUsed(`${key}-none`)) === 0);
+
+    console.log('\nLasting sign-in limits (shared by every server, survive restarts)');
+    const login = `${key}-login`;
+    for (let i = 0; i < 4; i++) await recordLastingFailure(login);
+    check('4 wrong passwords: still allowed, 1 left', (await checkLastingLimit(login, 5)).remaining === 1);
+    await recordLastingFailure(login);
+    const locked = await checkLastingLimit(login, 5);
+    check('5th wrong password: locked, with a wait time', !locked.allowed && (locked.retryAfterSec ?? 0) > 0 && (locked.retryAfterSec ?? 0) <= 900, locked);
+    check('another account is not affected', (await checkLastingLimit(`${login}-other`, 5)).allowed);
+    await Promise.all(Array.from({ length: 10 }, () => recordLastingFailure(`${login}-race`)));
+    check('10 failures at the same moment are all counted (no lost updates)', !(await checkLastingLimit(`${login}-race`, 10)).allowed && (await checkLastingLimit(`${login}-race`, 11)).allowed);
+    await clearLastingLimit(login);
+    check('a successful sign-in clears the lock', (await checkLastingLimit(login, 5)).remaining === 5);
+    await prisma.askUsage.create({ data: { key: `rl:${key}-old:1`, count: 9, updatedAt: new Date(Date.now() - 2 * 86400000) } });
+    await pruneLastingLimits();
+    check('the daily clean-up removes counters older than a day', (await prisma.askUsage.count({ where: { key: `rl:${key}-old:1` } })) === 0);
   } finally {
-    await prisma.askUsage.deleteMany({ where: { key: { startsWith: 'test-ask-' } } });
-    const left = await prisma.askUsage.count({ where: { key: { startsWith: 'test-ask-' } } });
+    await prisma.askUsage.deleteMany({ where: { OR: [{ key: { startsWith: 'test-ask-' } }, { key: { startsWith: 'rl:test-ask-' } }] } });
+    const left = await prisma.askUsage.count({ where: { OR: [{ key: { startsWith: 'test-ask-' } }, { key: { startsWith: 'rl:test-ask-' } }] } });
     console.log(`\nCleanup: ${left === 0 ? 'clean' : 'LEFTOVER ROWS!'}`);
   }
   console.log(`\n${passed} passed, ${failed} failed`);
@@ -59,7 +76,7 @@ async function main() {
 
 main().catch(async err => {
   console.error('TEST RUN CRASHED:', err);
-  await prisma.askUsage.deleteMany({ where: { key: { startsWith: 'test-ask-' } } }).catch(() => undefined);
+  await prisma.askUsage.deleteMany({ where: { OR: [{ key: { startsWith: 'test-ask-' } }, { key: { startsWith: 'rl:test-ask-' } }] } }).catch(() => undefined);
   await prisma.$disconnect();
   process.exit(2);
 });

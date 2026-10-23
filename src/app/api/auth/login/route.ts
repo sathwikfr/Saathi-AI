@@ -2,9 +2,9 @@ import { NextResponse } from 'next/server';
 import { getUserByEmailOrPhone } from '@/lib/db';
 import { comparePassword, AUTH_COOKIE_NAME } from '@/lib/auth';
 import {
-  checkRateLimit,
-  recordFailedAttempt,
-  clearRateLimit,
+  checkLastingLimit,
+  recordLastingFailure,
+  clearLastingLimit,
   createDBSession,
   clientIp,
   isCrossSiteRequest,
@@ -34,7 +34,7 @@ export async function POST(req: Request) {
     const rateLimitKey = `login:${cleanIdentifier}`;
     // Per-IP as well: the per-account limit alone lets one machine try one password on thousands of accounts.
     const ipKey = `login-ip:${clientIp(req)}`;
-    const ipStatus = checkRateLimit(ipKey, 30, 15 * 60 * 1000);
+    const ipStatus = await checkLastingLimit(ipKey, 30, 15 * 60 * 1000);
     if (!ipStatus.allowed) {
       return NextResponse.json(
         { error: 'Too many failed sign-in attempts from this network. Please try again later.', code: 'RATE_LIMITED', retryAfterSec: ipStatus.retryAfterSec },
@@ -43,7 +43,7 @@ export async function POST(req: Request) {
     }
 
     // 1. Rate Limiting Check (5 attempts in 15 minutes)
-    const rateStatus = checkRateLimit(rateLimitKey, 5, 15 * 60 * 1000);
+    const rateStatus = await checkLastingLimit(rateLimitKey, 5, 15 * 60 * 1000);
     if (!rateStatus.allowed) {
       return NextResponse.json(
         {
@@ -58,8 +58,8 @@ export async function POST(req: Request) {
     // 2. Strict Account Existence Check: Verified directly against Supabase PostgreSQL / Prisma
     const userWithHash = await getUserByEmailOrPhone(cleanIdentifier);
     if (!userWithHash) {
-      recordFailedAttempt(rateLimitKey);
-      recordFailedAttempt(ipKey);
+      await recordLastingFailure(rateLimitKey);
+      await recordLastingFailure(ipKey);
       return NextResponse.json(
         {
           error: 'No account found with this email or phone number. Would you like to sign up instead?',
@@ -85,8 +85,8 @@ export async function POST(req: Request) {
 
     const isPasswordValid = await comparePassword(password, userWithHash.passwordHash);
     if (!isPasswordValid) {
-      recordFailedAttempt(rateLimitKey);
-      recordFailedAttempt(ipKey);
+      await recordLastingFailure(rateLimitKey);
+      await recordLastingFailure(ipKey);
       return NextResponse.json(
         {
           error: 'Incorrect password. Please verify your credentials or click "Forgot password?" to receive a reset link.',
@@ -97,7 +97,7 @@ export async function POST(req: Request) {
     }
 
     // 4. Success: Clear rate limit, create database-backed session
-    clearRateLimit(rateLimitKey);
+    await clearLastingLimit(rateLimitKey);
 
     const session = await createDBSession(userWithHash.id, rememberMe);
 
