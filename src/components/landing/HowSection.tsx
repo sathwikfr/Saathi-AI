@@ -31,12 +31,21 @@ export function HowSection() {
   }, []);
   const next = useCallback(() => setTab((t) => (t === 'call' ? 'remind' : 'call')), []);
 
-  // "#remind" (the nav's WhatsApp link) opens the WhatsApp side.
+  // "#remind" (the nav's WhatsApp link, the Remind plan card) opens the WhatsApp side. Next's <Link> changes the
+  // hash with pushState, which fires no hashchange, and a second click on a hash already in the URL changes nothing,
+  // so the clicks themselves are watched too.
   useEffect(() => {
     const sync = () => { if (window.location.hash === '#remind') pick('remind'); };
+    const onClick = (e: MouseEvent) => {
+      if ((e.target as Element | null)?.closest?.('a[href$="#remind"]')) pick('remind');
+    };
     sync();
     window.addEventListener('hashchange', sync);
-    return () => window.removeEventListener('hashchange', sync);
+    document.addEventListener('click', onClick);
+    return () => {
+      window.removeEventListener('hashchange', sync);
+      document.removeEventListener('click', onClick);
+    };
   }, [pick]);
 
   return (
