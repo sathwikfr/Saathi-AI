@@ -43,6 +43,7 @@ export default function AccountBillingPage() {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- loads billing data once the user is known
     fetchBillingData();
   }, [user]);
 

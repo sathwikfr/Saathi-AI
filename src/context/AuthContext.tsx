@@ -48,6 +48,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- loads the signed-in user on mount
     refreshUser();
     // Back button can restore a page from the browser's back/forward cache,
     // including a protected page from before logout. Reload so the server

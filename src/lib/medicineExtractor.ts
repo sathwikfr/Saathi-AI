@@ -622,7 +622,7 @@ export function extractMedicinesFromText(rawInput: string): ExtractionResult {
     }
 
     // Clean prefix
-    let clean = line
+    const clean = line
       .replace(/^(\d+[\.\)]|[-•*]|\bTab\.?|\bCap\.?|\bSyp\.?|\bInj\.?|\bOint\.?|\bGel\.?|\bCream\.?|\bT\.|\bTablet|\bCapsule|\bSyrup|\bOintment)\s*/i, '')
       .trim();
 

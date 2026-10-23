@@ -81,6 +81,7 @@ export default function EditProfilePage() {
   // Load initial data from user object
   useEffect(() => {
     if (user) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- fills the form once the signed-in user has loaded
       setName(user.name || '');
       setEmail(user.email || '');
       setPhone(user.phone || '');

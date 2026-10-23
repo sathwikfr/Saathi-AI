@@ -131,11 +131,13 @@ function DashboardContent() {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- loads the parents on mount
     fetchParents();
   }, []);
 
   useEffect(() => {
     if (selectedParentId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- loads the chosen parent's day
       fetchParentDetails(selectedParentId);
     }
   }, [selectedParentId]);

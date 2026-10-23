@@ -459,6 +459,7 @@ function OnboardingContent({ onRestart }: { onRestart: () => void }) {
       setCallSchedule(res.schedule);
       setUnspecifiedMeds(res.unspecifiedMedicines);
       if (res.schedule.length > 0) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- builds the schedule when step 3 opens with changed medicines
         setCallTime(res.schedule[0].time);
       }
     }
