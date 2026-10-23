@@ -4,7 +4,9 @@
  *   npx tsx scripts/cleanup-e2e-account.ts claude-e2e-1234567890@example.com            # dry run
  *   npx tsx scripts/cleanup-e2e-account.ts claude-e2e-1234567890@example.com --confirm  # delete
  *
- * Only accepts claude-e2e-<digits>@example.com, so it can never touch a real family's data.
+ * Only accepts claude-e2e-<digits>@example.com, or a test suite's own throwaway account left behind by a crashed run
+ * (reminder-test-<digits>@, reminder-test-h-<digits>@, billing-test-…, care-test-…: always @example.com), so it can never
+ * touch a real family's data.
  * Deleting the User cascades to sessions, subscription, invoices, notification prefs and the
  * account's parents (and their slots, medicines, contacts, call logs, alerts, invites).
  * Rows without a cascade (medicine reports, reset tokens, OAuth links, OTPs) are removed first.
@@ -12,14 +14,14 @@
 import 'dotenv/config';
 import { prisma } from '../src/lib/prisma';
 
-const E2E_EMAIL = /^claude-e2e-\d+@example\.com$/;
+const E2E_EMAIL = /^(claude-e2e|(billing|care|extras|pipeline|placement|whatsapp|reminder)-test(-[a-z]+)*)-\d+@example\.com$/;
 
 async function main() {
   const email = (process.argv[2] || '').trim().toLowerCase();
   const confirm = process.argv.includes('--confirm');
 
   if (!E2E_EMAIL.test(email)) {
-    console.error('Refusing: pass a claude-e2e-<digits>@example.com address.');
+    console.error('Refusing: pass a claude-e2e-<digits>@example.com (or test-suite <name>-test-<digits>@example.com) address.');
     process.exit(1);
   }
 
