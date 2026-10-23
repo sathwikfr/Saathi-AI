@@ -312,7 +312,10 @@
   width: calc(var(--r) * 4.1);                                   /* wider than the ball: keeps the side columns as they were when the ball shrank */
   height: calc(var(--r) * 2.2 + max(42px, var(--r) * 0.34));   /* the ball, then the capsule under it */
   margin: 0 calc(var(--r) * 0.1) 0 calc(var(--r) * -0.22);   /* reaches into the pitch's gutter, like the mockup */
-  --ball: 0.72;                    /* how big the ball is drawn (user, 2026-10-23: tried 0.78 and 0.65, settled here) */
+  /* The ball's size and height (user, 2026-10-23: 0.65 and 0.72 felt empty, 1 too big). At 0.86 it is ~40% of the gap
+     between the text columns, and its centre sits level with the middle of the text beside it. */
+  --ball: 0.86;
+  --ball-y: 1.27;                  /* ball centre, down from the stage top, in --r */
 }
 
 /* The ball (radius --r) at the top of the stage, the capsule under it. The blob's canvas is 3.85 x --r
@@ -320,7 +323,7 @@
 .orb {
   position: absolute;
   left: 50%;
-  top: calc(var(--r) * 1.02);
+  top: calc(var(--r) * var(--ball-y));
   width: calc(var(--r) * 3.85);
   height: calc(var(--r) * 3.85);
   transform: translate(-50%, -50%);
@@ -333,10 +336,10 @@
 }
 
 /* Blob | Glass, above the ball (both orbs are shown to people until one is picked). Reuses .langs. */
-.orbSwitch {
+.langs.orbSwitch {                /* .langs comes later in this file and sets a margin-top */
   position: absolute;
   left: 50%;
-  top: calc(var(--r) * (1.02 - var(--ball)));   /* the ball's top edge */
+  top: calc(var(--r) * (var(--ball-y) - var(--ball)));   /* the ball's top edge */
   translate: -50% calc(-100% - 22px);
   z-index: 2;
   margin: 0;
@@ -365,7 +368,7 @@
   --mic: calc(var(--h) * 0.86);
   position: absolute;
   left: 50%;
-  top: calc(var(--r) * (1.24 + var(--ball)));   /* just under the ball */
+  top: calc(var(--r) * (var(--ball-y) + 0.22 + var(--ball)));   /* just under the ball */
   width: calc(var(--r) * (0.45 + 2 * var(--ball)));   /* a little wider than the ball */
   max-width: 100%;
   height: var(--h);
