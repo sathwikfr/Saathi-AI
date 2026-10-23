@@ -35,7 +35,7 @@ import { WhatsAppOptInBanner } from '@/components/account/WhatsAppSettings';
 import { RemindersPanel, ReminderSettings, ReminderChannelSwitch } from '@/components/dashboard/RemindersPanel';
 import { HealthMonitorCard } from '@/components/dashboard/HealthMonitorCard';
 
-type TabId = 'overview' | 'timeline' | 'trends' | 'calls' | 'medicines' | 'alerts' | 'family' | 'records' | 'settings';
+type TabId = 'overview' | 'trends' | 'calls' | 'medicines' | 'alerts' | 'family' | 'records' | 'settings';
 
 function DashboardContent() {
   const { user } = useAuth();
@@ -44,6 +44,7 @@ function DashboardContent() {
   const [selectedParentId, setSelectedParentId] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabId>('overview');
+  const [callsView, setCallsView] = useState<'list' | 'days'>('list');
 
   // Detailed parent data state
   const [detailsById, setDetailsById] = useState<Record<string, ParentDetails>>({});
@@ -579,7 +580,6 @@ function DashboardContent() {
   const WHATSAPP_TABS: TabId[] = ['overview', 'medicines', 'alerts', 'records', 'settings'];
   const ALL_TABS: { id: TabId; label: string; count?: number }[] = [
     { id: 'overview', label: 'Today' },
-    { id: 'timeline', label: 'Timeline' },
     { id: 'trends', label: 'Trends' },
     { id: 'calls', label: 'Calls' },
     { id: 'medicines', label: 'Medicines' },
@@ -589,10 +589,8 @@ function DashboardContent() {
     { id: 'settings', label: 'Settings' }
   ];
   // WhatsApp reminders: no calls, so no call history, timeline, trends or emergency ladder.
-  // Solo: no Timeline (a Family / Extended feature).
-  const TABS = waPerson
-    ? ALL_TABS.filter(t => WHATSAPP_TABS.includes(t.id))
-    : premium ? ALL_TABS : ALL_TABS.filter(t => t.id !== 'timeline');
+  // The day-by-day timeline lives inside Calls, for Family / Extended only.
+  const TABS = waPerson ? ALL_TABS.filter(t => WHATSAPP_TABS.includes(t.id)) : ALL_TABS;
   const shownTab: TabId = TABS.some(t => t.id === activeTab) ? activeTab : 'overview';
 
   // Banners in order of importance; at most two show, so Today stays above the fold on a phone. The rest wait their turn.
@@ -897,10 +895,6 @@ function DashboardContent() {
           </div>
         )}
 
-        {shownTab === 'timeline' && (
-          <TimelinePanel parentName={currentParent.name} callLogs={parentData?.callLogs || []} alerts={parentData?.alerts || []} insights={parentData?.insights || []} />
-        )}
-
         {shownTab === 'trends' && (
           <TrendsPanel parentName={currentParent.name} stats={stats} insights={parentData?.insights || []} onExport={handleExportCallHistory} />
         )}
@@ -917,7 +911,19 @@ function DashboardContent() {
           </div>
         )}
 
-        {shownTab === 'calls' && (
+        {shownTab === 'calls' && premium && (
+          <div className="segmented" role="radiogroup" aria-label="How to show the calls" style={{ marginBottom: '16px', width: 'fit-content', maxWidth: '100%' }}>
+            {([['list', 'Every call'], ['days', 'Day by day']] as const).map(([id, label]) => (
+              <button key={id} type="button" role="radio" aria-checked={callsView === id} className={callsView === id ? 'active' : ''} onClick={() => setCallsView(id)}>
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {shownTab === 'calls' && premium && callsView === 'days' ? (
+          <TimelinePanel parentName={currentParent.name} callLogs={parentData?.callLogs || []} alerts={parentData?.alerts || []} insights={parentData?.insights || []} />
+        ) : shownTab === 'calls' && (
           <CallHistoryPanel parentName={currentParent.name} callLogs={parentData?.callLogs || []} onExport={handleExportCallHistory} />
         )}
 
