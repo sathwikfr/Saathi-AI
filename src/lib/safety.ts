@@ -113,7 +113,16 @@ export const EMERGENCY_TERMS: Record<string, string[]> = {
   telugu: [
     'ఛాతీ నొప్పి', 'ఛాతి నొప్పి', 'గుండె నొప్పి', 'ఊపిరి ఆడటం లేదు', 'ఊపిరి ఆడడం లేదు', 'శ్వాస తీసుకోలేకపోతున్నా',
     'కింద పడ్డాను', 'పడిపోయాను', 'స్పృహ తప్పి', 'గుండెపోటు', 'అంబులెన్స్', 'కాపాడండి',
-    'chaati noppi', 'gunde noppi', 'oopiri aadatam ledu', 'padipoyanu', 'kindha paddanu'
+    'chaati noppi', 'gunde noppi', 'oopiri aadatam ledu', 'padipoyanu', 'kindha paddanu',
+    // AI review 2026-10-23 (native reader still to confirm). Left out on purpose, because these are matched anywhere in
+    // the text: "108" (BP "108 over 70"), "help" (helpful), bare "paddanu" ("ibbandi paddanu" = had trouble), "ayasam"
+    // (inside "payasam"), "sahayam cheyandi" (forwarded scam texts say "please help"; WhatsApp is scanned before the scam check)
+    'ఛాతీలో నొప్పి', 'గుండెల్లో నొప్పి', 'గుండె దడ', 'గుండె పోటు', 'ఆయాసం', 'ఊపిరి ఆడట్లేదు', 'ఊపిరాడట్లేదు',
+    'ఊపిరి తీసుకోలేకపోతున్నా', 'జారి పడ్డాను', 'కింద పడిపోయాను', 'స్పృహ లేదు', 'స్పృహ పోయింది', 'మూర్ఛ', 'తల తిరిగి పడ్డాను',
+    'మాట రావట్లేదు', 'నోరు వంకరగా ఉంది', 'చేయి చచ్చుబడింది', 'కాలు చచ్చుబడింది', 'రక్తం కారుతోంది', 'రక్షించండి', 'అంబులెన్స్ కావాలి',
+    'chaatilo noppi', 'chaathi noppi', 'chathi noppi', 'gundello noppi', 'gunde dadha', 'gundepotu', 'aayaasam',
+    'oopiri aadatledu', 'oopiraadatledu', 'oopiri teesukolekapotunnanu', 'jaari paddanu', 'kinda paddanu', 'spruha ledu',
+    'spruha poyindi', 'moorcha', 'maata raavatledu', 'rakshinchandi', 'kaapadandi', 'ambulance kavali'
   ],
   tamil: [
     'நெஞ்சு வலி', 'நெஞ்சு வலிக்கிறது', 'மூச்சு விட முடியவில்லை', 'மூச்சு திணறல்', 'கீழே விழுந்தேன்',
@@ -246,6 +255,11 @@ const SYMPTOMS_OTHER: string[] = [
   // Telugu
   'జ్వరం', 'తలనొప్పి', 'తల నొప్పి', 'కళ్ళు తిరుగుతున్నాయి', 'వాంతి', 'వాంతులు', 'దగ్గు', 'జలుబు', 'నీరసం', 'కడుపు నొప్పి', 'ఒళ్ళు నొప్పులు', 'బాగాలేదు', 'ఒంట్లో బాగాలేదు',
   'jwaram', 'jvaram', 'tala noppi', 'thala noppi', 'talanoppi', 'kallu tirugutunnayi', 'vanthi', 'vanti', 'daggu', 'jalubu', 'neerasam', 'kadupu noppi', 'ollu noppulu', 'baagaledu', 'bagaledu', 'ontlo bagaledu',
+  // AI review 2026-10-23
+  'మోకాలు నొప్పి', 'మోకాళ్ల నొప్పులు', 'నడుము నొప్పి', 'వీపు నొప్పి', 'కీళ్ల నొప్పులు', 'గొంతు నొప్పి', 'బాడీ నొప్పి', 'తల తిరుగుతోంది', 'మైకం', 'వణుకు',
+  'ఒళ్ళు వేడిగా ఉంది', 'వికారం', 'విరేచనాలు', 'అలసట', 'నలతగా ఉంది', 'ఆకలి లేదు', 'నిద్ర పట్టట్లేదు',
+  'mokaalu noppi', 'mokaalla noppulu', 'nadumu noppi', 'veepu noppi', 'gontu noppi', 'body noppi', 'tala tirugutondi', 'maikam', 'vanuku',
+  'vikaram', 'virechanalu', 'alasata', 'nalatha', 'aakali ledu', 'kadupu noppiga', 'baagoledu', 'bagoledu',
   // Tamil
   'காய்ச்சல்', 'தலைவலி', 'தலை வலி', 'மயக்கம்', 'வாந்தி', 'இருமல்', 'சளி', 'உடம்பு சரியில்லை',
   'kaaichal', 'kaichal', 'thalai vali', 'thalaivali', 'vaanthi', 'irumal', 'udambu sariyilla',

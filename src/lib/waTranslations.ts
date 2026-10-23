@@ -101,41 +101,42 @@ export const PHRASES: Record<Exclude<WaLang, 'en'>, Phrases> = {
     tplWeekly: 'नमस्ते {{1}}, आपका हफ़्ता: {{2}}\n\nयह साप्ताहिक सारांश Aaptha पर सेट किया गया था।'
   },
   te: {
-    startedHead: 'అంతా సిద్ధం, {name}. {times} కు మీరు మందు వేసుకున్నారా అని అడుగుతాను. వేసుకున్న తర్వాత "అవును" నొక్కండి.',
-    startedCare: ' {n} రిమైండర్ల తర్వాత కూడా నిర్ధారణ కాకపోతే {caretaker} కు తెలియజేస్తాను.',
+    // AI-reviewed 2026-10-23 (మీరు form, "గారు" after names, spoken words, no "-బడింది" passives); still a DRAFT until a native reader confirms
+    startedHead: 'అంతా సిద్ధం, {name} గారు. {times} కు మీరు మందు వేసుకున్నారా అని అడుగుతాను. వేసుకున్న తర్వాత "అవును" నొక్కండి.',
+    startedCare: ' {n} సార్లు అడిగినా మీరు చెప్పకపోతే {caretaker} కు చెబుతాను.',
     startedTail: ' ఆపడానికి ఎప్పుడైనా STOP అని పంపండి.',
-    restarted: 'మీ మందుల తనిఖీ మళ్లీ ప్రారంభమైంది. ఆపడానికి ఎప్పుడైనా STOP అని పంపండి.',
-    stopped: 'మీ మందుల తనిఖీ ఆగిపోయింది. మళ్లీ ప్రారంభించడానికి ఎప్పుడైనా START అని పంపండి.',
-    taken: 'నమోదైంది: {at} కి వేసుకున్నారు. ✓',
-    courseDone: 'ఇది మీ కోర్సులో చివరి మోతాదు, కాబట్టి మందుల తనిఖీ ఇక్కడితో ఆగుతుంది. మీరు ఆరోగ్యంగా ఉండాలని కోరుకుంటున్నాను!',
+    restarted: 'మీ మందుల రిమైండర్లు మళ్లీ మొదలయ్యాయి. ఆపడానికి ఎప్పుడైనా STOP అని పంపండి.',
+    stopped: 'మీ మందుల రిమైండర్లు ఆపేశాను. మళ్లీ మొదలుపెట్టాలంటే ఎప్పుడైనా START అని పంపండి.',
+    taken: 'సరే, {at} కి వేసుకున్నారని రాసుకున్నాను. ✓',
+    courseDone: 'ఇదే మీ కోర్సులో చివరి డోసు, కాబట్టి ఇక మందుల రిమైండర్లు ఉండవు. మీరు ఆరోగ్యంగా ఉండాలని కోరుకుంటున్నాను!',
     notYet: 'సరే, {at} కి మళ్లీ అడుగుతాను.',
     notYetLastHead: 'సరే. వేసుకున్న తర్వాత "అవును" నొక్కండి.',
-    notYetLastCare: ' {at} కల్లా నిర్ధారణ కాకపోతే {caretaker} కు తెలియజేస్తాను.',
-    pausedTodayTime: 'సరే, ఈ రోజు ఇక మందుల తనిఖీలు ఉండవు. రేపు {time} కు మళ్లీ మొదలవుతాయి.',
-    pausedToday: 'సరే, ఈ రోజు ఇక మందుల తనిఖీలు ఉండవు. రేపు మళ్లీ మొదలవుతాయి.',
-    alreadyTaken: 'ఇది ఇప్పటికే "వేసుకున్నారు" అని నమోదైంది. ✓',
-    low: '{name}: {left} మాత్రలు మిగిలాయి, సుమారు {days} రోజులకు సరిపోతాయి.',
+    notYetLastCare: ' {at} లోపు మీరు చెప్పకపోతే {caretaker} కు చెబుతాను.',
+    pausedTodayTime: 'సరే, ఈ రోజు ఇక మందుల గురించి అడగను. రేపు {time} కి మళ్లీ అడుగుతాను.',
+    pausedToday: 'సరే, ఈ రోజు ఇక మందుల గురించి అడగను. రేపు మళ్లీ అడుగుతాను.',
+    alreadyTaken: 'ఇది ఇప్పటికే వేసుకున్నట్లు రాసుకున్నాను. ✓',
+    low: '{name} మాత్రలు తక్కువగా ఉన్నాయి: {left} మాత్రలే ఉన్నాయి, సుమారు {days} రోజులు వస్తాయి.',
     lowOut: 'నా లెక్క ప్రకారం మీ {name} మాత్రలు అయిపోయాయి.',
-    lowTail: ' మళ్లీ కొన్న తర్వాత పేరు, సంఖ్య పంపండి, ఉదా. "{example} 30".',
-    toppedUp: 'సరే: {name} {count} మాత్రలు. తగ్గినప్పుడు చెబుతాను.',
-    emergencyHead: '{name}, జాగ్రత్తగా ఉండండి.',
-    emergencyCare: ' {caretaker} కు వెంటనే తెలియజేశాను.',
-    emergencyTail: ' అత్యవసర సహాయం కావాలంటే అంబులెన్స్ కోసం 108 కు కాల్ చేయండి, లేదా దగ్గరలో ఉన్నవారిని అడగండి.',
-    unwellHead: 'మీకు ఆరోగ్యం బాగోలేదని తెలిసి బాధగా ఉంది.',
-    unwellCare: ' {caretaker} కు తెలియజేశాను.',
-    unwellTail: ' నేను వైద్య సలహా ఇవ్వలేను: విశ్రాంతి తీసుకోండి, ఎక్కువైతే డాక్టర్‌ను కలవండి. అత్యవసరమైతే 108 కు కాల్ చేయండి.',
+    lowTail: ' మళ్లీ కొన్న తర్వాత పేరు, ఎన్ని మాత్రలో పంపండి, ఉదాహరణకు "{example} 30".',
+    toppedUp: 'సరే: {name} {count} మాత్రలు. అవి తగ్గడం మొదలైతే చెబుతాను.',
+    emergencyHead: '{name} గారు, జాగ్రత్తగా ఉండండి.',
+    emergencyCare: ' {caretaker} కు వెంటనే చెప్పాను.',
+    emergencyTail: ' వెంటనే సహాయం కావాలంటే అంబులెన్స్ కోసం 108 కు కాల్ చేయండి, లేదా దగ్గరలో ఉన్నవారిని పిలవండి.',
+    unwellHead: 'మీకు ఒంట్లో బాగాలేదని తెలిసి బాధగా ఉంది.',
+    unwellCare: ' {caretaker} కు చెప్పాను.',
+    unwellTail: ' నేను డాక్టర్‌ని కాదు, వైద్య సలహా ఇవ్వలేను: విశ్రాంతి తీసుకోండి, ఎక్కువైతే డాక్టర్‌ను కలవండి. అత్యవసరమైతే 108 కు కాల్ చేయండి.',
     today: 'ఈ రోజు',
     tomorrow: 'రేపు',
-    fasting: ' ఖాళీ కడుపుతో ఉండాలి.',
+    fasting: ' ఖాళీ కడుపుతో వెళ్లాలి.',
     note: ' గమనిక:',
-    weeklyAll: 'ఈ వారం మీరు మొత్తం {total} మందుల తనిఖీలను నిర్ధారించారు. శభాష్! 💪',
-    weeklyGood: 'ఈ వారం {total} లో {taken} మందుల తనిఖీలను నిర్ధారించారు. శభాష్! 💪',
-    weeklyLow: 'ఈ వారం {total} లో {taken} మందుల తనిఖీలను నిర్ధారించారు. రేపటి నుంచి కొత్త వారం మొదలవుతుంది.',
-    tplReminder: 'నమస్తే {{1}}, మీరు మీ {{2}} మందు వేసుకున్నారా: {{3}}?\n\nఇది మీరు Aaptha లో సెట్ చేసిన మందుల తనిఖీ.',
+    weeklyAll: 'ఈ వారం {total} సార్లూ మందు వేసుకున్నట్లు చెప్పారు. శభాష్! 💪',
+    weeklyGood: 'ఈ వారం {total} సార్లకు గాను {taken} సార్లు మందు వేసుకున్నట్లు చెప్పారు. శభాష్! 💪',
+    weeklyLow: 'ఈ వారం {total} సార్లకు గాను {taken} సార్లు మందు వేసుకున్నట్లు చెప్పారు. రేపటి నుంచి కొత్త వారం మొదలవుతుంది.',
+    tplReminder: 'నమస్తే {{1}} గారు, మీరు మీ {{2}} మందు వేసుకున్నారా: {{3}}?\n\nఇది మీరు Aaptha లో సెట్ చేసిన మందుల రిమైండర్.',
     tplYes: 'అవును, వేసుకున్నాను',
     tplNotYet: 'ఇంకా లేదు',
-    tplAppointment: 'నమస్తే {{1}}, గుర్తు చేస్తున్నాం: {{2}}\n\nఈ రిమైండర్ Aaptha లో సెట్ చేయబడింది.',
-    tplWeekly: 'నమస్తే {{1}}, మీ వారం: {{2}}\n\nఈ వారపు సారాంశం Aaptha లో సెట్ చేయబడింది.'
+    tplAppointment: 'నమస్తే {{1}} గారు, గుర్తు చేస్తున్నాం: {{2}}\n\nఈ రిమైండర్ Aaptha లో సెట్ చేశారు.',
+    tplWeekly: 'నమస్తే {{1}} గారు, {{2}}\n\nఈ వారపు వివరాలు Aaptha లో సెట్ చేశారు.'
   },
   ta: {
     startedHead: 'எல்லாம் தயார், {name}. {times} மணிக்கு நீங்கள் மருந்து எடுத்துக்கொண்டீர்களா என்று கேட்பேன். எடுத்த பிறகு "ஆம்" என்பதை அழுத்துங்கள்.',
@@ -405,14 +406,19 @@ export interface AppointmentWords {
   tomorrow: string;
   /** Joins the title and the place: "scan at Apollo Clinic" / "scan, Apollo Clinic". */
   join: (title: string, place: string) => string;
+  /** The whole line from its parts: "Tomorrow at 10 AM: scan at Apollo Clinic." */
+  line: (when: string, time: string, what: string) => string;
   fasting: string;
   note: string;
 }
+
+const englishOrder = (when: string, time: string, what: string) => `${when} ${time}: ${what}.`;
 
 export const ENGLISH_APPOINTMENT_WORDS: AppointmentWords = {
   today: 'Today at',
   tomorrow: 'Tomorrow at',
   join: (t, l) => `${t} at ${l}`,
+  line: englishOrder,
   fasting: ' Needs an empty stomach.',
   note: ' Note:'
 };
@@ -420,7 +426,11 @@ export const ENGLISH_APPOINTMENT_WORDS: AppointmentWords = {
 export function appointmentWords(lang: WaLang): AppointmentWords {
   if (lang === 'en') return ENGLISH_APPOINTMENT_WORDS;
   const p = PHRASES[lang];
-  return { today: p.today, tomorrow: p.tomorrow, join: (t, l) => `${t}, ${l}`, fasting: p.fasting, note: p.note };
+  // Telugu reads "రేపు 10 AM కి Apollo Clinic లో Blood test ఉంది." (reviewed 2026-10-23); the others keep the English order.
+  if (lang === 'te') {
+    return { today: p.today, tomorrow: p.tomorrow, join: (t, l) => `${l} లో ${t}`, line: (w, time, what) => `${w} ${time} కి ${what} ఉంది.`, fasting: p.fasting, note: p.note };
+  }
+  return { today: p.today, tomorrow: p.tomorrow, join: (t, l) => `${t}, ${l}`, line: englishOrder, fasting: p.fasting, note: p.note };
 }
 
 /** The weekly progress line, one line (Meta's rule for template parameters). */

@@ -218,6 +218,9 @@ const YES_ANSWERS = [
   // Telugu
   'avunu', 'aunu', 'avnu', 'vesukunna', 'vesukunnanu', 'veskunna', 'tesukunna', 'teesukunna', 'tisukunna', 'avunu vesukunna',
   'అవును', 'వేసుకున్నా', 'వేసుకున్నాను', 'తీసుకున్నా', 'తీసుకున్నాను',
+  // AI review 2026-10-23. Not "ok" / "ఆ": "OK, I'll take it" or "ఆ, ఇంకా లేదు" would mark a missed dose as taken.
+  'అవునండి', 'వేసుకున్నానండి', 'వేశాను', 'మింగాను', 'అయింది', 'అయ్యింది', 'ఇప్పుడే వేసుకున్నా',
+  'avunandi', 'vesanu', 'vesaanu', 'veskunnanu', 'teeskunnanu', 'mingaanu', 'ayindi', 'ayyindi', 'ippude vesukunna',
   // Tamil / Kannada / Bengali / Marathi / Gujarati / Malayalam
   'aama', 'aamaa', 'ama', 'saapten', 'ஆமா', 'ஆம்', 'சாப்பிட்டேன்', 'haudu', 'ಹೌದು', 'ತೆಗೆದುಕೊಂಡೆ', 'hyan', 'kheyechi', 'হ্যাঁ', 'খেয়েছি',
   'hoy', 'ghetli', 'होय', 'घेतली', 'હા', 'લીધી', 'uvvu', 'kazhichu', 'ഉവ്വ്', 'കഴിച്ചു',
@@ -229,6 +232,8 @@ const NOT_YET_ANSWERS = [
   'nahi', 'nahin', 'nai', 'na', 'naa', 'nahi liya', 'abhi nahi', 'baad mein', 'baad me', 'thodi der mein', 'नहीं', 'अभी नहीं', 'बाद में',
   // Telugu
   'ledu', 'inka ledu', 'inkaa ledu', 'tarvata', 'taruvata', 'లేదు', 'ఇంకా లేదు', 'తర్వాత',
+  'ఇంకా వేసుకోలేదు', 'ఇంకా తీసుకోలేదు', 'వేసుకోలేదు', 'తీసుకోలేదు', 'ఇంకా కాలేదు', 'ఇప్పుడు కాదు', 'తర్వాత వేసుకుంటా', 'మర్చిపోయాను', 'ఆగండి',
+  'inka vesukoledu', 'inka teesukoledu', 'vesukoledu', 'tesukoledu', 'inka kaaledu', 'ippudu kaadu', 'tarvata vesukuntanu', 'marchipoyanu',
   // Tamil / Kannada / Bengali / Marathi / Gujarati / Malayalam
   'illa', 'illai', 'innum illa', 'apram', 'இல்லை', 'இன்னும் இல்லை', 'அப்புறம்', 'ಇಲ್ಲ', 'ಇನ್ನೂ ಇಲ್ಲ', 'না', 'এখনও না',
   'nahi ajun', 'नाही', 'अजून नाही', 'ના', 'હજી નહીં', 'ഇല്ല', 'ഇതുവരെ ഇല്ല', '👎', '❌'
@@ -266,6 +271,7 @@ const PAUSE_TODAY = [
   // Hindi / Telugu / Tamil / Kannada / Bengali / Marathi / Gujarati / Malayalam
   'aaj nahi', 'aaj mat', 'aaj band', 'aaj call mat karo', 'आज नहीं', 'आज मत', 'आज बंद',
   'ivala vaddu', 'ivvala vaddu', 'eeroju vaddu', 'ఈరోజు వద్దు', 'ఇవాళ వద్దు',
+  'ఈ రోజు వద్దు', 'ఇవాళ ఆపండి', 'ఈ రోజు చాలు', 'రేపు చూద్దాం', 'ఇక అడగొద్దు', 'eroju vaddu', 'ivala aapandi', 'ivala chalu', 'repu chuddam', 'ika adagoddu',
   'indru vendam', 'inniki vendam', 'இன்று வேண்டாம்', 'ivattu beda', 'ಇವತ್ತು ಬೇಡ',
   'aaj na', 'আজ না', 'aaj nako', 'आज नको', 'aaje nahi', 'આજે નહીં', 'innu venda', 'ഇന്ന് വേണ്ട'
 ].sort((a, b) => b.length - a.length);

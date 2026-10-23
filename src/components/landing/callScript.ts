@@ -34,7 +34,7 @@ export const CALL_SCRIPT: ScriptLine[] = [
     ms: 3800,
     text: {
       en: 'Good morning, Amma! This is Saathi. Did you take your BP tablet after breakfast?',
-      te: 'నమస్కారం అమ్మా! నేను సాథీ. టిఫిన్ అయ్యాక బీపీ టాబ్లెట్ వేసుకున్నారా?',
+      te: 'నమస్కారం అమ్మా! నేను Saathi ని. టిఫిన్ అయ్యాక బీపీ టాబ్లెట్ వేసుకున్నారా?',
       hi: 'नमस्ते अम्मा! मैं साथी हूँ। नाश्ते के बाद बीपी की गोली ली?',
     },
   },
@@ -52,7 +52,7 @@ export const CALL_SCRIPT: ScriptLine[] = [
     ms: 2300,
     text: {
       en: 'Very good. How are you feeling today?',
-      te: 'చాలా మంచిది. ఈ రోజు ఒంట్లో ఎలా ఉంది?',
+      te: 'చాలా మంచిది. ఈ రోజు ఒంట్లో ఎలా ఉన్నారు?',
       hi: 'बहुत अच्छा। आज तबीयत कैसी है?',
     },
   },
@@ -88,7 +88,7 @@ export const CALL_SCRIPT: ScriptLine[] = [
     ms: 2800,
     text: {
       en: 'Take care, Amma. I’ll call again in the evening.',
-      te: 'జాగ్రత్త అమ్మా. సాయంత్రం మళ్ళీ కాల్ చేస్తాను.',
+      te: 'జాగ్రత్తగా ఉండండి అమ్మా. సాయంత్రం మళ్ళీ కాల్ చేస్తాను.',
       hi: 'अपना ध्यान रखिए अम्मा। शाम को फिर फ़ोन करेंगे।',
     },
   },

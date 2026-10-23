@@ -159,7 +159,7 @@ function partA() {
   }
   check('every translation: no leftover placeholders, STOP/START and 108 kept, first names, Meta template rules, buttons ≤ 25', bad.length === 0, bad);
   check('English stays the default; untranslated replies fall back to English', repliesFor('English') === REMINDER_REPLIES && repliesFor('Telugu').badCode === REMINDER_REPLIES.badCode && repliesFor('Telugu').taken('8:10 AM') !== REMINDER_REPLIES.taken('8:10 AM'));
-  check('check-up line in Telugu: day word, clock, title and place', dueWhatsappAppointments([appt()], ist(16, 18, 0), appointmentWords('te'))[0].text === `${PHRASES.te.tomorrow} 10 AM: scan, Apollo Clinic.${PHRASES.te.fasting}`, dueWhatsappAppointments([appt()], ist(16, 18, 0), appointmentWords('te')));
+  check('check-up line in Telugu: day word, clock, title and place', dueWhatsappAppointments([appt()], ist(16, 18, 0), appointmentWords('te'))[0].text === `${PHRASES.te.tomorrow} 10 AM కి Apollo Clinic లో scan ఉంది.${PHRASES.te.fasting}`, dueWhatsappAppointments([appt()], ist(16, 18, 0), appointmentWords('te')));
   check('fill() leaves Meta placeholders alone', fill('Hi {{1}} {name}', { name: 'X' }) === 'Hi {{1}} X');
 
   console.log('\nA3. Plans');
@@ -202,6 +202,11 @@ function partA() {
   check('"baby is not moving"', scanMessage('the baby is not moving since morning').hit);
   check('negated: "no severe headache"', !scanMessage('no severe headache today, all good').hit);
   check('ordinary reply', !scanMessage('took it with breakfast, thanks').hit);
+  // Telugu words from the 2026-10-23 review
+  check('Telugu emergencies: breathless, fell, palpitations', ['ఊపిరాడట్లేదు', 'aayaasam ga undi', 'jaari paddanu', 'gunde dadha ga undi', 'మాట రావట్లేదు'].every(t => scanMessage(t).hit));
+  check('never an emergency: "payasam", BP "108 over 70", "ibbandi paddanu", "helpful"', ['ivala payasam chesanu', 'BP 108 over 70', 'chala ibbandi paddanu', 'very helpful, thanks'].every(t => !scanMessage(t).hit));
+  check('Telugu typed answers: new yes / not yet forms', ['అవునండి', 'ayindi', 'vesaanu'].every(t => parseTypedAnswer(t) === 'yes') && ['vesukoledu', 'ఇంకా వేసుకోలేదు', 'marchipoyanu'].every(t => parseTypedAnswer(t) === 'not_yet'));
+  check('"ok" alone is not "taken" (could mean "OK, I\'ll take it")', parseTypedAnswer('ok') === null);
 
   console.log('\nA8. Everyday symptoms (fever, headache, dizziness, …)');
   check('fever', scanSymptomMessage('I have fever since morning').hit);
@@ -591,7 +596,7 @@ async function partB() {
     b = graph.requests.length;
     await runReminders({ ...deps, now: ist(21, 18, 5), parentIds: scope });
     const teAppts = graph.requests.slice(b).filter(q => q.body.template?.name === 'aaptha_appointment_reminder');
-    check('check-up reminder in Telugu', teAppts.length === 1 && teAppts[0].body.template?.language?.code === 'te' && (teAppts[0].body.template.components[0].parameters[1].text || '') === `${PHRASES.te.tomorrow} 10 AM: scan, Apollo Clinic.`, teAppts.map(q => q.body.template));
+    check('check-up reminder in Telugu', teAppts.length === 1 && teAppts[0].body.template?.language?.code === 'te' && (teAppts[0].body.template.components[0].parameters[1].text || '') === `${PHRASES.te.tomorrow} 10 AM కి Apollo Clinic లో scan ఉంది.`, teAppts.map(q => q.body.template));
     await prisma.appointment.update({ where: { id: teAppt.id }, data: { cancelledAt: new Date() } });
 
     // Translation not approved by Meta yet: the English message goes out instead of nothing.

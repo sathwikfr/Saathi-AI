@@ -72,9 +72,9 @@ export function dueWhatsappAppointments(rows: AppointmentRow[], now: Date, words
     const extra = `${a.fasting ? words.fasting : ''}${a.notes ? `${words.note} ${a.notes.replace(/\s+/g, ' ')}` : ''}`;
     const what = `${a.who ? `${a.who}'s ` : ''}${a.location ? words.join(a.title, a.location) : a.title}`;
     if (day === today && a.startsAt.getTime() > now.getTime() && !a.remindedSameDay && minutes >= WA_SAME_DAY_FROM_MINUTES) {
-      out.push({ id: a.id, which: 'same_day', text: `${words.today} ${clock(a.startsAt)}: ${what}.${extra}` });
+      out.push({ id: a.id, which: 'same_day', text: `${words.line(words.today, clock(a.startsAt), what)}${extra}` });
     } else if (day === tomorrow && !a.remindedDayBefore && minutes >= WA_DAY_BEFORE_FROM_MINUTES) {
-      out.push({ id: a.id, which: 'day_before', text: `${words.tomorrow} ${clock(a.startsAt)}: ${what}.${extra}` });
+      out.push({ id: a.id, which: 'day_before', text: `${words.line(words.tomorrow, clock(a.startsAt), what)}${extra}` });
     }
   }
   return out;

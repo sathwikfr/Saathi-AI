@@ -44,8 +44,12 @@ function teluguWords(file: string, listName: string): string[] {
   const words: string[] = [];
   let underTelugu = false;
   for (const line of body.split('\n')) {
-    const comment = line.trim().startsWith('//');
-    if (comment) { underTelugu = /^\/\/\s*Telugu\s*$/.test(line.trim()); continue; }
+    if (line.trim().startsWith('//')) {
+      // only a language heading ("// Telugu", "// Tamil / Kannada") starts a new section; other comments don't
+      const heading = /^\/\/\s*([A-Z][a-z]+(?:\s*\/\s*[A-Z][a-z]+)*)\s*$/.exec(line.trim());
+      if (heading) underTelugu = heading[1] === 'Telugu';
+      continue;
+    }
     if (underTelugu || TELUGU.test(line)) words.push(...[...line.matchAll(/'([^']+)'/g)].map(m => m[1]));
   }
   return words;
@@ -61,9 +65,10 @@ item('Medicine check (asked at each medicine time)',
   fillTpl(te.tplReminder, ['Lakshmi', '8:00 AM', 'BP tablet, Sugar tablet']));
 item('Button: yes', 'Yes, taken', te.tplYes);
 item('Button: not yet', 'Not yet', te.tplNotYet);
+const apptLine = (w: typeof ENGLISH_APPOINTMENT_WORDS) => `${w.line(w.tomorrow, '10 AM', w.join('Blood test', 'Apollo Clinic'))}${w.fasting}`;
 item('Check-up reminder',
-  fillTpl(WHATSAPP_TEMPLATES.appointment.body, ['Lakshmi', `${ENGLISH_APPOINTMENT_WORDS.tomorrow} 10 AM: ${ENGLISH_APPOINTMENT_WORDS.join('Blood test', 'Apollo Clinic')}.${ENGLISH_APPOINTMENT_WORDS.fasting}`]),
-  fillTpl(te.tplAppointment, ['Lakshmi', `${appointmentWords('te').tomorrow} 10 AM: ${appointmentWords('te').join('Blood test', 'Apollo Clinic')}.${appointmentWords('te').fasting}`]));
+  fillTpl(WHATSAPP_TEMPLATES.appointment.body, ['Lakshmi', apptLine(ENGLISH_APPOINTMENT_WORDS)]),
+  fillTpl(te.tplAppointment, ['Lakshmi', apptLine(appointmentWords('te'))]));
 item('Weekly progress (all taken)', fillTpl(WHATSAPP_TEMPLATES.weekly.body, ['Lakshmi', weeklyProgressText(14, 14)]),
   fillTpl(te.tplWeekly, ['Lakshmi', weeklyProgressText(14, 14, 'te')]));
 item('Weekly progress (most taken)', weeklyProgressText(12, 14), weeklyProgressText(12, 14, 'te'));
