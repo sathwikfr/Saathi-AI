@@ -2322,7 +2322,7 @@ header.app-header.float.compact .nav-indicator {
 
 @media (max-width: 960px) {
   .auth-shell {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);   /* plain 1fr grows to the form's widest line: 401px on a 375px phone */
   }
 
   .auth-aside {
@@ -5899,4 +5899,122 @@ header.app-header:not(.float) {
   scale: 1;
   transition: opacity 300ms var(--ease-out), scale 500ms cubic-bezier(0.34, 1.56, 0.64, 1);
   transition-delay: calc(300ms + var(--pi, 0) * 80ms);
+}
+
+/* ---- Parent detail tabs (Timeline, Trends, Calls, Medicines, Alerts, Family, Records, Settings): the overview's look ----
+   Scoped to the tab panel, so account, onboarding and admin pages that share these classes keep theirs.
+   Rows: rounded 24px cards, a soft wash in the row's status colour, lift on hover, numbers that line up. */
+#dash-tabpanel {
+  --row-tint: transparent;
+}
+
+#dash-tabpanel :is(.list-row, .alert-item, .call-entry, .day-item, .card-flat, .row-card) {
+  border-radius: 24px;
+  border: 1px solid var(--line-subtle);
+  background:
+    linear-gradient(100deg, var(--row-tint), transparent 55%),
+    var(--panel-elevated);
+  box-shadow: var(--shadow-xs);
+  transition: transform var(--dur) var(--ease-out), box-shadow var(--dur) ease, border-color var(--dur) ease;
+}
+
+/* Calls and Timeline were divider lists; they become separate rows like the rest. */
+#dash-tabpanel :is(.call-entry, .day-item) {
+  padding: 16px 18px;
+  margin-top: 10px;
+}
+
+#dash-tabpanel :is(.call-entry, .day-item):first-child {
+  margin-top: 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--line-subtle);
+}
+
+/* Status wash: green fine, amber needs a look, red serious, blue live. Shape/label cues inside the row stay. */
+#dash-tabpanel .call-entry:has(.status-orb.good) { --row-tint: color-mix(in oklab, var(--green) 9%, transparent); }
+#dash-tabpanel .call-entry:has(.status-orb.warn) { --row-tint: color-mix(in oklab, var(--amber) 10%, transparent); }
+#dash-tabpanel .call-entry:has(.status-orb.live) { --row-tint: var(--teal-soft); }
+#dash-tabpanel .call-entry:has(.call-entry-meta .badge-red) { --row-tint: color-mix(in oklab, var(--red) 9%, transparent); }
+#dash-tabpanel .day-item:has(.chip.warn) { --row-tint: color-mix(in oklab, var(--amber) 10%, transparent); }
+#dash-tabpanel .day-item:has(.chip.alert) { --row-tint: color-mix(in oklab, var(--red) 9%, transparent); }
+#dash-tabpanel .list-row:has(.badge-green) { --row-tint: color-mix(in oklab, var(--green) 7%, transparent); }
+#dash-tabpanel .list-row:has(.badge-amber) { --row-tint: color-mix(in oklab, var(--amber) 9%, transparent); }
+
+/* Alerts already carry a full amber/red background; keep it, only round and lift them. */
+#dash-tabpanel .alert-item.urgent { background: var(--amber-soft); border-color: var(--amber-border); }
+#dash-tabpanel .alert-item.critical { background: var(--red-soft); border-color: var(--red-border); }
+
+#dash-tabpanel .list-row.dim { background: var(--panel); box-shadow: none; }
+#dash-tabpanel .row-card.muted { background: var(--panel); }
+#dash-tabpanel .row-card.flagged { border-color: var(--amber-border); box-shadow: 0 0 0 3px var(--amber-soft); }
+
+@media (hover: hover) {
+  #dash-tabpanel :is(.list-row:not(.dim), .alert-item, .call-entry, .day-item):hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+    border-color: color-mix(in oklab, var(--teal) 22%, var(--line-subtle));
+  }
+
+  /* Rows sit inside a panel that also lifts; one lift at a time reads calmer. */
+  #dash-tabpanel .panel:has(:is(.list-row, .alert-item, .call-entry, .day-item):hover) {
+    transform: none;
+  }
+}
+
+#dash-tabpanel .stat,
+#dash-tabpanel .kv > div {
+  border-radius: 24px;
+}
+
+#dash-tabpanel .kv > div {
+  background: color-mix(in oklab, var(--panel-elevated) 60%, var(--paper));
+}
+
+#dash-tabpanel :is(.row-sub, .call-entry-meta, .day-item time, .kv strong, .pct, .bar-days) {
+  font-variant-numeric: tabular-nums;
+}
+
+#dash-tabpanel :is(.row-title, .call-entry-head strong) {
+  letter-spacing: -0.01em;
+}
+
+/* Inline 'Rename' / 'Set a last day' links: keep the pencil on the same line as its word. */
+#dash-tabpanel .link-btn:has(svg) {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+/* Week / Month / 3 months: one line each, never '3' over 'months'. */
+#dash-tabpanel .segmented > button {
+  white-space: nowrap;
+  padding-inline: 12px;
+}
+
+#dash-tabpanel .empty .icon-tile {
+  box-shadow: 0 0 0 6px var(--teal-soft);
+}
+
+/* Phone: the avatar sits above the name, so a long name gets the full width instead of breaking mid-word. */
+@media (max-width: 560px) {
+  .detail-head .dash-who {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .detail-head .dash-title > h2 { overflow-wrap: break-word; }
+}
+
+@media (max-width: 560px) {
+  #dash-tabpanel :is(.list-row, .alert-item, .call-entry, .day-item, .card-flat, .row-card) {
+    border-radius: 20px;
+    padding: 14px 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #dash-tabpanel :is(.list-row, .alert-item, .call-entry, .day-item, .card-flat, .row-card) { transition: none; }
+  #dash-tabpanel :is(.list-row, .alert-item, .call-entry, .day-item):hover { transform: none; }
 }
