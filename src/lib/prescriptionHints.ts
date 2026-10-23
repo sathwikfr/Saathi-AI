@@ -118,8 +118,12 @@ function nicknameFor(c: ExtractedMedicineCandidate): string | undefined {
  * ponytail: hand list of the usual ones; a miss just means no suggestion, the family types their own.
  */
 const NICKNAME_BY_NAME: [RegExp, string][] = [
-  [/metformin|glimepiride|gliclazide|glipizide|teneligliptin|vildagliptin|sitagliptin|linagliptin|dapagliflozin|empagliflozin|voglibose|pioglitazone|glycomet|ziten|tenepride|galvus|janumet|januvia|jalra|istavel|trajenta|amaryl|gemer|glimy|zoryl|forxiga|jardiance|gluconorm|glyciphage/, 'Sugar tablet'],
-  [/amlodipine|telmisartan|losartan|olmesartan|valsartan|metoprolol|atenolol|nebivolol|bisoprolol|cilnidipine|ramipril|enalapril|chlorthalidone|hydrochlorothiazide|\bmet xl\b|telma|amlong|stamlo|amlokind|losar|repace|olmezest|nebicard|concor|cilacar|prolomet|seloken|aten\b|tenormin/, 'BP tablet'],
+  [/insulin|glargine|lispro|degludec|lantus|basalog|mixtard|huminsulin|novomix|humalog|novorapid|tresiba|ryzodeg/, 'Insulin'],
+  [/inhaler|rotacap|salbutamol|levosalbutamol|budesonide|formoterol|tiotropium|asthalin|levolin|budecort|foracort|seroflo|duolin|tiova/, 'Inhaler'],
+  [/eye drop|timolol|latanoprost|brimonidine|travoprost|moxifloxacin eye|refresh tears|lubrex/, 'Eye drops'],
+  [/isosorbide|nitroglycerin|ranolazine|ivabradine|trimetazidine|digoxin|sacubitril|sorbitrate|nikoran|nicorandil|ranozex|ivabrad|flavedon|vymada|carvedilol|cardivas/, 'Heart tablet'],
+  [/metformin|glimepiride|gliclazide|glipizide|teneligliptin|vildagliptin|sitagliptin|linagliptin|dapagliflozin|empagliflozin|voglibose|pioglitazone|glycomet|ziten|tenepride|galvus|janumet|januvia|jalra|istavel|trajenta|amaryl|gemer|glimy|zoryl|forxiga|jardiance|gluconorm|glyciphage|zita|dynaglipt|vildapride|volix|oxra|sitaglyn|glizid|reclide/, 'Sugar tablet'],
+  [/amlodipine|telmisartan|losartan|olmesartan|valsartan|metoprolol|atenolol|nebivolol|bisoprolol|cilnidipine|ramipril|enalapril|chlorthalidone|hydrochlorothiazide|\bmet xl\b|telma|amlong|stamlo|amlokind|losar|repace|olmezest|nebicard|concor|cilacar|prolomet|seloken|aten\b|tenormin|telvas|telsartan|cardace|arkamin|clonidine|prazosin|minipress|olmat|benitec|nexovas|azilsartan/, 'BP tablet'],
   [/atorvastatin|rosuvastatin|fenofibrate|rosuva|rozavel|rozucor|atorva|lipvas|storvas|tonact|lipicard/, 'Cholesterol tablet'],
   [/pantoprazole|rabeprazole|omeprazole|esomeprazole|famotidine|ranitidine|sucralfate|domperidone|\bpan\b|pan-?d|pan ?40|pantocid|razo|rabekind|omez|nexpro|sucrafil|digene|gelusil|mucaine/, 'Gas tablet'],
   [/levothyroxine|thyronorm|eltroxin|thyrox|lethyrox/, 'Thyroid tablet'],

@@ -222,22 +222,48 @@ export function MedicinesPanel({ parentId, parentName, parent, familyName, medic
   const [editingEnd, setEditingEnd] = useState<string | null>(null);
   const [editingTabs, setEditingTabs] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
-  /** "TAB. ATARAX 25MG" -> "Allergy tablet" (unique among the active ones); null when the name is already an everyday one. */
-  const nicknameSuggestion = (m: Medicine): string | null => {
-    if (!nicknameFromName(m.name)) return null;
+  const [applyingAll, setApplyingAll] = useState(false);
+  /**
+   * "TAB. ATARAX 25MG" -> "Allergy tablet" for every tablet still called by its prescription name.
+   * Worked out together, so two of them never get the same name ("Allergy tablet", "Night allergy tablet").
+   */
+  const suggestions = new Map<string, string>();
+  const names = new Map(medicines.filter(o => o.isActive).map(o => [o.id, o.name]));
+  for (const m of medicines) {
+    if (!nicknameFromName(m.name)) continue;
     const wanted = nicknameFromName(m.officialName || m.name);
-    if (!wanted || medicineKey(wanted) === medicineKey(m.name)) return null;
-    const others = medicines.filter(o => o.isActive && o.id !== m.id).map(o => o.name);
-    return freeNickname(wanted, m.timingSlots?.length ? m.timingSlots : [m.timeOfDay], others);
-  };
+    if (!wanted || medicineKey(wanted) === medicineKey(m.name)) continue;
+    const others = [...names].filter(([id]) => id !== m.id).map(([, n]) => n);
+    const nick = freeNickname(wanted, m.timingSlots?.length ? m.timingSlots : [m.timeOfDay], others);
+    suggestions.set(m.id, nick);
+    if (m.isActive) names.set(m.id, nick);
+  }
+  const rename = (m: Medicine, name: string) => fetch(`/api/parents/${parentId}/medicines`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ medicineId: m.id, action: 'rename', name, officialName: m.officialName || m.name })
+  });
   const applyNickname = async (m: Medicine, name: string) => {
-    const res = await fetch(`/api/parents/${parentId}/medicines`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ medicineId: m.id, action: 'rename', name, officialName: m.officialName || m.name })
-    });
+    const res = await rename(m, name);
     if (res.ok) { onToast(`Saathi will call it "${name}" from the next call.`, 'success'); onChanged(); }
     else onToast((await res.json().catch(() => ({}))).error || 'Could not save.', 'error');
+  };
+  // One after another: the server checks each new name against the ones already saved.
+  const applyAll = async () => {
+    setApplyingAll(true);
+    let done = 0;
+    let error = '';
+    for (const m of medicines) {
+      const name = suggestions.get(m.id);
+      if (!name) continue;
+      const res = await rename(m, name);
+      if (res.ok) done++;
+      else error ||= (await res.json().catch(() => ({}))).error || 'Could not save.';
+    }
+    setApplyingAll(false);
+    if (error) onToast(`${done} renamed. ${error}`, 'error');
+    else onToast(`${done} medicines renamed. Saathi uses the new names from the next call.`, 'success');
+    onChanged();
   };
   // IST date once per mount (course end dates are IST).
   const [today] = useState(() => new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10));
@@ -306,6 +332,17 @@ export function MedicinesPanel({ parentId, parentName, parent, familyName, medic
         </label>
       )}
 
+      {manage && suggestions.size > 1 && (
+        <div className="notice" style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', margin: '0 0 14px' }}>
+          <span style={{ flex: 1, minWidth: '200px', fontSize: '0.88rem' }}>
+            {suggestions.size} medicines still use their prescription names. Everyday names are easier for {parentName} to recognise on calls; the prescription names stay saved.
+          </span>
+          <button type="button" className="btn btn-primary btn-sm" disabled={applyingAll} onClick={applyAll}>
+            {applyingAll ? 'Renaming…' : 'Use all suggested names'}
+          </button>
+        </div>
+      )}
+
       {medicines.length === 0 ? (
         <div className="empty" style={{ padding: '32px 16px' }}>
           <span className="icon-tile"><Pill size={24} /></span>
@@ -318,7 +355,7 @@ export function MedicinesPanel({ parentId, parentName, parent, familyName, medic
             const food = foodRelationLabel(m.foodRelation);
             const week = whatsapp ? weekFromReminders(m.name, reminders) : weekFor(m.name, callLogs);
             const ended = !!m.endsOn && m.endsOn < today;
-            const suggestion = manage && renaming !== m.id ? nicknameSuggestion(m) : null;
+            const suggestion = manage && renaming !== m.id ? suggestions.get(m.id) : undefined;
             return (
               <div key={m.id} className={`list-row${m.isActive ? '' : ' dim'}`} style={{ flexWrap: 'wrap' }}>
                 <div className="row-main" style={{ display: 'flex', gap: '14px', alignItems: 'flex-start', flex: 1, minWidth: '240px' }}>

@@ -1262,7 +1262,7 @@ function OnboardingContent({ onRestart }: { onRestart: () => void }) {
                           className="form-input"
                         />
                         <span className="form-hint" style={{ display: 'block', marginTop: '4px' }}>{NAME_HINT}</span>
-                        <MedicineNameChips folded value={med.name} onPick={(n) => updateMedicineField(idx, 'name', n)} />
+                        <MedicineNameChips folded value={med.name} onPick={(n) => updateMedicineField(idx, 'name', n)} realName={med.officialName} />
                       </div>
                       <div className="form-group">
                         <span className="mini-label">When is it taken?</span>
