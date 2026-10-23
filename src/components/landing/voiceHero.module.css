@@ -21,7 +21,7 @@
   --au-3: rgba(255, 210, 236, 0.5);
   --au-4: rgba(188, 218, 255, 0.6);
   --au-5: rgba(255, 255, 255, 0.75);
-  --grad: linear-gradient(90deg, #1f5cff 0%, #5a4bff 45%, #a53df0 100%);
+  --grad: linear-gradient(90deg, #0a4fd6 0%, #1565d8 45%, #0b78c2 100%);
   --dim: rgba(26, 26, 36, 0.66);
   --faint: rgba(26, 26, 36, 0.45);
   --soft-line: rgba(26, 26, 36, 0.1);
@@ -53,7 +53,7 @@
   --au-3: rgba(225, 60, 170, 0.15);
   --au-4: rgba(40, 120, 235, 0.18);
   --au-5: rgba(120, 100, 255, 0.1);
-  --grad: linear-gradient(90deg, #6f9bff 0%, #9d8bff 45%, #e08cff 100%);
+  --grad: linear-gradient(90deg, #7fa8ff 0%, #7cc0ff 45%, #8ccdf7 100%);
   --dim: rgba(243, 238, 230, 0.68);
   --faint: rgba(243, 238, 230, 0.46);
   --soft-line: rgba(243, 238, 230, 0.12);
@@ -251,12 +251,12 @@
   white-space: nowrap;
 }
 
-/* The trial button: the site's turning gradient, tuned to the hero's blue -> violet. */
+/* The trial button: the site's turning gradient, in the brand's blues. */
 .btnGlow {
-  --glow-1: #2c66ff;
-  --glow-2: #5b4bff;
-  --glow-3: #b347f0;
-  box-shadow: 0 18px 36px -16px rgba(80, 60, 255, 0.65);
+  --glow-1: #006baa;
+  --glow-2: #2563eb;
+  --glow-3: #38bdf8;
+  box-shadow: 0 18px 36px -16px rgba(0, 107, 170, 0.6);
 }
 
 .btnOutline {

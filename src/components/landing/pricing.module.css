@@ -117,14 +117,14 @@
   }
 }
 
-/* The popular plan: a border of the orb's colours, slowly turning (the same angle as .btn-glow).
+/* The popular plan: a border in the brand's blues, slowly turning (the same angle as .btn-glow).
    It repaints the card each frame, but only while Pricing is on screen (content-visibility skips it otherwise). */
 .featured {
   border: 2px solid transparent;
   background:
     linear-gradient(var(--panel-elevated), var(--panel-elevated)) padding-box,
-    conic-gradient(from var(--glow-angle), #5b8cff, #9b4dff, #ff6ab4, #5b8cff) border-box;
-  box-shadow: var(--shadow-lg), 0 30px 70px -40px rgba(155, 77, 255, 0.55);
+    conic-gradient(from var(--glow-angle), #006baa, #2563eb, #38bdf8, #006baa) border-box;
+  box-shadow: var(--shadow-lg), 0 30px 70px -40px rgba(0, 107, 170, 0.5);
   animation: borderSpin 6s linear infinite;
 }
 
