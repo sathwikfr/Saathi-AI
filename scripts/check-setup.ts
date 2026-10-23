@@ -8,6 +8,7 @@
  */
 import { config } from 'dotenv';
 import fs from 'fs';
+import { PAID_PLAN_IDS, monthlyPrice, inr } from '../src/lib/plans';
 
 config({ path: '.env.local', quiet: true });
 config({ path: '.env', quiet: true });
@@ -37,7 +38,14 @@ const GROUPS: Group[] = [
       },
       { name: 'CRON_SECRET', hint: 'Any long random string (already generated locally)', valid: v => (v.length >= 24 ? null : 'too short (use 24+ characters)') },
       { name: 'NEXT_PUBLIC_SUPPORT_EMAIL', hint: 'The email shown on the Privacy and Terms pages for requests' }
-    ]
+    ],
+    extra: env => {
+      const url = env.NEXT_PUBLIC_APP_URL || '';
+      const host = /ngrok/i.test(url) ? 'an ngrok address' : /\.vercel\.app/i.test(url) ? 'a vercel.app address' : '';
+      const notes = host ? [`NEXT_PUBLIC_APP_URL is ${host}: fine for testing, use your own domain before real families`] : [];
+      if (/@gmail\.com/i.test(env.NEXT_PUBLIC_SUPPORT_EMAIL || '')) notes.push('NEXT_PUBLIC_SUPPORT_EMAIL is a Gmail address: switch to one on your domain before launch');
+      return notes;
+    }
   },
   {
     title: 'Email (password resets, alerts, receipts)',
@@ -130,6 +138,26 @@ const GROUPS: Group[] = [
     checks: [{ name: 'NEXT_PUBLIC_SUPPORT_PHONE', hint: 'Any number a person answers, in +91… format' }]
   },
   {
+    title: 'Business details (Terms, Refunds, receipts)',
+    why: 'Your legal business name and address on the legal pages; nothing shows until set. GSTIN only once you are GST-registered.',
+    optional: true,
+    checks: [
+      { name: 'NEXT_PUBLIC_BUSINESS_NAME', hint: 'The legal name of the business (sole proprietor name is fine)' },
+      { name: 'NEXT_PUBLIC_BUSINESS_ADDRESS', hint: 'Registered address, one line' },
+      { name: 'NEXT_PUBLIC_GSTIN', hint: 'Your GSTIN, once registered' }
+    ]
+  },
+  {
+    title: 'Separate Sarvam secrets (recommended)',
+    why: 'Without these, the end-of-call webhook token also opens the emergency tool and the call-back lookup. Set each and paste the same value in Sarvam.',
+    optional: true,
+    checks: [
+      { name: 'SARVAM_ESCALATE_SECRET', hint: 'Random 32+ characters; the escalate_emergency tool bearer token in Sarvam', valid: v => (v.length >= 24 ? null : 'too short (use 24+ characters)') },
+      { name: 'SARVAM_INBOUND_CONTEXT_SECRET', hint: 'Random 32+ characters; the call-back on-start hook bearer token', valid: v => (v.length >= 24 ? null : 'too short (use 24+ characters)') },
+      { name: 'SARVAM_INBOUND_WEBHOOK_SECRET', hint: 'Random 32+ characters; the ?token= on the call-back webhook URL', valid: v => (v.length >= 24 ? null : 'too short (use 24+ characters)') }
+    ]
+  },
+  {
     title: 'WhatsApp call updates (Meta Cloud API)',
     why: 'Sends families one WhatsApp message per call. Until these are set, call alerts are emailed as before.',
     checks: [
@@ -209,13 +237,15 @@ async function checkRazorpay(): Promise<string[]> {
   const secret = process.env.RAZORPAY_KEY_SECRET;
   if (!isSet(id) || !isSet(secret)) return ['· skipped: keys not set'];
   const auth = 'Basic ' + Buffer.from(`${id}:${secret}`).toString('base64');
-  const status = async (path: string) => {
+  const get = async (path: string): Promise<{ status: number; body?: { item?: { amount?: number }; period?: string; interval?: number } }> => {
     try {
-      return (await fetch(`https://api.razorpay.com/v1${path}`, { headers: { Authorization: auth } })).status;
+      const res = await fetch(`https://api.razorpay.com/v1${path}`, { headers: { Authorization: auth } });
+      return { status: res.status, body: res.ok ? await res.json() : undefined };
     } catch {
-      return 0;
+      return { status: 0 };
     }
   };
+  const status = async (path: string) => (await get(path)).status;
 
   const orders = await status('/orders?count=1');
   if (orders === 0) return ['✗ could not reach api.razorpay.com'];
@@ -232,11 +262,24 @@ async function checkRazorpay(): Promise<string[]> {
   }
   lines.push('✓ Subscriptions enabled');
 
-  for (const name of ['RAZORPAY_PLAN_ID_ESSENTIAL', 'RAZORPAY_PLAN_ID_SOLO', 'RAZORPAY_PLAN_ID_FAMILY', 'RAZORPAY_PLAN_ID_EXTENDED']) {
+  // Every plan id must exist AND charge today's price: Razorpay plans can't be edited, so an id left over from an
+  // old price would quietly charge families the old amount.
+  const wanted = [
+    ...PAID_PLAN_IDS.map(id => ({ name: `RAZORPAY_PLAN_ID_${id.toUpperCase()}`, rupees: monthlyPrice(id, false) })),
+    ...(['solo', 'family', 'extended'] as const).map(id => ({ name: `RAZORPAY_PLAN_ID_${id.toUpperCase()}_MONITOR`, rupees: monthlyPrice(id, true) }))
+  ];
+  for (const { name, rupees } of wanted) {
     const planId = process.env[name];
-    if (!isSet(planId)) continue;
-    const s = await status(`/plans/${encodeURIComponent(planId!)}`);
-    lines.push(s === 200 ? `✓ ${name} exists in Razorpay` : `✗ ${name} not found in this Razorpay account/mode (${s})`);
+    if (!isSet(planId)) {
+      lines.push(`✗ ${name}: missing (run: npx tsx scripts/create-razorpay-plans.ts --confirm)`);
+      continue;
+    }
+    const { status: s, body } = await get(`/plans/${encodeURIComponent(planId!)}`);
+    const paise = body?.item?.amount;
+    if (s !== 200) lines.push(`✗ ${name} not found in this Razorpay account/mode (${s})`);
+    else if (paise !== rupees * 100 || body?.period !== 'monthly' || body?.interval !== 1) {
+      lines.push(`✗ ${name} charges ${inr((paise ?? 0) / 100)} (${body?.period}), plans.ts says ${inr(rupees)} monthly: run create-razorpay-plans.ts --confirm and use the id it prints`);
+    } else lines.push(`✓ ${name}: ${inr(rupees)}/month`);
   }
   return lines;
 }
